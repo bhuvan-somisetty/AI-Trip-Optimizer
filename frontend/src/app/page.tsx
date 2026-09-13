@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { PlaneIntro } from "@/components/intro/plane-intro";
 
 export default function RootPage() {
-  redirect("/login");
+  return <PlaneIntro />;
 }
