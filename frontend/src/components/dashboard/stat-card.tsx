@@ -26,7 +26,7 @@ export function StatCard({
   const TrendIcon = trend.direction === "up" ? ArrowUp : ArrowDown;
 
   return (
-    <Card className="gap-3 py-5">
+    <Card className="gap-3 py-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5">
       <CardContent className="flex items-start justify-between px-5">
         <div className="space-y-1.5">
           <p className="text-sm text-muted-foreground">{label}</p>
