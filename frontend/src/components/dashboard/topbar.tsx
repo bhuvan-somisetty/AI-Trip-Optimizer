@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -40,10 +41,12 @@ export function Topbar() {
             SR
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="end" className="w-60">
-            <DropdownMenuLabel>Signed in as</DropdownMenuLabel>
-            <div className="px-1.5 pb-1.5 text-sm font-medium">
-              swetalinrout2006@gmail.com
-            </div>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Signed in as</DropdownMenuLabel>
+              <div className="px-1.5 pb-1.5 text-sm font-medium">
+                swetalinrout2006@gmail.com
+              </div>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
               <User />

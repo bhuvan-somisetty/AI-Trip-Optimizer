@@ -138,5 +138,8 @@
   }
   html {
     @apply font-sans;
+    /* Matches the intro/login dark panels so an unpainted frame during
+       client-side route swaps never flashes the default white canvas. */
+    background-color: #020617;
   }
 }
