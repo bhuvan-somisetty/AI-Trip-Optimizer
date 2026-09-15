@@ -65,48 +65,6 @@ The core design principle is **explainability over automation**. The system neve
 
 ---
 
-## 👥 Who's Building What
-
-This project runs on a **strict backend/frontend split**: one person owns each side end to end, not a mixed division by topic.
-
-<table>
-<tr>
-<th width="50%">🎨 Frontend: Bhuvan Somisetty</th>
-<th width="50%">⚙️ Backend: Swetalin Rout</th>
-</tr>
-<tr valign="top">
-<td>
-
-- Next.js app shell, routing, layout
-- Every screen's UI:
-  - Auth (login/register)
-  - Trip Request Form
-  - Itinerary Result View (Trade-off Ledger panel, budget/constraint flags, rationale)
-  - Trip Knowledge Assistant + Ask This Itinerary chat panel
-  - Ops Dashboard
-- State/data-fetching (React Query), validation (Zod)
-- Component library setup (shadcn/ui + Tailwind CSS)
-- Wiring every screen to the live API once endpoints exist
-
-</td>
-<td>
-
-- FastAPI backend: every API endpoint (auth, travelers, trips, optimize, decision, documents, assistant, dashboard, audit)
-- Database schema design + Alembic migrations
-- Mock flight/hotel data generation
-- The LangGraph optimization pipeline (search → check → compose)
-- Trade-off Ledger data structure + cost-consistency guardrail
-- Document ingestion (`pypdf` → chunk → embed) and RAG retrieval/generation
-- Dashboard aggregation queries, audit trail writes
-
-</td>
-</tr>
-</table>
-
-**Shared, done together:** weekly sync points (agreeing on data shapes before either side builds against them), integration testing, security review, deployment, and documentation, because both of us need to be able to explain the *entire* system, not just our own half.
-
----
-
 ## 🏗️ Tech Stack
 
 <table>
