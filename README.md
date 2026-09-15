@@ -1,6 +1,6 @@
 <div align="center">
 
-# ✈️ AI Trip Optimizer
+#  AI Trip Optimizer
 
 **An enterprise-grade, explainable AI decision-support system for business travel planning.**
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 🌍 What This Is
+##  What This Is
 
 AI Trip Optimizer is a **B2B decision-support workspace**: a tool a company uses to plan and optimize trips for its own employees. It's not a booking site, and it's not an autonomous agent that books flights on its own.
 
@@ -45,7 +45,7 @@ The core design principle is **explainability over automation**. The system neve
 
 ---
 
-## 🧠 Core Features (MVP)
+##  Core Features (MVP)
 
 | # | Feature | What it does |
 |---|---|---|
@@ -65,7 +65,7 @@ The core design principle is **explainability over automation**. The system neve
 
 ---
 
-## 🏗️ Tech Stack
+##  Tech Stack
 
 <table>
 <tr>
@@ -98,31 +98,19 @@ The core design principle is **explainability over automation**. The system neve
 **Local dev:** Docker Compose (Postgres + backend together, zero environment drift).
 **Testing:** `pytest` + `httpx` on the backend, component tests on the frontend.
 
-Full rationale for every choice, including what we deliberately *didn't* install, lives in [`docs/22_Tech_Stack_and_Libraries.md`](docs/22_Tech_Stack_and_Libraries.md).
+---
+
+##  Current Status
+
+We're in **Month 1 — Setup**, per our 12-week plan 
+
+-  **Frontend** — Next.js app shell, auth screens, dashboard, and full navigation are live (currently running on mock data)
+-  **Backend** — FastAPI + database setup in progress
+-  **AI pipeline** (LangGraph optimizer, RAG assistant) — starts Month 2, once the backend foundation is in place
 
 ---
 
-## 📚 Documentation
-
-This project is documented like a real product, not just a class assignment. The `docs/` folder has 28 files covering everything from the business requirements to individual architecture decisions. Start here:
-
-| Doc | Covers |
-|---|---|
-| [`01_Project_Overview.md`](docs/01_Project_Overview.md) | The elevator pitch, MVP scope, what's out of scope |
-| [`03_PRD.md`](docs/03_PRD.md) | Product requirements, user stories |
-| [`05_System_Architecture.md`](docs/05_System_Architecture.md) | How the pieces fit together |
-| [`06_Database_Design.md`](docs/06_Database_Design.md) | Schema |
-| [`07_API_Specification.md`](docs/07_API_Specification.md) | Every endpoint |
-| [`08_GenAI_Architecture.md`](docs/08_GenAI_Architecture.md) | The LangGraph pipeline in detail |
-| [`10_UI_UX_Design.md`](docs/10_UI_UX_Design.md) | What every screen must contain |
-| [`16_Team_Responsibilities.md`](docs/16_Team_Responsibilities.md) | The full ownership breakdown |
-| [`23_Setup_Guide.md`](docs/23_Setup_Guide.md) | Local environment setup |
-| [`26_Day_by_Day_Build_Plan.md`](docs/26_Day_by_Day_Build_Plan.md) | The 12-week execution plan |
-| [`27_Day_by_Day_Checklist.md`](docs/27_Day_by_Day_Checklist.md) | The same plan as a flat checklist |
-
----
-
-## 🚀 Getting Started
+##  Getting Started
 
 ```bash
 # clone
@@ -131,12 +119,7 @@ cd AI-Trip-Optimizer
 
 # frontend
 cd frontend && npm install && npm run dev
-
-# backend + database (from project root)
-docker compose up -d
 ```
-
-Full setup steps (env vars, migrations, seeding mock data): [`docs/23_Setup_Guide.md`](docs/23_Setup_Guide.md).
 
 ---
 
