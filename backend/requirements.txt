@@ -3,7 +3,8 @@ uvicorn[standard]
 sqlmodel
 psycopg2-binary
 alembic
-passlib[bcrypt]
+passlib
+bcrypt==4.0.1
 python-jose[cryptography]
 langgraph
 langchain-core
