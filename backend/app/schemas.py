@@ -25,3 +25,15 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
     role: UserRole
+
+
+class TravelerCreate(BaseModel):
+    name: str
+    preferences: dict = {}
+
+
+class TravelerResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    preferences: dict
+    created_by: uuid.UUID
