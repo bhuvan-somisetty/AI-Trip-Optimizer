@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
@@ -42,7 +43,8 @@ def get_current_user(
         user_id = payload.get("sub")
         if user_id is None:
             raise credentials_error
-    except JWTError:
+        user_id = uuid.UUID(user_id)
+    except (JWTError, ValueError):
         raise credentials_error
 
     user = session.get(User, user_id)
