@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_serializer, model_validator
 
 from app.models import TripStatus, UserRole
 
@@ -62,6 +62,12 @@ class TripResponse(BaseModel):
     preferences: dict
     status: TripStatus
     created_by: uuid.UUID
+
+    @field_serializer("budget")
+    def budget_as_number(self, value: Decimal) -> float:
+        # Pydantic would emit a Decimal as the string "60000.00"; the API spec (and
+        # the frontend) expect a JSON number.
+        return float(value)
 
     @model_validator(mode="before")
     @classmethod
