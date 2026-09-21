@@ -61,3 +61,8 @@ def list_trips(
     if trip_status is not None:
         query = query.where(Trip.status == trip_status)
     return session.exec(query.order_by(Trip.created_at.desc())).all()
+
+
+@router.get("/trips/{trip_id}", response_model=TripResponse)
+def get_trip(trip: Trip = Depends(get_owned_trip)):
+    return trip
