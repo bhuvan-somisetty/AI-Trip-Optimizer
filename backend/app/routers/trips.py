@@ -1,10 +1,10 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models import Traveler, Trip, User
+from app.models import Traveler, Trip, TripStatus, User
 from app.schemas import TripCreate, TripResponse
 from app.security import get_current_user
 
@@ -49,3 +49,15 @@ def create_trip(
     session.commit()
     session.refresh(trip)
     return trip
+
+
+@router.get("/trips", response_model=list[TripResponse])
+def list_trips(
+    trip_status: TripStatus | None = Query(default=None, alias="status"),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    query = select(Trip).where(Trip.created_by == current_user.id)
+    if trip_status is not None:
+        query = query.where(Trip.status == trip_status)
+    return session.exec(query.order_by(Trip.created_at.desc())).all()
