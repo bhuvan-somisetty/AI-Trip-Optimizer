@@ -2,6 +2,8 @@
 
 > **Provenance:** The two evaluation categories (Accuracy, UX) are official (brief field `evaluation_metrics`). The feature checklist in §1 is sourced from the PRD; the specific measurable sub-metrics in §2/§3 are the team's own operationalization.
 
+> **Amended 2026-09-16:** Trip Knowledge Assistant (US-08) and Ask This Itinerary (US-09) rows and RAG accuracy metrics removed — cut from scope per instructor instruction, see `03_PRD.md` amendment and `17_Risk_Register.md` R-011.
+
 This file is intentionally left as a template, not filled with estimated scores — the project brief's evaluation metrics (**Accuracy, UX**) can only be honestly assessed once the MVP is functional, not at planning time. Fill each section in during Month 3 (Week 11–12), using real measurements from `14_Evaluation_Metrics.md`.
 
 ## 1. Feature Completion Against the PRD
@@ -14,8 +16,6 @@ This file is intentionally left as a template, not filled with estimated scores 
 | Budget/constraint flags (US-005) | Must | ⬜ Not started | |
 | Explainable rationale (US-006) | Must | ⬜ Not started | |
 | Review/edit/approve (US-007) | Must | ⬜ Not started | |
-| Trip Knowledge Assistant (US-08) | Must | ⬜ Not started | |
-| Ask This Itinerary (US-09) | Should | ⬜ Not started | |
 | Dashboard (US-010) | Should | ⬜ Not started | |
 | What-If Simulator (US-011) | Could/stretch | ⬜ Not started | |
 | Multi-agent expansion | Stretch | ⬜ Not started | |
@@ -25,8 +25,6 @@ This file is intentionally left as a template, not filled with estimated scores 
 ## 2. Accuracy Metrics (fill in from `14_Evaluation_Metrics.md` §1)
 - Cost-figure consistency rate: ___
 - Trade-off Ledger completeness: ___
-- RAG citation accuracy: ___
-- RAG "don't know" precision: ___
 
 ## 3. UX Metrics (fill in from `14_Evaluation_Metrics.md` §2)
 - Median itinerary generation turnaround: ___

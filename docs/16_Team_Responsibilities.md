@@ -3,6 +3,8 @@
 > **Provenance:** The team of 2 is confirmed via the PRD (two names listed as team members) — the brief sheet itself has no explicit team-size field. The workstream split below is the team's own division of labor, not instructor-assigned.
 
 > **Amended 2026-09-13:** Originally split by *topic* (Product/Data/Optimizer vs. App/RAG/Assistant), so both people touched some frontend and some backend. The team decided to switch to a strict **backend vs. frontend** split instead — Swetalin owns all backend/API/database work, Bhuvan owns all frontend/UI work. This is the team's own decision, not an instructor instruction. Applied across `26_Day_by_Day_Build_Plan.md` and `27_Day_by_Day_Checklist.md`.
+>
+> **Amended 2026-09-16:** RAG/Trip Knowledge Assistant/Ask This Itinerary work removed from both workstreams below — cut from scope per instructor instruction ("RAG is not needed," see `03_PRD.md` amendment, `17_Risk_Register.md` R-011).
 
 ## Workstream A — Backend, Data & AI Pipeline
 **Owner: Swetalin**
@@ -11,13 +13,12 @@
 - Mock flight/hotel data (`09_Mock_Data_Spec.md`).
 - The LangGraph optimization pipeline: search node, budget/constraint check node, compose node (LLM call) — see `08_GenAI_Architecture.md`.
 - Trade-off Ledger data structure and its guardrail (cost-figure consistency check).
-- Document ingestion pipeline (`pypdf` → chunk → embed) and the RAG retrieval/generation logic behind the Trip Knowledge Assistant and Ask This Itinerary (`/assistant/ask`, `/trips/{id}/ask`).
 - Dashboard aggregation queries, audit trail writes.
 
 ## Workstream B — Frontend / UI
 **Owner: Bhuvan**
 - Next.js app shell, routing, layout.
-- Every screen's UI: auth (login/register), Trip Request Form, Itinerary Result View (Trade-off Ledger panel, budget/constraint flags, rationale display), Trip Knowledge Assistant + Ask This Itinerary chat panel, Dashboard.
+- Every screen's UI: auth (login/register), Trip Request Form, Itinerary Result View (Trade-off Ledger panel, budget/constraint flags, rationale display), Dashboard.
 - Frontend state/data-fetching (React Query), form validation (Zod), component library setup (shadcn/ui + Tailwind).
 - Wiring every screen to Swetalin's API endpoints once they exist.
 

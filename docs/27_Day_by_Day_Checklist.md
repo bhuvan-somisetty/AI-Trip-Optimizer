@@ -3,30 +3,31 @@
 > **Provenance:** This is the team's own execution plan, laid out as one continuous day list (not grouped by week) plus a master checklist, per the user's explicit request. It restates `26_Day_by_Day_Build_Plan.md` in a flatter, checkbox-friendly format — see that file for the "how to build it" technical detail behind each task. Day numbers are relative working days (Day 1 = your actual first working day, once confirmed with your mentor — see `17_Risk_Register.md` R-004), assuming a 5-day week.
 >
 > **Amended 2026-09-13:** Role split changed to a strict backend vs. frontend split, per the team's own decision — see `16_Team_Responsibilities.md`. Swetalin = Backend, Bhuvan = Frontend.
+>
+> **Amended 2026-09-16:** Day 41–50 rewritten — originally the RAG-based Trip Knowledge Assistant / Ask This Itinerary, cut from scope per instructor instruction ("RAG is not needed," see `03_PRD.md` amendment, `17_Risk_Register.md` R-011). Every other RAG reference below removed.
 
-**Roles:** Swetalin = Backend (FastAPI, database, every API endpoint, LangGraph pipeline, RAG backend logic). Bhuvan = Frontend (Next.js UI for every screen, wiring screens to Swetalin's endpoints).
+**Roles:** Swetalin = Backend (FastAPI, database, every API endpoint, LangGraph pipeline). Bhuvan = Frontend (Next.js UI for every screen, wiring screens to Swetalin's endpoints).
 
 ---
 
 ## Day 0 — Joint UI/UX Wireframing (before Day 1, ~2–3 hours, both together)
-**Feature/Part:** UI/UX Wireframing — all 4 core screens (prep work, not a scored PRD feature itself)
+**Feature/Part:** UI/UX Wireframing — all 3 core screens (prep work, not a scored PRD feature itself)
 - [ ] Read `10_UI_UX_Design.md` together, out loud, screen by screen
 - [ ] Wireframe (Figma, low-fidelity) — **Trip Request Form**
 - [ ] Wireframe — **Itinerary Result View** (Trade-off Ledger panel, budget/constraint flags, rationale, approve/reject) — the most important screen
-- [ ] Wireframe — **Trip Knowledge Assistant chat panel** (incl. mode toggle for Ask This Itinerary)
 - [ ] Wireframe — **Dashboard**
 - [ ] Both: skim Navan (navan.com), ITILITE (itilite.com), Deem (deem.com) for layout inspiration, 5–10 min each
 - [ ] Agree on shared visual language (nav structure, spacing, where primary actions live)
 - [ ] Save the Figma link somewhere both can find (pin in chat / put in `README.md`)
 
-**Deliverable:** ☐ One shared Figma file covering all 4 core screens.
+**Deliverable:** ☐ One shared Figma file covering all 3 core screens.
 
 ---
 
 **Feature/Part (Day 1–5):** App Shell + Backend Skeleton + Docker Compose — Infrastructure setup, not a scored PRD feature yet (official brief: `tech_stack` = React/Next.js, FastAPI, PostgreSQL)
 
 ## Day 1
-- [ ] Swetalin: Create repo structure (`backend/`, `frontend/`, `data/`); write `docker-compose.yml` with Postgres (`pgvector/pgvector` image)
+- [ ] Swetalin: Create repo structure (`backend/`, `frontend/`, `data/`); write `docker-compose.yml` with plain Postgres
 - [ ] Bhuvan: `npx create-next-app@latest`; confirm dev server runs at `localhost:3000`
 
 ## Day 2
@@ -232,55 +233,52 @@
 
 ---
 
-**Feature/Part (Day 41–45):** Trip Knowledge Assistant v1 (US-08, Must) — document ingestion + RAG retrieval + cited Q&A. All backend/RAG work sits with Swetalin; Bhuvan gets a head start on the chat UI shell.
+**Feature/Part (Day 41–45):** Authorization checks + API input/output documentation. *(Amended 2026-09-16: originally the Trip Knowledge Assistant — cut from scope, "RAG is not needed." See `03_PRD.md` amendment, `17_Risk_Register.md` R-011.)*
 
 ## Day 41
-- [ ] Swetalin: `documents` + `document_chunks` migrations (pgvector column); install `pypdf`; standalone script extracting text from a sample PDF
-- [ ] Bhuvan: Review assistant chat panel spec in `10_UI_UX_Design.md`; sketch chat UI structure (message list, input, mode toggle)
+- [ ] Swetalin: Write trip-ownership-check FastAPI dependency; apply to all trip-scoped routes
+- [ ] Bhuvan: Review frontend error-state handling against real backend error shapes (401/403/404/409/422)
 
 ## Day 42
-- [ ] Swetalin: Write sample knowledge documents (per `09_Mock_Data_Spec.md` §3); implement chunking logic
-- [ ] Bhuvan: Build static chat panel shell (placeholder messages)
+- [ ] Swetalin: Write authz integration tests (a user can't access another user's trip)
+- [ ] Bhuvan: UI polish pass on forms/lists
 
 ## Day 43
-- [ ] Swetalin: Implement embedding + storing chunks (`POST /documents`)
-- [ ] Bhuvan: Build citation display component (static)
+- [ ] Swetalin: Document concrete request/response JSON examples for every endpoint in `07_API_Specification.md`
+- [ ] Bhuvan: Continue UI polish pass
 
 ## Day 44
-- [ ] Swetalin: Review chunk quality against sample documents; implement pgvector similarity search for a question
-- [ ] Bhuvan: Build "not covered" empty-state UI
+- [ ] Swetalin: Audit trip-scoped endpoints for missing auth checks; fix any gaps found
+- [ ] Bhuvan: Cross-check frontend API calls against the now-documented request/response shapes
 
 ## Day 45 — Sync
-- [ ] Both: Test retrieval quality together — right chunk for an obvious question?
-- [ ] Swetalin: Implement `POST /assistant/ask` with citation + "not covered" fallback; Bhuvan: confirm static UI shell matches the real response shape
+- [ ] Both: Verify a logged-in user genuinely cannot see another user's trip data
+- [ ] Both: Walk through the documented API examples together via `/docs` (Swagger)
 
-**Deliverable:** ☐ Upload a document, ask a question, get a cited answer, rendered in a working chat UI. Matches PRD US-08.
+**Deliverable:** ☐ Every trip-scoped endpoint has a real authorization check; `07_API_Specification.md` documents concrete input/output for every endpoint.
 
 ---
 
-**Feature/Part (Day 46–50):** Ask This Itinerary (US-09, Should) + authorization/security hardening around it
+**Feature/Part (Day 46–50):** Buffer / hardening. *(Amended 2026-09-16: originally Ask This Itinerary — cut from scope along with the rest of the RAG-based features.)*
 
 ## Day 46
-- [ ] Swetalin: Write trip-ownership-check FastAPI dependency; apply to all trip-scoped routes; design the itinerary-scoped retrieval
-- [ ] Bhuvan: Wire the static chat panel to the real `/assistant/ask` endpoint from Day 41–45
+- [ ] Swetalin: Re-test the optimization pipeline against edge cases (tight budget, multiple close-priced options)
+- [ ] Bhuvan: Polish the Itinerary Result View against real data
 
 ## Day 47
-- [ ] Swetalin: Implement `POST /trips/{id}/ask`
-- [ ] Bhuvan: Quick wireframe (15 min) refining the assistant chat panel with the mode toggle; start Ask This Itinerary UI
+- [ ] Swetalin: Add/expand backend tests for the pipeline guardrail
+- [ ] Bhuvan: Accessibility pass on forms (label associations, keyboard nav)
 
 ## Day 48
-- [ ] Swetalin: Ensure responses clearly labeled itinerary-scoped vs. knowledge-base
-- [ ] Bhuvan: Continue building Ask This Itinerary UI
+- [ ] Both: Catch-up buffer — clear any open bugs from Day 1–45
 
 ## Day 49
-- [ ] Swetalin: Write authz integration tests (a user can't access another user's trip); audit trip-scoped endpoints for missing auth checks
-- [ ] Bhuvan: Wire Ask This Itinerary UI to `POST /trips/{id}/ask`
+- [ ] Both: Catch-up buffer — clear any open bugs from Day 1–45
 
 ## Day 50 — Sync
-- [ ] Both: Verify a logged-in user genuinely cannot see another user's trip data
-- [ ] Bhuvan: Test a few "why not the earlier flight?"-style questions
+- [ ] Both: Full walkthrough of the app together; list anything still rough before Day 51
 
-**Deliverable:** ☐ Ask This Itinerary working, clearly distinguished from general assistant; authorization holes closed.
+**Deliverable:** ☐ A hardened, bug-free Must-have feature set going into Day 51 — no new scope added this stretch.
 
 ---
 
@@ -291,7 +289,7 @@
 - [ ] Bhuvan: Quick wireframe (15 min) refining dashboard against real metrics; build Dashboard UI
 
 ## Day 52
-- [ ] Swetalin: Build accuracy eval harness (cost-consistency, ledger completeness checks) AND RAG citation eval set (WikiQA-style triples)
+- [ ] Swetalin: Build accuracy eval harness (cost-consistency, ledger completeness checks)
 - [ ] Bhuvan: Accessibility pass on forms/dashboard
 
 ## Day 53
@@ -345,24 +343,22 @@
 - [ ] Trade-off Ledger — **Must** (US-004)
 - [ ] Explainable rationale — **Must** (US-006)
 - [ ] Review/edit/approve — **Must** (US-007)
-- [ ] Trip Knowledge Assistant — **Must** (US-08)
 - [ ] Audit trail — **Must**
-- [ ] Ask This Itinerary — **Should** (US-09)
 - [ ] Dashboard — **Should** (US-010)
-- [ ] Streaming assistant responses — **Could**
 - [ ] What-If Simulator — **Could (stretch)** (US-011)
 - [ ] Multi-agent expansion — **Stretch**
 
+*(Amended 2026-09-16: Trip Knowledge Assistant (US-08) and Ask This Itinerary (US-09) removed — cut from scope, "RAG is not needed." See `03_PRD.md` amendment, `17_Risk_Register.md` R-011.)*
+
 ## B. Infrastructure & Setup
 - [ ] GitHub repo created, both team members as collaborators
-- [ ] Docker Compose (Postgres + pgvector, backend)
+- [ ] Docker Compose (Postgres, backend)
 - [ ] Next.js app shell (App Router, TypeScript, Tailwind, shadcn/ui)
 - [ ] FastAPI skeleton
 - [ ] Auth: JWT issuance/verification, RBAC (Member/Admin)
-- [ ] DB schema + Alembic migrations for all tables (`users`, `travelers`, `trips`, `itineraries`, `tradeoff_ledger_entries`, `decisions`, `audit_events`, `documents`, `document_chunks`)
+- [ ] DB schema + Alembic migrations for all tables (`users`, `travelers`, `trips`, `itineraries`, `tradeoff_ledger_entries`, `decisions`, `audit_events`)
 - [ ] Mock flight data seeded (`data/mock_flights.json`)
 - [ ] Mock hotel data seeded (`data/mock_hotels.json`)
-- [ ] Sample knowledge documents ready
 - [ ] `.env.example`, `.gitignore`, `README.md`
 - [ ] GitHub Actions CI (backend tests + frontend type check)
 - [ ] Frontend deployed (Vercel)
@@ -371,7 +367,6 @@
 ## C. UI/UX Wireframing
 - [ ] Trip Request Form — wireframed Day 0
 - [ ] Itinerary Result View — wireframed Day 0, refined Day 36
-- [ ] Trip Knowledge Assistant chat panel — wireframed Day 0, refined Day 49
 - [ ] Dashboard — wireframed Day 0, refined Day 51
 - [ ] Login/Register forms — wireframed Day 6
 - [ ] What-If diff UI — wireframed Day 54 (only if stretch goal attempted)
@@ -381,8 +376,7 @@
 - [ ] Integration tests: all API endpoints (happy path + documented error cases)
 - [ ] Pipeline test: LangGraph response structure (not exact LLM prose)
 - [ ] Guardrail test: cost-consistency check fails correctly on bad input
-- [ ] RAG citation eval set built and run
-- [ ] Frontend component tests: trip form, review/approve flow, chat panel
+- [ ] Frontend component tests: trip form, review/approve flow
 - [ ] Security review complete (secrets, auth, input validation)
 - [ ] Accessibility pass on forms/dashboard
 

@@ -7,7 +7,7 @@ Short, numbered records of decisions that could plausibly have gone another way 
 ## ADR-001: Single Postgres instance for both relational and vector data
 **Decision:** Use `pgvector` inside the mandated PostgreSQL database rather than a dedicated vector DB (Pinecone, Weaviate, etc.).
 **Why:** The stack (PostgreSQL) is already mandated by the project brief; adding a second database is unnecessary operational complexity for a 2-person team, and `pgvector` is mature enough for the data volumes here (a handful of knowledge documents, not millions of vectors).
-**Status:** Accepted.
+**Status:** **Moot 2026-09-16** — the instructor cut the RAG-based features this decision supported ("RAG is not needed," see `03_PRD.md` amendment, `17_Risk_Register.md` R-011). No vector data exists anymore, so `pgvector` isn't needed either. Kept here for the historical record of why it was originally chosen.
 
 ## ADR-002: (see ADR-001 — merged, no separate vector DB)
 *(Number reserved to keep IDs stable if this list is extended; ADR-001 covers the decision.)*
@@ -40,4 +40,4 @@ Short, numbered records of decisions that could plausibly have gone another way 
 ## ADR-008: `pypdf` for PDF text extraction
 **Decision:** Use `pypdf` over `pdfplumber` or `unstructured`.
 **Why:** Pure Python, no OS-level dependency (e.g. Poppler) to install separately — the most accessible option for a beginner 2-person team on Windows/macOS mixed environments. The project only needs plain text extraction, not table/layout preservation.
-**Status:** Accepted.
+**Status:** **Moot 2026-09-16** — this supported document ingestion for the now-removed Trip Knowledge Assistant (see ADR-001, `17_Risk_Register.md` R-011). Kept for the historical record.

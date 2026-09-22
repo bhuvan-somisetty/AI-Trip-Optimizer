@@ -3,6 +3,8 @@
 > **Provenance:** This entire analysis is the team's own market research. It is not provided, named, or requested anywhere in the official brief or PRD — included because it strengthens the differentiation rationale in `20_Differentiators.md`, not because it was assigned. Every website link below was **live-verified by fetching it on 2026-09-08** — status noted per entry. Feature lists are drawn from each company's own live website content at that time, not assumed.
 >
 > **Amended 2026-09-09:** CO2-aware optimization was removed as one of our own features (cut per instructor instruction — see `03_PRD.md` amendment note). Entries below that originally compared competitors' carbon-tracking features against our own CO2 feature have been reframed around other genuine gaps instead — we no longer compete on that axis.
+>
+> **Amended 2026-09-16:** Ask This Itinerary removed as one of our own features (RAG-based features cut per instructor instruction — see `03_PRD.md` amendment note, `17_Risk_Register.md` R-011). Entries below that cited Ask This Itinerary as our differentiator against competitors' conversational AI (Navan's Ava, ITILITE's Iris) now lean on the Trade-off Ledger alone — still a real gap none of these competitors close.
 
 Expands the summary in `00_Investigation_Report.md` A7. This project sits in the **corporate/business travel management** category — tools a company uses to plan and manage trips for its own employees, distinct from consumer trip planners (Expedia, Google Flights, etc.), which are out of scope for comparison since they don't serve the same B2B buyer.
 
@@ -22,7 +24,7 @@ Expands the summary in `00_Investigation_Report.md` A7. This project sits in the
 - **Known features:** Fast self-serve booking flow; AI concierge ("Ava") for conversational trip search and booking help; real-time policy enforcement during booking; virtual and physical corporate cards; expense management; analytics dashboard; mobile app.
 - **Strength:** Strong UI/UX, fast booking flow, AI-assisted search. **Notable:** the Indian corporate travel startup Tripeur has been folded into Navan — `tripeur.com` now redirects straight to `navan.com` (live-verified) — a sign of ongoing consolidation in this market.
 - **Gap:** The AI concierge is conversational/booking-oriented, not a structured, auditable trade-off ledger — no persistent record of "here are all the options considered and the specific reason each was rejected."
-- **Why a user would pick AI Trip Optimizer instead:** Ask This Itinerary gives a grounded, cited answer about one *specific already-generated recommendation*, backed by a persistent audit trail — not a one-off chat reply that disappears from the decision record.
+- **Why a user would pick AI Trip Optimizer instead:** The Trade-off Ledger is a persistent, structured record of the recommendation and why every alternative lost — not a one-off chat reply that disappears from the decision record.
 
 ## Perk (formerly TravelPerk)
 **Website:** https://www.perk.com — ✅ live-verified (`travelperk.com` now 301-redirects here; live site confirms same positioning — "the intelligent platform for travel and spend" — same company, rebranded)
@@ -58,7 +60,7 @@ Expands the summary in `00_Investigation_Report.md` A7. This project sits in the
 - **Known features:** Open API platform; white-labeling; global content aggregation; consumer-grade self-service traveler experience; configurable policy controls; described AI architecture for "enhanced booking and management functions."
 - **Strength:** Modern infrastructure, positions itself as more flexible/composable than legacy TMCs.
 - **Gap:** Being infrastructure-first, it doesn't itself expose an end-user-facing explainability feature like a Trade-off Ledger — that's left to whoever builds on top of its API. Its AI claims are described in general marketing language, not a specific auditable reasoning feature.
-- **Why a user would pick AI Trip Optimizer instead:** A direct, ready-made explainable decision surface (Trade-off Ledger, Ask This Itinerary) rather than raw infrastructure someone else would still need to build a UI on top of.
+- **Why a user would pick AI Trip Optimizer instead:** A direct, ready-made explainable decision surface (the Trade-off Ledger) rather than raw infrastructure someone else would still need to build a UI on top of.
 
 ## Emburse
 **Website:** https://www.emburse.com — ✅ live-verified
@@ -82,10 +84,10 @@ Expands the summary in `00_Investigation_Report.md` A7. This project sits in the
 **Website:** https://www.itilite.com — ✅ live-verified
 
 - **What it is:** An India-based unified corporate travel and expense management platform — the closest direct India-market comparison for this project.
-- **Known features:** Negotiated corporate flight/hotel rates; OCR-based automated expense capture with AI GL-code tagging; virtual corporate cards with cashback; **"Iris"** — a conversational AI travel analyst for instant insights (closest analog to Navan's "Ava" and to our Trip Knowledge Assistant); **"Mastermind"** — AI spend benchmarking and savings analysis; 24/7 human support with sub-30-second response guarantee; ERP integrations (NetSuite, SAP, Oracle, etc.).
+- **Known features:** Negotiated corporate flight/hotel rates; OCR-based automated expense capture with AI GL-code tagging; virtual corporate cards with cashback; **"Iris"** — a conversational AI travel analyst for instant insights (closest analog to Navan's "Ava"); **"Mastermind"** — AI spend benchmarking and savings analysis; 24/7 human support with sub-30-second response guarantee; ERP integrations (NetSuite, SAP, Oracle, etc.).
 - **Strength:** Strong India-market presence, claims 20–30% travel spend reduction, genuinely close in ambition to this project (an AI analyst + savings analysis).
 - **Gap:** "Iris" is conversational (same pattern as Navan's Ava — no persistent structured ledger a user can audit later), and "Mastermind" is retrospective spend benchmarking, not a live, per-itinerary structured breakdown shown at the moment of choosing.
-- **Why a user would pick AI Trip Optimizer instead:** The Trade-off Ledger is generated *with* the recommendation, not as a separate after-the-fact benchmarking report — and Ask This Itinerary is scoped to one specific trip's own audit data, not a general conversational analyst.
+- **Why a user would pick AI Trip Optimizer instead:** The Trade-off Ledger is generated *with* the recommendation, not as a separate after-the-fact benchmarking report or a general conversational analyst.
 
 ## Could Not Verify (flagged, not included as confirmed)
 Two more India-market players were checked but **timed out repeatedly on automated fetch** (likely bot-blocking, common for these sites) — genuinely unverified, not guessed:
@@ -99,14 +101,14 @@ If you want these in your final submission, open them yourself in a browser and 
 |---|---|
 | Policy pass/fail flag (Concur) or none at all | Structured Trade-off Ledger: every alternative, its price, and the specific reason it won or lost |
 | Filtered results or a policy-compliant list, no per-alternative reasoning (Perk, Deem) | Structured Trade-off Ledger with a specific won/lost reason per alternative |
-| Conversational AI concierge/analyst with no persistent reasoning record (Navan's Ava, ITILITE's Iris) | Ask This Itinerary — cited answers grounded in one specific recommendation's own audit trail |
+| Conversational AI concierge/analyst with no persistent reasoning record (Navan's Ava, ITILITE's Iris) | Structured Trade-off Ledger, persisted with the recommendation itself |
 | Enterprise sales-led/service-led onboarding, opaque logic (Egencia/CWT/Amex GBT, BCD Travel) | Self-serve, fully explainable to the end user directly |
 | Infrastructure/API without an end-user explainability layer (Spotnana) | A ready-made, explainable decision surface out of the box |
 | Compliance AI that checks work after the fact (Emburse Assurance) | Explainability built into the recommendation itself, upfront |
 | No live re-optimization preview | What-If Simulator (stretch) — change one input, see a live diff, without committing |
 
 ## Where AI Trip Optimizer Differentiates
-Across all nine reviewed players, none treat "why was this chosen over that" as a first-class, structured UI element shown *at decision time* — it's either absent, buried in a policy pass/fail flag, handled conversationally with no persistent record, or delivered as a retrospective report/benchmark. The Must-have Trade-off Ledger in this project's PRD targets exactly that gap, and Ask This Itinerary / What-If Simulator extend it further than any of them expose to an end user directly. Full feature-to-gap mapping is in `20_Differentiators.md`.
+Across all nine reviewed players, none treat "why was this chosen over that" as a first-class, structured UI element shown *at decision time* — it's either absent, buried in a policy pass/fail flag, handled conversationally with no persistent record, or delivered as a retrospective report/benchmark. The Must-have Trade-off Ledger in this project's PRD targets exactly that gap, and the What-If Simulator extends it further than any of them expose to an end user directly. Full feature-to-gap mapping is in `20_Differentiators.md`.
 
 ## Honest Caveat
 This analysis is based on each product's own live website content as of 2026-09-08, not a hands-on trial of every competitor's actual product — appropriate rigor for a student project's competitive framing, not a claim of exhaustive hands-on benchmarking. Company websites change; re-verify before final submission if significant time has passed.
