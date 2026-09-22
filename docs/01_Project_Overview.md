@@ -21,17 +21,17 @@ This is a **website (web application)**, accessed through a browser — not a na
 ## Executive Summary
 *(Amended 2026-09-09 — CO2-aware optimization removed per instructor instruction; see `17_Risk_Register.md` R-009.)*
 
+*(Amended 2026-09-16 — Trip Knowledge Assistant and Ask This Itinerary removed entirely; the instructor said RAG is not needed. See `03_PRD.md` amendment and `17_Risk_Register.md` R-011.)*
+
 AI Trip Optimizer is a B2B decision-support workspace a business uses to plan and optimize trips for its own people. It ingests a trip request, searches mock flight and hotel data, checks the options against budget and constraints, and produces an optimized, explainable itinerary — with a structured trade-off breakdown — for a human to review, edit, and approve.
 
-The platform is intentionally a **decision-support system, not an autonomous booking agent** — a human always reviews and approves the final itinerary; the system never finalizes a decision on its own. A separate RAG-grounded Trip Knowledge Assistant answers travel-related questions with citations, drawn from documents the business uploads (upload is an implementation detail of this feature, not a separately scored one — see MVP list below).
+The platform is intentionally a **decision-support system, not an autonomous booking agent** — a human always reviews and approves the final itinerary; the system never finalizes a decision on its own.
 
 ## Core Product Flow
 Trip request → traveler & trip details captured → LangGraph pipeline searches mock flight/hotel data → budget & constraint check → itinerary composition with Trade-off Ledger → human review/edit → approve or reject (with reason) → decision/audit record.
 
-Separately: a question to the Trip Knowledge Assistant → retrieval from the uploaded knowledge base (or a specific itinerary's own data, for "Ask This Itinerary") → a cited, evidence-grounded answer.
-
 ## MVP
-*(Renumbered 2026-09-09 after removing CO2-aware optimization and Knowledge document upload as scored items — see amendment note above.)*
+*(Renumbered 2026-09-09 after removing CO2-aware optimization and Knowledge document upload as scored items — see amendment note above. Renumbered again 2026-09-16 after removing the Trip Knowledge Assistant.)*
 1. Traveler management (add/select travelers per trip).
 2. Trip request creation (dates, budget, preferences; starts in DRAFT status).
 3. Flight/Stay search against mock supplier data.
@@ -39,11 +39,9 @@ Separately: a question to the Trip Knowledge Assistant → retrieval from the up
 5. Itinerary composition (flights, stay, total cost).
 6. Trade-off Ledger — every alternative considered, with its price and the specific reason it won or lost.
 7. Review/edit/approve workflow (editing recalculates total cost; reject requires a stored reason).
-8. Trip Knowledge Assistant with citations (says so explicitly if a question isn't covered by any ingested document). Document ingestion is a required implementation detail of this feature, not its own scored line item.
-9. Audit trail of every pipeline run and decision.
+8. Audit trail of every pipeline run and decision.
 
 ## Should-Have (built alongside MVP where feasible)
-- Ask This Itinerary — the assistant answers questions grounded in one specific itinerary's own data and audit trail, distinct from knowledge-base answers.
 - Ops dashboard — total spend, average savings, average turnaround time for a selected period.
 
 ## Out of Scope for MVP
@@ -54,3 +52,4 @@ Separately: a question to the Trip Knowledge Assistant → retrieval from the up
 - What-If Simulator (Could-have/stretch — build only after the MVP pipeline works end-to-end).
 - Multi-agent pipeline expansion (explicit stretch goal in the project brief, not an MVP requirement — the MVP is a single two-stage LangGraph pipeline).
 - Training a custom LLM from scratch.
+- RAG-based question answering (Trip Knowledge Assistant, Ask This Itinerary) — cut from scope per instructor instruction, see `03_PRD.md` amendment.

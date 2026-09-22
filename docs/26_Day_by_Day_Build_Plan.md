@@ -5,15 +5,15 @@
 > **Amended 2026-09-09:** CO2 tasks removed from Week 5–6 below — CO2-aware optimization was cut per instructor instruction (see `03_PRD.md` amendment note, `17_Risk_Register.md` R-009).
 >
 > **Amended 2026-09-13:** Role split changed from topic-based (Product/Data/Optimizer vs. App/RAG/Assistant) to a strict **backend vs. frontend** split, per the team's own decision — see `16_Team_Responsibilities.md`. Swetalin now owns all backend/API/database/AI-pipeline work; Bhuvan now owns all frontend/UI work. Every day-table below has been rewritten to reflect this, including reallocating Week 9–11 tasks that used to mix backend RAG work into "Workstream B."
+>
+> **Amended 2026-09-16:** Weeks 9–10 rewritten — they originally covered the RAG-based Trip Knowledge Assistant and Ask This Itinerary, both cut from scope per instructor instruction ("RAG is not needed," see `03_PRD.md` amendment and `17_Risk_Register.md` R-011). That time is now authorization/hardening work and a buffer week.
 
 ## How to Read This Doc
 Each week has a goal, a **How to build it** section per feature (concrete steps — function names, endpoints, files touched), then a **Day 1–5** breakdown per person. Assumes a standard 5-day working week; compress or stretch days as your real schedule requires, but keep the task order — later days depend on earlier ones.
 
 **Roles:**
-- **Backend — Swetalin:** FastAPI, database schema/migrations, every API endpoint, the LangGraph pipeline, the RAG/document-ingestion backend logic, guardrails, dashboard queries.
+- **Backend — Swetalin:** FastAPI, database schema/migrations, every API endpoint, the LangGraph pipeline, guardrails, dashboard queries.
 - **Frontend — Bhuvan:** Next.js UI for every screen, component library, frontend state/data-fetching, wiring screens to Swetalin's endpoints.
-
-**PDF library, since it keeps coming up:** `pypdf` — pure Python, `pip install pypdf`, no separate system install (unlike `pdfplumber`/`pdf2image`, which need Poppler installed on the OS). Used in Week 9 for knowledge-document text extraction. Full reasoning in `18_Architecture_Decision_Records.md` ADR-008.
 
 **Full library list** (don't reinstall per-week — install what's needed as you reach it): see `22_Tech_Stack_and_Libraries.md`.
 
@@ -24,9 +24,9 @@ Every screen gets a quick **low-fidelity wireframe before it gets built** — no
 - **What "low-fidelity" means:** boxes, labels, and arrows — no colors, no real components, no pixel-perfect spacing. The goal is agreeing on *what's on the screen and where*, not finishing the visual design. Real styling comes from Tailwind + shadcn/ui during the build step itself.
 - **Reference material:** `10_UI_UX_Design.md` already specifies what each screen must contain (per PRD acceptance criteria) — wireframe *that*, don't invent new content. For visual inspiration (layout patterns, not copying), the closest competitor UIs already reviewed in `19_Competitor_Analysis.md` are worth a quick look before wireframing:
   - **Navan** (navan.com) — cleanest modern layout, good reference for the trip request flow and overall nav structure.
-  - **ITILITE** (itilite.com) — closest feature match to this project; useful for the assistant chat panel layout.
+  - **ITILITE** (itilite.com) — closest feature match to this project; useful for general layout ideas.
   - **Deem** (deem.com) — useful for dashboard/reporting layout ideas.
-- **Where each screen's wireframe happens:** Day 0 below covers the 4 core screens jointly, upfront, so both of you share one visual vocabulary before splitting work; anything not covered there gets a quick wireframe pass on the day it's first built (marked inline in the tables below).
+- **Where each screen's wireframe happens:** Day 0 below covers the 3 core screens jointly, upfront, so both of you share one visual vocabulary before splitting work; anything not covered there gets a quick wireframe pass on the day it's first built (marked inline in the tables below).
 
 ---
 
@@ -37,7 +37,7 @@ No AI/LLM code this month — pure plumbing, so Month 2 isn't fighting infrastru
 **Do this together, in one sitting, ~2–3 hours, before either of you writes any code.**
 
 1. Open `10_UI_UX_Design.md` together and read each screen's required content out loud.
-2. In Figma (or paper), sketch low-fidelity wireframes for the 4 core screens: **Trip Request Form**, **Itinerary Result View** (the most important one — Trade-off Ledger panel, budget/constraint flags, rationale text, approve/reject actions), **Trip Knowledge Assistant chat panel** (including the mode toggle for Ask This Itinerary), and **Dashboard**.
+2. In Figma (or paper), sketch low-fidelity wireframes for the 3 core screens: **Trip Request Form**, **Itinerary Result View** (the most important one — Trade-off Ledger panel, budget/constraint flags, rationale text, approve/reject actions), and **Dashboard**.
 3. Briefly look at Navan, ITILITE, and Deem's live sites (links above) for layout inspiration — 5–10 minutes each, not a deep audit.
 4. Agree on a shared visual language: nav structure, spacing rhythm, where primary actions (Approve/Reject/Ask) live on the page — so the backend's data shapes and Bhuvan's later screens still feel like one product.
 5. Save the Figma file link somewhere both of you can find it again (e.g. pinned in your shared chat, or a link in `README.md`).
@@ -49,11 +49,11 @@ No AI/LLM code this month — pure plumbing, so Month 2 isn't fighting infrastru
 **How to build it:**
 - Frontend: `npx create-next-app@latest` → TypeScript, App Router, Tailwind, `src/` directory. Install `@tanstack/react-query`, `zod`. Init shadcn/ui (`npx shadcn@latest init`).
 - Backend: create `backend/` with `fastapi`, `uvicorn[standard]`, `sqlmodel`, `python-dotenv` in `requirements.txt`. A minimal `app/main.py` with a `/health` endpoint.
-- Docker Compose: `docker-compose.yml` with a `postgres` service (use the `pgvector/pgvector` image so the extension is available from day one) and a `backend` service.
+- Docker Compose: `docker-compose.yml` with a plain `postgres` service and a `backend` service.
 
 | Day | Swetalin (Backend) | Bhuvan (Frontend) |
 |---|---|---|
-| 1 | Create repo structure (`backend/`, `frontend/`, `data/`, `docs/` already exists); write `docker-compose.yml` with Postgres (`pgvector/pgvector` image) | `create-next-app` scaffold; confirm dev server runs at `localhost:3000` |
+| 1 | Create repo structure (`backend/`, `frontend/`, `data/`, `docs/` already exists); write `docker-compose.yml` with Postgres | `create-next-app` scaffold; confirm dev server runs at `localhost:3000` |
 | 2 | FastAPI skeleton (`app/main.py`, `/health` endpoint); confirm `uvicorn app.main:app --reload` runs | Install Tailwind + shadcn/ui; build a basic layout shell (nav, page container) — follow the Day 0 wireframe's nav structure |
 | 3 | Wire backend container into Docker Compose; confirm `docker compose up -d` brings up Postgres + backend together | Install React Query; set up a `lib/api.ts` fetch wrapper pointed at `NEXT_PUBLIC_API_URL` |
 | 4 | Write `.env.example` (DB URL, JWT secret placeholder, OpenAI key placeholder) per `11_Security_Design.md` §3 | Confirm frontend can call `/health` through the API wrapper and render the result |
@@ -171,38 +171,37 @@ This whole feature is backend/AI-pipeline work — Bhuvan's frontend side this s
 
 # Month 3 — AI & Deploy (Weeks 9–12)
 
-## Week 9 — Knowledge Document Ingestion + Trip Knowledge Assistant v1
+## Week 9 — Authorization Checks + API Hardening
 
-**How to build it** (full detail in `08_GenAI_Architecture.md` §3):
-1. `documents` + `document_chunks` tables (pgvector `embedding` column) per `06_Database_Design.md`.
-2. `POST /documents` — multipart upload → `pypdf` text extraction → chunk (~500 tokens, overlap) → embed each chunk → store.
-3. `POST /assistant/ask` — embed the question → pgvector similarity search (top-k) → LLM answers only from retrieved chunks, cites source, says "not covered" if insufficient (PRD US-08).
+*(Amended 2026-09-16: this week originally covered knowledge-document ingestion and the Trip Knowledge Assistant — cut from scope, "RAG is not needed." See amendment note at the top of this file.)*
 
-This entire feature is backend/RAG work — all of it now sits with Swetalin. Bhuvan gets a head start on the assistant chat UI this week, ahead of the backend being ready to wire up.
+**How to build it:** Every `/trips/{id}/...` endpoint must verify the requesting user has access (`11_Security_Design.md` §2) — a trip-ownership-check FastAPI dependency applied to all trip-scoped routes, not repeated inline per route. Also a full pass documenting concrete input/output examples for every endpoint in `07_API_Specification.md`, per the instructor's separate "input/output of API" instruction.
 
 | Day | Swetalin (Backend) | Bhuvan (Frontend) |
 |---|---|---|
-| 1 | `documents` + `document_chunks` migrations (pgvector column); install `pypdf`, write a standalone script extracting text from a sample PDF | Review `10_UI_UX_Design.md`'s assistant chat panel spec; sketch the chat UI structure (message list, input, mode toggle) |
-| 2 | Write the sample knowledge documents per `09_Mock_Data_Spec.md` §3; implement chunking logic | Build the static chat panel shell (placeholder messages) |
-| 3 | Implement embedding + storing chunks (`POST /documents`) | Build the citation display component (static) |
-| 4 | Review chunk quality against the sample documents; implement pgvector similarity search for a question | Build the "not covered" empty-state UI |
-| 5 | **Sync:** test retrieval quality together — does the right chunk come back for an obvious question? Implement `POST /assistant/ask` with citation + "not covered" fallback | Same sync; confirm the static UI shell matches the real `/assistant/ask` response shape |
+| 1 | Write the trip-ownership-check FastAPI dependency; apply to all trip-scoped routes | Review frontend error-state handling against real backend error shapes (401/403/404/409/422) |
+| 2 | Write authz integration tests (a user can't access another user's trip) | UI polish pass on forms/lists using the buffer time |
+| 3 | Document concrete request/response JSON examples for every endpoint in `07_API_Specification.md` | Same UI polish pass, continued |
+| 4 | Audit trip-scoped endpoints for missing auth checks; fix any gaps found | Cross-check frontend API calls against the now-documented request/response shapes |
+| 5 | **Sync:** verify together that a logged-in user genuinely cannot see another user's trip data; walk through the documented API examples together via `/docs` (Swagger) | Same sync |
 
-**Deliverable:** Upload a document, ask a question, get a cited answer, rendered in a working chat UI. Matches PRD US-08.
+**Deliverable:** Every trip-scoped endpoint has a real authorization check; `07_API_Specification.md` documents concrete input/output for every endpoint.
 
-## Week 10 — Ask This Itinerary + Authorization Checks
+## Week 10 — Buffer / Hardening
 
-**How to build it:** `POST /trips/{id}/ask` — same retrieve-then-generate pattern, but source is that trip's own itinerary/ledger/audit data, not the knowledge base (PRD US-09). Every `/trips/{id}/...` endpoint must verify the requesting user has access (`11_Security_Design.md` §2).
+*(Amended 2026-09-16: this week originally covered Ask This Itinerary — cut from scope along with the rest of the RAG-based features. See amendment note at the top of this file.)*
+
+**How to build it:** No new feature this week — extra time to harden the optimization pipeline (the project's one AI surface) and polish the UI, or to catch up if Weeks 1–9 ran long.
 
 | Day | Swetalin (Backend) | Bhuvan (Frontend) |
 |---|---|---|
-| 1 | Write the trip-ownership-check FastAPI dependency; apply to all trip-scoped routes; design the itinerary-scoped retrieval (what data counts as "this itinerary's own data") | Wire the static chat panel to the real `/assistant/ask` endpoint from Week 9 |
-| 2 | Implement `POST /trips/{id}/ask` | Quick wireframe (15 min) refining the assistant chat panel with the mode toggle; start Ask This Itinerary UI |
-| 3 | Ensure responses are clearly labeled itinerary-scoped vs. knowledge-base (never confused — PRD US-09 acceptance criteria) | Continue building Ask This Itinerary UI |
-| 4 | Write authz integration tests (a user can't access another user's trip); audit trip-scoped endpoints for missing auth checks | Wire Ask This Itinerary UI to `POST /trips/{id}/ask` |
-| 5 | **Sync:** verify together that a logged-in user genuinely cannot see another user's trip data | Same sync; test a few "why not the earlier flight?"-style questions |
+| 1 | Re-test the optimization pipeline against edge cases (tight budget, multiple close-priced options) | Polish the Itinerary Result View against real data |
+| 2 | Add/expand backend tests for the pipeline guardrail | Accessibility pass on forms (label associations, keyboard nav) |
+| 3 | Catch-up buffer — clear any open bugs from Weeks 1–9 | Catch-up buffer — clear any open bugs from Weeks 1–9 |
+| 4 | Catch-up buffer | Catch-up buffer |
+| 5 | **Sync:** full walkthrough of the app together, list anything still rough before Week 11 | Same sync |
 
-**Deliverable:** Ask This Itinerary working and clearly distinguished from the general assistant; authorization holes closed.
+**Deliverable:** A hardened, bug-free Must-have feature set going into Week 11 — no new scope added this week.
 
 ## Week 11 — Dashboard, Eval Harness, Security Review, Stretch Goals
 
@@ -211,7 +210,7 @@ This entire feature is backend/RAG work — all of it now sits with Swetalin. Bh
 | Day | Swetalin (Backend) | Bhuvan (Frontend) |
 |---|---|---|
 | 1 | `GET /dashboard` aggregation query | Quick wireframe (15 min) refining the dashboard from Day 0 against real metrics available by now; then build Dashboard UI |
-| 2 | Build the accuracy eval harness (cost-consistency, ledger completeness checks) AND the RAG citation eval set (WikiQA-style triples) — both are AI-evaluation work | Accessibility pass on forms/dashboard (`10_UI_UX_Design.md` §4) |
+| 2 | Build the accuracy eval harness (cost-consistency, ledger completeness checks) | Accessibility pass on forms/dashboard (`10_UI_UX_Design.md` §4) |
 | 3 | Security review: secrets, auth, input validation pass (`11_Security_Design.md`) | Polish Dashboard UI against real data |
 | 4 | **If on schedule:** `POST /trips/{id}/preview` (What-If Simulator, `persist:false`) | **If on schedule:** What-If diff UI |
 | 5 | **Sync:** go/no-go decision on stretch goals based on actual progress; if behind, cut per `17_Risk_Register.md` R-005; run the full eval harness and record results into `25_Project_Score.md` | Same sync |
@@ -235,4 +234,4 @@ This entire feature is backend/RAG work — all of it now sits with Swetalin. Bh
 ---
 
 ## A Note on This Being Your First GenAI Project
-The only genuinely new-to-you concept in this whole plan is Weeks 5–6 and 9 — everything in Month 1 is standard CRUD/auth work you may already recognize from other web projects. Don't front-load anxiety onto Week 1 thinking it's the "AI part" — it isn't. The real learning curve starts at Week 5, and by then you'll have a working app to build the AI features into, not a blank page.
+The only genuinely new-to-you concept in this whole plan is Weeks 5–6 — everything in Month 1 is standard CRUD/auth work you may already recognize from other web projects, and Weeks 9–10 are hardening/buffer time, not new AI concepts. Don't front-load anxiety onto Week 1 thinking it's the "AI part" — it isn't. The real learning curve starts at Week 5, and by then you'll have a working app to build the AI features into, not a blank page.
