@@ -11,8 +11,8 @@ The project brief names two evaluation metrics directly: **Accuracy** and **UX**
 | Cost-figure consistency rate | % of generated itineraries where every dollar figure in the LLM rationale matches a code-computed value | 100% (enforced by the guardrail in `08_GenAI_Architecture.md` §2 — a mismatch fails the pipeline, so this should be structurally guaranteed, not just measured) |
 | Trade-off Ledger completeness | % of itineraries where every considered alternative has a populated price and reason | 100% |
 | Budget/constraint check correctness | Unit-test coverage of the deterministic check logic against hand-crafted edge cases (exactly-at-budget, one-rule-violated, multiple-rules-violated) | Full coverage of documented rules |
-| RAG citation accuracy | On a hand-built eval set (WikiQA-style question/answer/evidence triples, per the project's reference dataset), % of answers whose citation actually supports the answer | Track and report; no fabricated citations |
-| RAG "don't know" precision | % of out-of-scope questions correctly answered with "not covered" rather than a guess | High — false confidence is worse than an honest "I don't know" per product principles |
+
+*(Amended 2026-09-16: RAG citation accuracy and "don't know" precision metrics removed — the instructor cut the RAG-based Trip Knowledge Assistant from scope, see `03_PRD.md` amendment / `17_Risk_Register.md` R-011.)*
 
 ## 2. UX
 

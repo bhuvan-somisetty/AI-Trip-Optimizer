@@ -2,10 +2,12 @@
 
 *This is the instructor-approved PRD, transcribed from `AI Trip Optimizer — PRD final.pdf`, with one amendment below.*
 
-> **Amendment (2026-09-09) — correcting an oversight in the approved PDF, not a new scope change:** The instructor's actual instruction was to remove two **user stories** (old US-005, "CO2 alongside cost," and old US-009, "upload a knowledge document") from an earlier 13-story draft — confirmed by directly diffing that draft against this approved PDF. Both stories were correctly removed. But the corresponding rows in the **Feature Priorities table** — "CO2-aware optimization" and "Knowledge document upload" — should have been removed at the same time and were not; that was a mistake made when finalizing this PDF, not a second instruction from the instructor. This amendment corrects the table below to match what the instructor actually asked for. **The PDF file itself (`AI Trip Optimizer — PRD final.pdf`) still contains the stale rows and was not corrected** — see `17_Risk_Register.md` R-009 for whether that needs fixing/resubmitting. Note: "Trip Knowledge Assistant" remains Must-have and functionally still requires *some* way to ingest documents — that upload mechanism is kept as an implementation detail of the Assistant feature, just no longer tracked as its own separately-scored line item.
+> **Amendment (2026-09-09) — correcting an oversight in the approved PDF, not a new scope change:** The instructor's actual instruction was to remove two **user stories** (old US-005, "CO2 alongside cost," and old US-009, "upload a knowledge document") from an earlier 13-story draft — confirmed by directly diffing that draft against this approved PDF. Both stories were correctly removed. But the corresponding rows in the **Feature Priorities table** — "CO2-aware optimization" and "Knowledge document upload" — should have been removed at the same time and were not; that was a mistake made when finalizing this PDF, not a second instruction from the instructor. This amendment corrects the table below to match what the instructor actually asked for. **The PDF file itself (`AI Trip Optimizer — PRD final.pdf`) still contains the stale rows and was not corrected** — see `17_Risk_Register.md` R-009 for whether that needs fixing/resubmitting. ~~Note: "Trip Knowledge Assistant" remains Must-have and functionally still requires *some* way to ingest documents — that upload mechanism is kept as an implementation detail of the Assistant feature, just no longer tracked as its own separately-scored line item.~~ *(Superseded by the amendment directly below — the Assistant itself is now out of scope.)*
+
+> **Amendment (2026-09-16) — new scope change, instructor-directed:** The instructor told the team directly ("RAG is not needed") during Viva 1 week that the RAG-based question-answering features should be dropped entirely, not just simplified. This removes **Trip Knowledge Assistant** (US-08, was Must-have) and **Ask This Itinerary** (US-09, was Should) from scope — both rows are removed from the Feature Priorities table below and both user story sections are removed. This is a genuine scope cut, unlike the 2026-09-09 amendment above which only corrected a paperwork mismatch. Nothing about the trip-optimization pipeline (flight/stay search, budget/constraint check, itinerary composition, Trade-off Ledger, review/approve) is affected — RAG only ever powered the two removed features. **Not yet confirmed in writing by the instructor** — see `17_Risk_Register.md` R-011.
 
 ## Product Goal
-Create a trip-planning workspace that converts a trip request into an optimized, budget-checked, explainable itinerary and answers travel-related questions with cited evidence, without ever finalizing a decision on its own.
+Create a trip-planning workspace that converts a trip request into an optimized, budget-checked, explainable itinerary, without ever finalizing a decision on its own.
 
 ## Feature Priorities
 | Feature | Priority |
@@ -17,11 +19,8 @@ Create a trip-planning workspace that converts a trip request into an optimized,
 | Itinerary composition | Must |
 | Trade-off Ledger | Must |
 | Review/edit/approve | Must |
-| Trip Knowledge Assistant | Must |
 | Audit trail | Must |
-| Ask This Itinerary | Should |
 | Dashboard | Should |
-| Streaming assistant responses | Could |
 | What-If Simulator | Could (stretch) |
 
 **Stretch goals, in priority order:** (1) What-If Simulator, (2) multi-agent expansion — splitting the optimization pipeline into coordinating Flight/Stay/Constraints/Composer agents. Full rationale for both is in the Investigation & Strategy Report, sections A7 and A19.
@@ -81,20 +80,6 @@ As a team member, I want to edit and approve or reject an itinerary so that huma
 - Editing a line item recalculates the total cost.
 - Approve sets trip status to DECIDED and records the decision.
 - Reject requires a reason, which is stored with the decision.
-
-### US-08
-As any team member, I want to ask a travel-related question and get a cited answer so that I don't have to search documents myself.
-
-**Acceptance criteria**
-- Answer cites the specific source document/chunk.
-- If the answer isn't covered by any ingested document, the assistant says so instead of guessing.
-
-### US-09
-As a team member, I want to ask questions about my specific itinerary so that I understand its reasoning without re-reading the whole trade-off ledger myself.
-
-**Acceptance criteria**
-- Given an existing itinerary, questions like "why not the earlier flight?" are answered using that itinerary's own data and audit trail.
-- The assistant does not confuse itinerary-specific answers with knowledge-base answers — each response is clear about its source.
 
 ### US-010
 As an admin, I want spend and turnaround history so that the team's workflow is traceable.

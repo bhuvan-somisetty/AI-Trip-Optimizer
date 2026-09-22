@@ -20,7 +20,7 @@ cp .env.example .env
 ```
 docker compose up -d
 ```
-This should bring up a PostgreSQL container (with the `pgvector` extension enabled) and the FastAPI backend container, per `05_System_Architecture.md`.
+This should bring up a plain PostgreSQL container and the FastAPI backend container, per `05_System_Architecture.md`.
 
 ## 3. Run Database Migrations
 ```
@@ -56,5 +56,4 @@ pytest
 ```
 
 ## 8. Common Issues
-- **`pgvector` extension not found:** ensure the Postgres image used in Docker Compose includes the extension (e.g. `pgvector/pgvector` image), or run `CREATE EXTENSION IF NOT EXISTS vector;` manually after first start.
 - **Migrations out of sync:** always run `alembic upgrade head` after pulling changes that touch `backend/alembic/versions/`.

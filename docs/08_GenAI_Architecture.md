@@ -1,11 +1,9 @@
 # GenAI Architecture
 
-> **Provenance:** The RAG pattern is grounded in the official brief field `reference_docs` (Lewis et al., arXiv:2005.11401) and its named WikiQA-style evaluation approach. The specific LangGraph node design, guardrail implementation, and prompting details below are the team's own design — LangGraph itself is the only officially mandated framework (brief field `framework`).
+> **Provenance:** LangGraph is the only officially mandated framework (brief field `framework`); the node design, guardrail implementation, and prompting details below are the team's own design. The brief field `reference_docs` also names a RAG paper (Lewis et al., arXiv:2005.11401) and a WikiQA-style evaluation approach — those grounded the Trip Knowledge Assistant / Ask This Itinerary features, which the instructor cut from scope 2026-09-16 (see `03_PRD.md` amendment, `17_Risk_Register.md` R-011). This file now covers only the surviving GenAI surface, the optimization pipeline.
 
-## 1. Two Separate AI Surfaces
-This project has two distinct GenAI components — don't conflate them:
-1. The **LangGraph optimization pipeline** (structured, deterministic-checks-plus-LLM-explanation).
-2. The **RAG-grounded Trip Knowledge Assistant** (retrieval + cited generation), including its itinerary-scoped variant, "Ask This Itinerary."
+## 1. The One GenAI Surface
+This project has one GenAI component: the **LangGraph optimization pipeline** (structured, deterministic-checks-plus-LLM-explanation). A RAG-grounded Trip Knowledge Assistant and its itinerary-scoped variant "Ask This Itinerary" were originally planned as a second surface but were removed from scope by the instructor 2026-09-16 ("RAG is not needed") — see `17_Risk_Register.md` R-011.
 
 ## 2. LangGraph Optimization Pipeline
 
@@ -23,22 +21,10 @@ Keeps latency within the PRD's "a few seconds" target (US-003) and keeps cost pr
 ### Guardrail
 Before returning the response, the backend validates that every dollar figure in `rationale` matches a value already present in the structured response. A mismatch is treated as a pipeline error (`OPTIMIZATION_FAILED`), not silently returned — this directly enforces the PRD's "no unsupported financial claims" principle.
 
-## 3. RAG — Trip Knowledge Assistant
+## 3. Prompting Principles
+- Evidence before explanation — computed facts go into the prompt context before the model is asked to explain.
+- Structured output over free-form prose wherever a UI needs to render specific fields (Trade-off Ledger entries).
+- Explicit "I don't know" instruction is not needed here since the pipeline never asks the model open-ended questions — every generation call is grounded in code-computed candidates and totals (see the guardrail in §2).
 
-Standard RAG pattern, following Lewis et al. (arXiv:2005.11401):
-1. **Ingest:** uploaded document → `pypdf` text extraction → chunk (e.g. ~500-token chunks with overlap) → embed each chunk → store in `document_chunks.embedding` (pgvector).
-2. **Retrieve:** on a question, embed the question, run a pgvector similarity search (cosine distance), take top-k chunks.
-3. **Generate:** pass the retrieved chunks plus the question to the LLM with an explicit instruction: answer only from the provided chunks, cite the source document/chunk, and say "not covered" if the retrieved chunks don't actually answer the question (PRD US-08 acceptance criteria).
-
-The assistant's evaluation set should be built in the style of the WikiQA dataset (Microsoft Research) — question/answer/supporting-evidence triples — per the project's reference docs, to make citation accuracy measurable (see `14_Evaluation_Metrics.md`).
-
-## 4. Ask This Itinerary (itinerary-scoped RAG)
-Same retrieve-then-generate pattern, but the retrieval source is a single trip's own stored data — its itinerary, Trade-off Ledger entries, and audit events — not the general knowledge base. The response must make clear which source it drew from, so it's never confused with a knowledge-base answer (PRD US-09 acceptance criteria).
-
-## 5. Prompting Principles (apply to both surfaces)
-- Evidence before explanation — retrieved/computed facts go into the prompt context before the model is asked to explain.
-- Structured output over free-form prose wherever a UI needs to render specific fields (Trade-off Ledger entries, citations).
-- Explicit "I don't know" instruction — the model is told directly to decline rather than guess when evidence is insufficient.
-
-## 6. Stretch: Multi-Agent Expansion
+## 4. Stretch: Multi-Agent Expansion
 If pursued (only after the single pipeline works end-to-end — see `00_Investigation_Report.md` A19), the `compose_node` above splits into a `FlightAgent`, `StayAgent`, `BudgetConstraintsAgent`, and `ComposerAgent`, coordinated by an `Orchestrator` node with conditional routing (e.g., looping back to a specialist when a constraint check fails). This is additive to, not a replacement of, the guardrail described in §2.

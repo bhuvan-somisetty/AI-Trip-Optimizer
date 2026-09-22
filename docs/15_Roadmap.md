@@ -17,8 +17,9 @@ No AI/LLM code this month — pure plumbing, so Month 2 isn't fighting infrastru
 - **Week 8:** Itinerary result UI polish — Trade-off Ledger panel, budget/constraint flags, rationale display.
 
 ## Month 3 — AI & Deploy (Weeks 9–12)
-- **Week 9:** Knowledge document ingestion (`pypdf` → chunk → embed → pgvector), Trip Knowledge Assistant first version.
-- **Week 10:** Ask This Itinerary (itinerary-scoped grounding), authorization checks on trip-scoped endpoints.
+*(Amended 2026-09-16: Weeks 9–10 originally covered the RAG-based Trip Knowledge Assistant and Ask This Itinerary — cut from scope per instructor instruction, "RAG is not needed." See `03_PRD.md` amendment and `17_Risk_Register.md` R-011. That time is now hardening/polish and pulling stretch goals earlier.)*
+- **Week 9:** Authorization checks on trip-scoped endpoints, API input/output hardening and testing.
+- **Week 10:** Buffer/polish — extra hardening on the optimization pipeline, UI polish, catch-up time.
 - **Week 11:** Dashboard, eval harness (`14_Evaluation_Metrics.md`), security review, stretch goals if on schedule (What-If Simulator first, multi-agent only if time remains).
 - **Week 12:** Deployment (Vercel + Render/Railway), demo video, final documentation pass.
 

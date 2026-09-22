@@ -38,10 +38,7 @@ Recommended coverage: multiple price points per route (budget vs. premium), at l
 Recommended coverage: a spread across budget/mid/premium price tiers per city used in flight data, so budget-constraint rejections have real alternatives to compare against.
 
 ## 3. Sample Knowledge Documents
-At least one sample document per common travel-policy topic, to give the RAG assistant something meaningful to retrieve from:
-- A visa/entry-requirements summary for 1–2 sample destinations.
-- A preferred-vendor / travel-policy document (e.g., "flights over ₹X require manager approval").
-- A general FAQ (baggage policy, expense submission process).
+~~At least one sample document per common travel-policy topic, to give the RAG assistant something meaningful to retrieve from...~~ **Removed 2026-09-16** — the instructor cut the RAG-based Trip Knowledge Assistant from scope ("RAG is not needed," see `03_PRD.md` amendment, `17_Risk_Register.md` R-011). No sample knowledge documents are needed.
 
 These should be short (1–3 pages) plain-text or PDF files, ingestable via the `pypdf` pipeline described in `08_GenAI_Architecture.md`.
 

@@ -14,7 +14,7 @@
 ## 3. GenAI-Specific Evaluation
 This is distinct from conventional testing — see `14_Evaluation_Metrics.md` for the full evaluation harness. In brief:
 - **Guardrail test:** assert the cost-figure-consistency check (in `08_GenAI_Architecture.md` §2) actually fails the pipeline when given a deliberately inconsistent LLM response (mocked), proving the guardrail works before trusting it in production.
-- **RAG citation test:** a small hand-built eval set (WikiQA-style question/answer/evidence triples, per the project's reference dataset) run against the assistant, checking citation presence and correctness.
+- ~~**RAG citation test:** a small hand-built eval set...~~ **Removed 2026-09-16** — the instructor cut the RAG-based Trip Knowledge Assistant from scope, see `03_PRD.md` amendment / `17_Risk_Register.md` R-011.
 
 ## 4. What Is Not Tested (and why)
 - Exact LLM prose wording — inherently non-deterministic; tests assert structure and guardrails, not exact text.

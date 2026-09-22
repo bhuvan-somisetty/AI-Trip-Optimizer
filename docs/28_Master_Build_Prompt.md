@@ -6,18 +6,19 @@
 
 ## What You're Building
 
-**AI Trip Optimizer** — a B2B web app a business uses to plan and optimize trips for its own people. It is **not** a consumer trip planner (like Expedia) and **not** a policy-compliance engine — it's a workspace where a team member submits a trip request, an AI pipeline searches mock flight/hotel data, checks it against budget/constraints, and produces an itinerary with a fully transparent, structured explanation of *why* it chose what it chose. A human always reviews and approves/rejects — nothing auto-finalizes. Separately, there's a RAG-grounded "Trip Knowledge Assistant" that answers travel-policy questions from uploaded documents, with citations.
+*(Amended 2026-09-16: the instructor gave a direct scope instruction — "RAG is not needed." The Trip Knowledge Assistant and Ask This Itinerary, both RAG-based, are cut from this build entirely. Every RAG-related section below has been removed or rewritten. See `03_PRD.md` amendment and `17_Risk_Register.md` R-011.)*
 
-**Product goal (verbatim from the approved PRD):** Create a trip-planning workspace that converts a trip request into an optimized, budget-checked, explainable itinerary and answers travel-related questions with cited evidence, without ever finalizing a decision on its own.
+**AI Trip Optimizer** — a B2B web app a business uses to plan and optimize trips for its own people. It is **not** a consumer trip planner (like Expedia) and **not** a policy-compliance engine — it's a workspace where a team member submits a trip request, an AI pipeline searches mock flight/hotel data, checks it against budget/constraints, and produces an itinerary with a fully transparent, structured explanation of *why* it chose what it chose. A human always reviews and approves/rejects — nothing auto-finalizes.
+
+**Product goal (amended from the approved PRD — see `03_PRD.md` amendment):** Create a trip-planning workspace that converts a trip request into an optimized, budget-checked, explainable itinerary, without ever finalizing a decision on its own.
 
 **Product principles — apply these to every feature you build:**
 - Evidence before explanation (show the data before/alongside the prose).
 - Human-in-the-loop (nothing auto-finalizes; approve/reject is always explicit).
-- Clear uncertainty (the assistant visibly distinguishes a cited answer from "not covered").
 - No unsupported financial claims (every number the AI states must already exist elsewhere in the response — never invented).
 - Every AI output is traceable to data/model context.
 
-Build this as a **working, runnable local demo** — Next.js frontend + FastAPI backend + Postgres (with pgvector) via Docker Compose, seeded with mock data, with every Must-have feature below functional end-to-end. Ask me clarifying questions only if something here is genuinely ambiguous; otherwise scaffold and implement incrementally, and tell me exactly how to run it when you're done with each phase.
+Build this as a **working, runnable local demo** — Next.js frontend + FastAPI backend + plain Postgres via Docker Compose, seeded with mock data, with every Must-have feature below functional end-to-end. Ask me clarifying questions only if something here is genuinely ambiguous; otherwise scaffold and implement incrementally, and tell me exactly how to run it when you're done with each phase.
 
 ---
 
@@ -33,19 +34,18 @@ Build this as a **working, runnable local demo** — Next.js frontend + FastAPI 
 | ORM | SQLModel |
 | Migrations | Alembic |
 | DB driver | psycopg2-binary (sync) |
-| Database | PostgreSQL + `pgvector` extension |
+| Database | PostgreSQL (plain — no vector extension needed) |
 | AI orchestration | LangGraph + `langchain-core` + `langchain-openai` (not the full `langchain` meta-package) |
 | LLM | OpenAI `gpt-4o-mini` to start (swappable behind one interface) |
-| PDF parsing | `pypdf` (pure Python, no OS-level dependency) |
 | Auth | `passlib[bcrypt]` + `python-jose[cryptography]` — hand-rolled JWT, not a full auth framework |
 | Testing | `pytest` + `httpx` (backend), component tests (frontend) |
 | Local dev | Docker Compose (Postgres + backend together) |
 
-**Backend `requirements.txt`:** fastapi, uvicorn[standard], sqlmodel, psycopg2-binary, alembic, passlib[bcrypt], python-jose[cryptography], langgraph, langchain-core, langchain-openai, pgvector, pypdf, pytest, httpx, python-dotenv
+**Backend `requirements.txt`:** fastapi, uvicorn[standard], sqlmodel, psycopg2-binary, alembic, passlib[bcrypt], python-jose[cryptography], langgraph, langchain-core, langchain-openai, pytest, httpx, python-dotenv
 
 **Frontend deps:** next, react, react-dom, typescript, tailwindcss, @tanstack/react-query, zod, plus shadcn/ui via its CLI
 
-**Deliberately do NOT install:** the full `langchain` meta-package, Celery/RQ/Redis (no job queue needed), a general auth framework like `fastapi-users`, heavier PDF tools like `pdfplumber`/`unstructured`.
+**Deliberately do NOT install:** the full `langchain` meta-package, Celery/RQ/Redis (no job queue needed), a general auth framework like `fastapi-users`, `pgvector`/`pypdf` or any PDF/vector-search tooling (RAG features are out of scope).
 
 ---
 
@@ -54,7 +54,7 @@ Build this as a **working, runnable local demo** — Next.js frontend + FastAPI 
 ```
 backend/        FastAPI app, SQLModel models, Alembic migrations, LangGraph pipeline
 frontend/       Next.js app
-data/           mock_flights.json, mock_hotels.json, sample knowledge documents
+data/           mock_flights.json, mock_hotels.json
 docker-compose.yml
 .env.example
 README.md
@@ -62,7 +62,7 @@ README.md
 
 ---
 
-## Database Schema (PostgreSQL + pgvector)
+## Database Schema (PostgreSQL)
 
 **users** — id (UUID PK), email (unique), hashed_password, role (enum: member/admin), created_at
 
@@ -76,13 +76,9 @@ README.md
 
 **decisions** — id (UUID PK), trip_id (FK → trips), decided_by (FK → users), outcome (enum: APPROVED/REJECTED), reason (text, required when REJECTED), decided_at
 
-**audit_events** — id (UUID PK), trip_id (FK → trips, nullable), event_type (text, e.g. PIPELINE_RUN/DECISION/DOCUMENT_UPLOAD), payload (jsonb), created_at
+**audit_events** — id (UUID PK), trip_id (FK → trips, nullable), event_type (text, e.g. PIPELINE_RUN/DECISION), payload (jsonb), created_at
 
-**documents** — id (UUID PK), title, uploaded_by (FK → users), uploaded_at
-
-**document_chunks** — id (UUID PK), document_id (FK → documents), chunk_text (text), embedding (vector(1536), pgvector column)
-
-**Relationships:** users 1—N travelers, travelers 1—N trips, trips 1—1 itineraries (one active itinerary per trip — What-If previews don't persist unless approved), itineraries 1—N tradeoff_ledger_entries, trips 1—N decisions (append-only), trips 1—N audit_events, documents 1—N document_chunks.
+**Relationships:** users 1—N travelers, travelers 1—N trips, trips 1—1 itineraries (one active itinerary per trip — What-If previews don't persist unless approved), itineraries 1—N tradeoff_ledger_entries, trips 1—N decisions (append-only), trips 1—N audit_events.
 
 Every schema change must be an Alembic migration file — no manual/ad-hoc schema edits.
 
@@ -103,12 +99,6 @@ Every schema change must be an Alembic migration file — no manual/ad-hoc schem
 - `POST /trips/{id}/decision` — body `{outcome: "APPROVED"|"REJECTED", reason?: string}`; reason required when rejecting; sets status DECIDED
 - `POST /trips/{id}/preview` *(stretch)* — What-If Simulator; body: one changed input; re-runs pipeline with `persist:false`, returns a diff without saving
 
-**Knowledge Assistant:**
-- `POST /documents` — upload (multipart); triggers pypdf extraction → chunk → embed
-- `GET /documents` — list
-- `POST /assistant/ask` — body `{question: string}`; cited answer or explicit "not covered"
-- `POST /trips/{id}/ask` — Ask This Itinerary; body `{question: string}`; answers grounded in that trip's own itinerary/audit data only
-
 **Dashboard & Audit:**
 - `GET /dashboard?period=...` — total spend, average savings, average turnaround time
 - `GET /audit?trip_id=...` — audit event history
@@ -119,9 +109,9 @@ Every schema change must be an Alembic migration file — no manual/ad-hoc schem
 
 ## GenAI Architecture
 
-There are **two separate AI surfaces** — don't conflate them.
+There is **one AI surface**: the LangGraph optimization pipeline. (A RAG-based Trip Knowledge Assistant was originally planned as a second surface but is out of scope — see the amendment note at the top of this document.)
 
-### 1. LangGraph Optimization Pipeline
+### LangGraph Optimization Pipeline
 
 **State (TypedDict):** trip request (dates/budget/preferences), candidate flight/stay options found, budget/constraint check result, final composed itinerary.
 
@@ -134,24 +124,11 @@ There are **two separate AI surfaces** — don't conflate them.
 
 **Guardrail (must implement):** before returning the response, validate that every dollar figure in `rationale` matches a value already present in the structured response. On mismatch, treat it as a pipeline failure (set status `OPTIMIZATION_FAILED`) — never silently return an inconsistent answer.
 
-### 2. RAG — Trip Knowledge Assistant
-
-Standard RAG pattern (grounded in Lewis et al., RAG paper arXiv:2005.11401):
-1. **Ingest:** uploaded document → `pypdf` text extraction → chunk (~500 tokens, with overlap) → embed each chunk → store in `document_chunks.embedding` (pgvector).
-2. **Retrieve:** embed the question → pgvector cosine similarity search → top-k chunks.
-3. **Generate:** pass retrieved chunks + question to the LLM with an explicit instruction: answer only from the provided chunks, cite the source document/chunk, and say "not covered" if the chunks don't actually answer the question.
-
-### 3. Ask This Itinerary (itinerary-scoped RAG)
-
-Same retrieve-then-generate pattern, but the retrieval source is a single trip's own stored data (itinerary, Trade-off Ledger entries, audit events) — not the general knowledge base. The response must make clear which source it drew from.
-
-### Prompting principles (apply to both surfaces)
-- Evidence before explanation — retrieved/computed facts go into the prompt context before the model explains.
+### Prompting principles
+- Evidence before explanation — computed facts go into the prompt context before the model explains.
 - Structured output over free-form prose wherever the UI needs to render specific fields.
-- Explicit "I don't know" instruction — tell the model directly to decline rather than guess when evidence is insufficient.
 
 ### LLM-specific security
-- Prompt injection via uploaded documents: system prompt must explicitly separate instructions from retrieved content; retrieved chunks are never treated as instructions.
 - The cost/rationale guardrail above is the primary trust mechanism — treat mismatches as failures, not soft warnings.
 
 ---
@@ -170,8 +147,6 @@ Include multiple price points per route (budget vs. premium), at least one red-e
 ```
 Spread across budget/mid/premium tiers per city used in flight data.
 
-**Sample knowledge documents:** at least one visa/entry-requirements summary, one travel-policy document (e.g. "flights over ₹X require manager approval"), one general FAQ (baggage, expense process) — short (1–3 pages), ingestable via the pypdf pipeline.
-
 **Volume:** at least 3–4 flight options and 3–4 hotel options per route/city used in the demo — enough for non-trivial reasoning, not a full production catalog.
 
 ---
@@ -187,8 +162,6 @@ Spread across budget/mid/premium tiers per city used in flight data.
 - Rationale text — references the specific chosen items, never states a number not already shown above it.
 - Approve / Reject (reason required) / Edit line item (recalculates total live).
 
-**Trip Knowledge Assistant (chat panel)** — general mode (knowledge base) and itinerary-scoped mode ("Ask This Itinerary") must be visually distinct (e.g. a mode toggle) so the user always knows which source is being queried. Every answer shows its citation inline, or an explicit "I don't have information on that" state.
-
 **Dashboard (Admin)** — total spend, average savings, average turnaround time for a selected period; link through to full audit history rather than duplicating it.
 
 **What-If Simulator (stretch, build only if time remains)** — side-by-side/diff view: original vs. previewed change, changed fields highlighted, explicit "Save this instead" action.
@@ -199,7 +172,7 @@ Spread across budget/mid/premium tiers per city used in flight data.
 
 ## Auth & Security
 
-- Two roles only: **Member** (create/manage own trips/travelers, use both assistant modes) and **Admin** (also: dashboard aggregates, knowledge-document management).
+- Two roles only: **Member** (create/manage own trips/travelers) and **Admin** (also: dashboard aggregates).
 - Hand-rolled JWT: `passlib[bcrypt]` for hashing, `python-jose[cryptography]` for issuance/verification.
 - Every `/trips/{id}/...` endpoint must verify the requesting user has access to that trip — implement as a reusable FastAPI dependency, not repeated inline per route.
 - All secrets in `.env` (never committed); `.env.example` documents required keys with empty placeholders.
@@ -225,37 +198,30 @@ Spread across budget/mid/premium tiers per city used in flight data.
 | Budget & constraint check | Must | US-005: each issue names the specific rule + offending line item, visibly flagged |
 | Explainable rationale | Must | US-006: rationale references specific chosen items; never states an unmatched cost figure |
 | Review/edit/approve | Must | US-007: editing recalculates total; approve → DECIDED; reject requires a stored reason |
-| Trip Knowledge Assistant | Must | US-08: cited answer, or explicit "not covered" if not in any document |
 | Audit trail | Must | every pipeline run and decision writes an audit_events row |
-| Ask This Itinerary | Should | US-09: answers about one specific itinerary, using its own data; never confused with knowledge-base answers |
 | Dashboard | Should | US-010: total spend, average savings, average turnaround for a period; audit history independently intact |
-| Streaming assistant responses | Could | nice-to-have, not required for MVP |
 | What-If Simulator | Could (stretch) | US-011: preview a changed input without losing the original; explicit diff shown |
 
 **Stretch, in priority order (only after all Must/Should work end-to-end):** (1) What-If Simulator, (2) multi-agent expansion — splitting `compose_node` into coordinating `FlightAgent`/`StayAgent`/`BudgetConstraintsAgent`/`ComposerAgent` nodes with an `Orchestrator`.
 
-**Explicitly out of scope for this demo:** mobile-native app, offline mode, multi-language UI, live/real supplier data (mock data only), production-grade rate limiting/WAF, formal security certification.
+**Explicitly out of scope for this demo:** mobile-native app, offline mode, multi-language UI, live/real supplier data (mock data only), production-grade rate limiting/WAF, formal security certification, RAG-based question answering (Trip Knowledge Assistant, Ask This Itinerary — cut per instructor instruction).
 
 ---
 
 ## Suggested Build Order
 
-1. **Foundation:** repo structure, Docker Compose (Postgres+pgvector, backend), Next.js shell, FastAPI skeleton with `/health`, confirm both run side by side.
+1. **Foundation:** repo structure, Docker Compose (Postgres, backend), Next.js shell, FastAPI skeleton with `/health`, confirm both run side by side.
 2. **Auth:** `users` table + migration, register/login, JWT issuance/verification, protected routes on the frontend.
 3. **Core CRUD:** `travelers` + `trips` tables/migrations/endpoints, seed `data/mock_flights.json` + `data/mock_hotels.json`, build the Trip Request Form and trip list/detail UI.
 4. **Optimization pipeline:** LangGraph state + 3 nodes (`search_node`, `check_node`, `compose_node`), the cost-consistency guardrail, wire `POST /trips/{id}/optimize`, persist `itineraries` + `tradeoff_ledger_entries`.
 5. **Review workflow:** `PATCH /trips/{id}/itinerary`, `POST /trips/{id}/decision`, `audit_events` writes, approve/reject/edit UI.
 6. **Itinerary Result UI:** build out the full Trade-off Ledger panel, budget/constraint flags, rationale display — this screen matters most.
-7. **Knowledge Assistant:** `documents`/`document_chunks` tables, ingestion pipeline (pypdf → chunk → embed), `POST /assistant/ask`, chat UI.
-8. **Ask This Itinerary:** itinerary-scoped retrieval, `POST /trips/{id}/ask`, trip-ownership authorization checks, mode-toggle UI.
-9. **Dashboard:** `GET /dashboard` aggregation, Dashboard UI.
-10. **Polish & stretch (if time remains):** What-If Simulator, security/accessibility pass, tests.
-11. **Wrap-up:** README with setup/run instructions, confirm the whole flow works end-to-end from a clean `docker compose up`.
+7. **Dashboard:** `GET /dashboard` aggregation, Dashboard UI.
+8. **Polish & stretch (if time remains):** What-If Simulator, security/accessibility pass, tests.
+9. **Wrap-up:** README with setup/run instructions, confirm the whole flow works end-to-end from a clean `docker compose up`.
 
 ## Definition of Done for This Demo
 
-- `docker compose up` brings up Postgres (with pgvector) + backend; `npm run dev` runs the frontend.
+- `docker compose up` brings up Postgres + backend; `npm run dev` runs the frontend.
 - A user can register, log in, add a traveler, create a trip, run the optimizer, see a real Trade-off Ledger with genuinely different won/lost reasons, edit a line item, approve or reject with a reason, and see it in the audit history.
-- The Trip Knowledge Assistant answers a question from an uploaded sample document with a citation, and says "not covered" for something outside the documents.
-- Ask This Itinerary answers a question about one specific trip's own data, clearly distinguished from the knowledge-base assistant.
 - Every dollar figure the LLM states matches a number already computed in code — verify this holds by testing at least one deliberately awkward trip (tight budget, multiple close-priced options).

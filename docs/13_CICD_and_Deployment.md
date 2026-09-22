@@ -15,13 +15,13 @@ GitHub Actions workflow triggered on every PR:
 
 ## 3. Local Development
 Docker Compose brings up:
-- A PostgreSQL container (with `pgvector` extension enabled on init).
+- A plain PostgreSQL container.
 - The FastAPI backend container.
 The frontend runs separately via `npm run dev` (Next.js dev server), pointed at the local backend via an env var — this avoids container rebuilds on every frontend change.
 
 ## 4. Deployment
 - **Frontend:** Vercel, auto-deployed from `main` on every merge.
-- **Backend + Database:** Render or Railway — both free-tier friendly for a student project; Postgres add-on with `pgvector` support on either platform.
+- **Backend + Database:** Render or Railway — both free-tier friendly for a student project.
 - Environment variables (OpenAI key, DB URL, JWT secret) set directly in the hosting platform's dashboard — never committed, mirroring `.env.example`.
 
 ## 5. Database Migrations in Deployment

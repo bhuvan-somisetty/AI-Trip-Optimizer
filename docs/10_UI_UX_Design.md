@@ -2,10 +2,11 @@
 
 > **Provenance:** Entirely the team's own UI/UX design, built to satisfy the PRD's acceptance criteria (cited inline). React/Next.js is officially mandated (brief field `tech_stack`); Tailwind CSS is officially suggested (brief field `suggested_libraries_tools`) — shadcn/ui is the team's own addition on top of that suggestion.
 
+> **Amended 2026-09-16:** The Trip Knowledge Assistant chat panel screen removed — the instructor cut RAG-based features from scope ("RAG is not needed," see `03_PRD.md` amendment, `17_Risk_Register.md` R-011).
+
 ## 1. Design Principles (from PRD Product Principles)
 - **Evidence before explanation** — show the data (prices, rules) before or alongside the prose rationale, never prose alone.
 - **Human-in-the-loop** — every itinerary screen makes Approve/Reject/Edit visibly available; nothing auto-finalizes.
-- **Clear uncertainty** — the assistant visibly distinguishes "cited answer" from "not covered by any document."
 
 ## 2. Core Screens
 
@@ -19,10 +20,6 @@ Traveler selection (or create new), dates, budget, preferences (free text + stru
 - Budget/constraint flags — each issue visibly tagged with the specific rule and offending line item (not buried in the rationale paragraph).
 - Rationale text — references the specific chosen items and never states a number not already shown above it.
 - Approve / Reject (reason required) / Edit line item (recalculates total live).
-
-### Trip Knowledge Assistant (chat panel)
-- General mode (knowledge base) and itinerary-scoped mode ("Ask This Itinerary") are visually distinct — e.g. a mode toggle or separate entry points — so a user always knows which source is being queried (PRD US-09 acceptance criteria).
-- Every answer shows its citation (document name/chunk) inline, or an explicit "I don't have information on that" state.
 
 ### Dashboard (Admin)
 Total spend, average savings, average turnaround time for a selected period; a link through to full audit history rather than duplicating it.
