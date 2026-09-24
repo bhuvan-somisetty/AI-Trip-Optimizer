@@ -111,7 +111,9 @@ Authenticates a user and returns a JWT.
 ---
 
 ## Travelers
-*(Verified 2026-09-17 — `app/routers/travelers.py` is built and tested end-to-end against the SQLite dev stand-in, not invented. Building this endpoint surfaced and fixed a real bug in `app/security.py`: `get_current_user` was passing the JWT's string `sub` claim straight into `session.get(User, user_id)`, which 500'd on SQLite because it expects an actual `UUID` object — fixed by parsing it with `uuid.UUID(user_id)` first. There are two distinct real 401 messages depending on the cause — shown both below, then abbreviated to one per endpoint after. The 409 "has existing trips" check on delete is not yet implemented since the `trips` table doesn't exist yet — see the `POST /trip` section below.)*
+*(Verified 2026-09-17 — `app/routers/travelers.py` is built and tested end-to-end against the SQLite dev stand-in, not invented. Building this endpoint surfaced and fixed a real bug in `app/security.py`: `get_current_user` was passing the JWT's string `sub` claim straight into `session.get(User, user_id)`, which 500'd on SQLite because it expects an actual `UUID` object — fixed by parsing it with `uuid.UUID(user_id)` first. There are two distinct real 401 messages depending on the cause — shown both below, then abbreviated to one per endpoint after.)*
+
+*(**Updated 2026-09-24** — the delete endpoint had a real ownership bug: it deleted a traveler by ID with no check that it belonged to the requesting user. Found and fixed while adding the 409 "has existing trips" check below, once the `trips` table existed to check against. 11 automated tests added in `backend/tests/test_travelers.py`, including a sabotage check — the ownership and 409 checks were deliberately removed and confirmed the right 2 tests failed, so they're catching real bugs, not passing vacuously.)*
 
 ### POST /traveler
 Creates a traveler profile, owned by the current logged-in user (PRD US-001). Requires a valid JWT.
@@ -191,14 +193,14 @@ Deletes a traveler. Requires a valid JWT.
 }
 ```
 
-**Response (404 Not Found)** — traveler doesn't exist:
+**Response (404 Not Found)** — traveler doesn't exist, **or belongs to another user**:
 ```json
 {
   "detail": "Traveler not found"
 }
 ```
 
-**Response (409 Conflict)** — has existing trips — *(Planned, not yet implemented — the `trips` table doesn't exist yet):*
+**Response (409 Conflict)** — has existing trips (PRD US-001):
 ```json
 {
   "detail": "Traveler has existing trips and cannot be deleted"
