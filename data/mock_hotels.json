@@ -1,0 +1,147 @@
+[
+  {
+    "id": "HT-2001",
+    "city": "DEL",
+    "name": "Sample Central Hotel",
+    "price_per_night": 3800,
+    "rating": 4.2,
+    "amenities": [
+      "wifi",
+      "breakfast_included"
+    ],
+    "distance_to_center_km": 1.5
+  },
+  {
+    "id": "HT-2002",
+    "city": "DEL",
+    "name": "Sample Budget Inn",
+    "price_per_night": 1600,
+    "rating": 3.5,
+    "amenities": [
+      "wifi"
+    ],
+    "distance_to_center_km": 4.2
+  },
+  {
+    "id": "HT-2003",
+    "city": "DEL",
+    "name": "Sample Grand Palace",
+    "price_per_night": 9500,
+    "rating": 4.8,
+    "amenities": [
+      "wifi",
+      "breakfast_included",
+      "pool",
+      "gym"
+    ],
+    "distance_to_center_km": 0.8
+  },
+  {
+    "id": "HT-2004",
+    "city": "DEL",
+    "name": "Sample Airport Suites",
+    "price_per_night": 2600,
+    "rating": 3.9,
+    "amenities": [
+      "wifi",
+      "airport_shuttle"
+    ],
+    "distance_to_center_km": 12.0
+  },
+  {
+    "id": "HT-2005",
+    "city": "BLR",
+    "name": "Sample Tech Park Hotel",
+    "price_per_night": 4200,
+    "rating": 4.3,
+    "amenities": [
+      "wifi",
+      "breakfast_included",
+      "gym"
+    ],
+    "distance_to_center_km": 2.1
+  },
+  {
+    "id": "HT-2006",
+    "city": "BLR",
+    "name": "Sample Budget Stay",
+    "price_per_night": 1500,
+    "rating": 3.4,
+    "amenities": [
+      "wifi"
+    ],
+    "distance_to_center_km": 5.0
+  },
+  {
+    "id": "HT-2007",
+    "city": "BLR",
+    "name": "Sample Heritage Residency",
+    "price_per_night": 8200,
+    "rating": 4.6,
+    "amenities": [
+      "wifi",
+      "breakfast_included",
+      "pool"
+    ],
+    "distance_to_center_km": 1.0
+  },
+  {
+    "id": "HT-2008",
+    "city": "BLR",
+    "name": "Sample Whitefield Inn",
+    "price_per_night": 2100,
+    "rating": 3.7,
+    "amenities": [
+      "wifi"
+    ],
+    "distance_to_center_km": 9.5
+  },
+  {
+    "id": "HT-2009",
+    "city": "BOM",
+    "name": "Sample Marine Drive Hotel",
+    "price_per_night": 6500,
+    "rating": 4.5,
+    "amenities": [
+      "wifi",
+      "breakfast_included",
+      "gym"
+    ],
+    "distance_to_center_km": 0.6
+  },
+  {
+    "id": "HT-2010",
+    "city": "BOM",
+    "name": "Sample Budget Lodge",
+    "price_per_night": 1800,
+    "rating": 3.3,
+    "amenities": [
+      "wifi"
+    ],
+    "distance_to_center_km": 6.5
+  },
+  {
+    "id": "HT-2011",
+    "city": "BOM",
+    "name": "Sample Bandra Suites",
+    "price_per_night": 5200,
+    "rating": 4.1,
+    "amenities": [
+      "wifi",
+      "breakfast_included"
+    ],
+    "distance_to_center_km": 3.0
+  },
+  {
+    "id": "HT-2012",
+    "city": "BOM",
+    "name": "Sample Airport Hotel BOM",
+    "price_per_night": 2900,
+    "rating": 3.8,
+    "amenities": [
+      "wifi",
+      "airport_shuttle"
+    ],
+    "distance_to_center_km": 8.0
+  }
+]
