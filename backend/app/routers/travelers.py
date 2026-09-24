@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models import Traveler, User
+from app.models import Traveler, Trip, User
 from app.schemas import TravelerCreate, TravelerResponse
 from app.security import get_current_user
 
@@ -39,9 +39,18 @@ def delete_traveler(
     session: Session = Depends(get_session),
 ):
     traveler = session.get(Traveler, traveler_id)
-    if traveler is None:
+    if traveler is None or traveler.created_by != current_user.id:
+        # Same 404 whether the traveler is missing or belongs to someone else,
+        # so the API doesn't reveal which traveler IDs exist (matches trips.py).
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Traveler not found")
-    # PRD US-001: a traveler with existing trips cannot be deleted (409). The trips
-    # table doesn't exist yet, so that check is added when trips.py is built.
+
+    has_trips = session.exec(select(Trip).where(Trip.traveler_id == traveler_id)).first() is not None
+    if has_trips:
+        # PRD US-001: a traveler with existing trips cannot be deleted.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Traveler has existing trips and cannot be deleted",
+        )
+
     session.delete(traveler)
     session.commit()
