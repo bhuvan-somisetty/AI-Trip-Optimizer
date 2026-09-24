@@ -1,6 +1,8 @@
 # Mock Data Specification
 
 > **Provenance:** Use of mock/sample data (rather than live supplier data) is the team's own inference from the PRD's principles and general student-project constraints — it is not a literal instruction on the brief sheet (see `00_Investigation_Report.md` A5). The specific field schemas and data-volume guidance below are entirely the team's own design.
+>
+> **Built 2026-09-24:** `data/mock_flights.json` (25 flights, 6 routes across BLR/DEL/BOM — a mix of red-eye/daytime and direct/connecting per the coverage guidance below) and `data/mock_hotels.json` (12 hotels, 4 per city across budget/mid/premium tiers) both exist and are loaded through `backend/app/mock_data.py`. `backend/scripts/seed_mock_data.py` validates both files against this spec (required fields, types, no duplicate IDs, every flight-reachable city has hotel data) — run it after editing either JSON file. There's no `flights`/`hotels` database table (see `06_Database_Design.md`); this data is read straight off disk, the way `search_node` (`08_GenAI_Architecture.md`) will in Weeks 5-6.
 
 This file specifies what mock flight/hotel/knowledge data should look like so it's realistic enough to demo the optimizer meaningfully.
 
