@@ -38,7 +38,7 @@ class Traveler(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str
     preferences: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    created_by: uuid.UUID = Field(foreign_key="users.id")
+    created_by: uuid.UUID = Field(foreign_key="users.id", index=True)
 
 
 class Trip(SQLModel, table=True):
