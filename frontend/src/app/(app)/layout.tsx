@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Topbar } from "@/components/dashboard/topbar";
+import { AppGate } from "@/components/app/app-gate";
 
 export default function DashboardLayout({
   children,
@@ -7,12 +9,16 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-muted/30">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+    <AppGate>
+      <div className="flex h-dvh w-full overflow-hidden bg-muted/30">
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Topbar />
+          <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+            <Suspense>{children}</Suspense>
+          </main>
+        </div>
       </div>
-    </div>
+    </AppGate>
   );
 }
