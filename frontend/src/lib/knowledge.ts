@@ -90,3 +90,94 @@ If a trip is cancelled, the traveler must cancel bookings within 24 hours. Non-r
 All international trips are covered by the company travel insurance policy. Download the insurance certificate from the Documents page before travelling.`,
   },
 ];
+
+type Chunk = { docId: string; docTitle: string; index: number; heading: string; text: string; tokens: string[] };
+
+const stop = new Set(
+  "a an the and or of to in on for with is are be can do does i we you my our it this that what which when how who why at by from as if any should need needs required must will than per there their about into".split(" ")
+);
+
+export function tokenize(s: string) {
+  return s
+    .toLowerCase()
+    .replace(/₹/g, " inr ")
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 1 && !stop.has(t))
+    .map((t) => (t.length > 4 && t.endsWith("s") ? t.slice(0, -1) : t));
+}
+
+export function chunkDoc(doc: Pick<KnowledgeDoc, "id" | "title" | "content">): Chunk[] {
+  const chunks: Chunk[] = [];
+  let heading = doc.title;
+  let i = 0;
+  for (const block of doc.content.split(/\n\s*\n/)) {
+    const lines = block.trim().split("\n");
+    const body: string[] = [];
+    for (const line of lines) {
+      const m = line.match(/^#{1,3}\s+(.*)/);
+      if (m) heading = m[1];
+      else if (line.trim()) body.push(line.trim());
+    }
+    if (!body.length) continue;
+    const text = body.join(" ");
+    chunks.push({ docId: doc.id, docTitle: doc.title, index: ++i, heading, text, tokens: tokenize(`${heading} ${text}`) });
+  }
+  return chunks;
+}
+
+export function answerFromKnowledge(question: string, docs: KnowledgeDoc[]): { content: string; citations: Citation[]; covered: boolean } {
+  const chunks = docs.flatMap(chunkDoc);
+  const q = tokenize(question);
+  if (!q.length || !chunks.length) return notCovered(docs.length);
+
+  const df = new Map<string, number>();
+  for (const c of chunks) for (const t of new Set(c.tokens)) df.set(t, (df.get(t) ?? 0) + 1);
+  const avg = chunks.reduce((s, c) => s + c.tokens.length, 0) / chunks.length;
+  const N = chunks.length;
+
+  const scored = chunks
+    .map((c) => {
+      let score = 0;
+      let hits = 0;
+      for (const t of new Set(q)) {
+        const tf = c.tokens.filter((x) => x === t).length;
+        if (!tf) continue;
+        hits++;
+        const idf = Math.log(1 + (N - (df.get(t) ?? 0) + 0.5) / ((df.get(t) ?? 0) + 0.5));
+        score += (idf * tf * 2.2) / (tf + 1.2 * (0.25 + 0.75 * (c.tokens.length / avg)));
+      }
+      return { c, score, coverage: hits / new Set(q).size };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const top = scored.filter((x, i) => i < 3 && x.score >= scored[0].score * 0.55 && x.coverage >= 0.34);
+  if (!top.length || top[0].score < 1.6) return notCovered(docs.length);
+
+  const citations: Citation[] = top.map(({ c }) => ({
+    docId: c.docId,
+    docTitle: c.docTitle,
+    chunk: c.index,
+    excerpt: c.text.length > 220 ? `${c.text.slice(0, 217)}…` : c.text,
+  }));
+
+  const lines = top.map(({ c }, i) => {
+    const sentences = c.text.split(/(?<=[.!?])\s+/);
+    const ranked = sentences
+      .map((s) => ({ s, n: tokenize(s).filter((t) => q.includes(t)).length }))
+      .sort((a, b) => b.n - a.n);
+    const best = ranked.filter((r) => r.n > 0).slice(0, 2).map((r) => r.s);
+    const text = (best.length ? sentences.filter((s) => best.includes(s)) : sentences.slice(0, 2)).join(" ");
+    return `${text} [${i + 1}]`;
+  });
+
+  return { content: lines.join("\n\n"), citations, covered: true };
+}
+
+function notCovered(n: number) {
+  return {
+    content: `I couldn't find this in the ${n} document${n === 1 ? "" : "s"} in the knowledge base, so I won't guess. Try rephrasing, or upload a document that covers it on the Documents page.`,
+    citations: [],
+    covered: false,
+  };
+}
