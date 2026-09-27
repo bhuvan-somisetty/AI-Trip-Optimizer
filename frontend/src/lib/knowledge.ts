@@ -181,3 +181,73 @@ function notCovered(n: number) {
     covered: false,
   };
 }
+
+/** "Ask This Itinerary" — answers only from the trip's own itinerary, ledger and audit data. */
+export function answerFromItinerary(question: string, trip: Trip): { content: string; covered: boolean } {
+  const it = trip.itinerary;
+  if (!it) return { content: "This trip hasn't been optimized yet, so there is no itinerary to explain. Run the optimizer first.", covered: false };
+  const q = question.toLowerCase();
+  const dest = cityByCode[trip.destination]?.name ?? trip.destination;
+  const describe = (l: LedgerEntry) => `• ${l.label} (${formatInr(l.price)}${l.kind === "stay" ? "/night" : ""}) — ${reasonMeta[l.reasonCode].label}: ${l.reason}`;
+
+  // Match on the full airline / hotel brand name so common words ("the", "air") never trigger a hit.
+  const brand = (l: LedgerEntry) =>
+    (l.kind === "stay" ? l.label.replace(new RegExp(`\\s+${dest}(\\s+Airport)?$`), "") : l.label.replace(/\s+[A-Z0-9]{2}\s+\d+$/, "")).toLowerCase();
+  const airlineHit = it.ledger.find((l) => l.kind !== "stay" && !l.won && q.includes(brand(l)));
+  const hotelHit = it.ledger.find((l) => l.kind === "stay" && !l.won && q.includes(brand(l)));
+  if (airlineHit || hotelHit) {
+    const l = (airlineHit ?? hotelHit)!;
+    return { content: `Here's why ${l.label} wasn't chosen:\n\n${describe(l)}`, covered: true };
+  }
+
+  const kind = /return|back|home/.test(q) ? "return" : /hotel|stay|room|accommodation/.test(q) ? "stay" : "outbound";
+
+  if (/earl(y|ier)|morning/.test(q) && kind !== "stay") {
+    const chosen = kind === "return" ? it.return : it.outbound;
+    if (!chosen) return { content: "This is a one-way trip, so there is no return flight.", covered: true };
+    const earlier = it.ledger.filter((l) => l.kind === kind && !l.won && l.detail.slice(0, 5) < formatTime(chosen.departure));
+    if (!earlier.length) return { content: `${chosen.airline} ${chosen.flightNo} at ${formatTime(chosen.departure)} is already the earliest ${kind} option that was searched.`, covered: true };
+    return { content: `There were ${earlier.length} earlier ${kind} option${earlier.length > 1 ? "s" : ""}:\n\n${earlier.map(describe).join("\n")}`, covered: true };
+  }
+  if (/later|evening|afternoon/.test(q) && kind !== "stay") {
+    const chosen = kind === "return" ? it.return : it.outbound;
+    if (!chosen) return { content: "This is a one-way trip, so there is no return flight.", covered: true };
+    const later = it.ledger.filter((l) => l.kind === kind && !l.won && l.detail.slice(0, 5) > formatTime(chosen.departure));
+    if (!later.length) return { content: `${chosen.airline} ${chosen.flightNo} is already the latest ${kind} option searched.`, covered: true };
+    return { content: `Later ${kind} options that were considered:\n\n${later.map(describe).join("\n")}`, covered: true };
+  }
+  if (/cheap|lower|less expensive|save more/.test(q)) {
+    const chosenPrice = kind === "stay" ? it.stay?.pricePerNight ?? 0 : kind === "return" ? it.return?.price ?? 0 : it.outbound.price;
+    const cheaper = it.ledger.filter((l) => l.kind === kind && !l.won && l.price < chosenPrice);
+    if (!cheaper.length) return { content: `The chosen ${kind === "stay" ? "hotel" : `${kind} flight`} is already the cheapest option that was considered.`, covered: true };
+    return { content: `${cheaper.length} cheaper ${kind === "stay" ? "hotel" : `${kind} flight`} option${cheaper.length > 1 ? "s were" : " was"} rejected:\n\n${cheaper.map(describe).join("\n")}`, covered: true };
+  }
+  if (/why|chose|chosen|pick|select/.test(q)) {
+    const w = it.ledger.find((l) => l.kind === kind && l.won);
+    if (w) return { content: `${w.label} was chosen: ${w.reason}\n\nFull rationale: ${it.rationale}`, covered: true };
+  }
+  if (/total|cost|price|spend|how much|budget/.test(q)) {
+    return {
+      content: `Total cost is ${formatInr(it.totalCost)} against a budget of ${formatInr(trip.budget)} (${Math.round((it.totalCost / trip.budget) * 100)}% used).\n\n• Flights: ${formatInr(it.flightCost)} (${it.travelers} traveler${it.travelers > 1 ? "s" : ""})\n• Stay: ${formatInr(it.stayCost)} (${it.nights} night${it.nights > 1 ? "s" : ""} × ${it.rooms} room${it.rooms > 1 ? "s" : ""})`,
+      covered: true,
+    };
+  }
+  if (/sav/.test(q)) {
+    return { content: `The itinerary costs ${formatInr(it.totalCost)} vs a typical market cost of ${formatInr(it.baselineCost)} for this route and stay — a saving of ${formatInr(it.savings)}.`, covered: true };
+  }
+  if (/issue|policy|flag|problem|warning|constraint|approv/.test(q)) {
+    if (!it.issues.length) return { content: "The constraint check found no issues — every policy rule passes.", covered: true };
+    return { content: `The constraint check raised ${it.issues.length} item${it.issues.length > 1 ? "s" : ""}:\n\n${it.issues.map((i) => `• [${i.severity.toUpperCase()}] ${i.rule} — ${i.lineItem}. ${i.message}`).join("\n")}`, covered: true };
+  }
+  if (/hotel|stay/.test(q) && it.stay) {
+    return { content: `${it.stay.name} in ${dest}: ${it.stay.rating}★, ${it.stay.distanceKm} km from centre, ${formatInr(it.stay.pricePerNight)}/night for ${it.nights} night${it.nights > 1 ? "s" : ""}.`, covered: true };
+  }
+  if (/flight|fly|depart|airline/.test(q)) {
+    const f = kind === "return" && it.return ? it.return : it.outbound;
+    return { content: `${f.airline} ${f.flightNo}: departs ${formatTime(f.departure)}, arrives ${formatTime(f.arrival)}, ${formatDuration(f.durationMin)}, ${f.stops === 0 ? "non-stop" : `${f.stops} stop via ${f.via}`}, ${formatInr(f.price)} per traveler.`, covered: true };
+  }
+  return {
+    content: `I can only answer from this itinerary's own data. Try asking "why not a cheaper flight?", "why this hotel?", "what are the policy issues?" or "how much does it cost?".\n\nSummary: ${it.rationale}`,
+    covered: false,
+  };
+}
