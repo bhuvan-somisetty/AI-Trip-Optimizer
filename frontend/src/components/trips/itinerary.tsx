@@ -150,3 +150,69 @@ export function StayCard({ hotel, nights, rooms, onChange, editable }: { hotel: 
     </Card>
   );
 }
+
+const sevMeta = {
+  error: { icon: AlertOctagon, className: "border-destructive/30 bg-destructive/5", iconClass: "text-destructive", label: "Blocking" },
+  warning: { icon: AlertTriangle, className: "border-warning/40 bg-warning/5", iconClass: "text-amber-600 dark:text-warning", label: "Warning" },
+  info: { icon: Info, className: "border-primary/20 bg-primary/5", iconClass: "text-primary", label: "Note" },
+};
+
+export function ConstraintFlags({ it }: { it: Itinerary }) {
+  const order = { error: 0, warning: 1, info: 2 };
+  const issues = [...it.issues].sort((a, b) => order[a.severity] - order[b.severity]);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Budget & constraint check</CardTitle>
+        <CardDescription>Each flag names the rule and the exact line item it applies to.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {issues.length === 0 && (
+          <div className="flex items-center gap-2 rounded-xl border border-success/30 bg-success/5 p-3 text-sm">
+            <BadgeCheck className="size-4 text-success" />
+            All budget and policy rules pass.
+          </div>
+        )}
+        {issues.map((i) => {
+          const m = sevMeta[i.severity];
+          const Icon = m.icon;
+          return (
+            <div key={i.id} className={cn("flex gap-3 rounded-xl border p-3", m.className)}>
+              <Icon className={cn("mt-0.5 size-4 shrink-0", m.iconClass)} />
+              <div className="min-w-0 space-y-0.5 text-sm">
+                <p className="font-medium">
+                  <span className={cn("mr-1.5 text-[11px] font-semibold tracking-wide uppercase", m.iconClass)}>{m.label}</span>
+                  {i.rule}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Line item: <span className="font-medium text-foreground">{i.lineItem}</span>
+                </p>
+                <p className="text-xs text-muted-foreground">{i.message}</p>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function Rationale({ it }: { it: Itinerary }) {
+  return (
+    <Card className="border-primary/20 bg-gradient-to-br from-primary/[0.04] to-transparent">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="size-4 text-primary" />
+          Rationale
+        </CardTitle>
+        <CardDescription>
+          Generated from the data above — it never states a figure that isn&apos;t shown on this page.
+          {it.edited && " Reflects reviewer edits."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm leading-relaxed">{it.rationale}</p>
+      </CardContent>
+    </Card>
+  );
+}
