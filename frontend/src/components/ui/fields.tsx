@@ -60,5 +60,106 @@ function Switch({
 }
 
 /** Pill-style single choice — used for filters where every option should stay visible. */
+function Segmented<T extends string | number>({
+  value,
+  onChange,
+  options,
+  className,
+  size = "default",
+}: {
+  value: T
+  onChange: (v: T) => void
+  options: { value: T; label: React.ReactNode }[]
+  className?: string
+  size?: "default" | "sm"
+}) {
+  return (
+    <div role="radiogroup" className={cn("inline-flex flex-wrap gap-1 rounded-lg bg-muted p-1", className)}>
+      {options.map((o) => (
+        <button
+          key={String(o.value)}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "rounded-md font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm",
+            value === o.value
+              ? "bg-background text-foreground shadow-sm dark:bg-card"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
-export { Textarea, NativeSelect, Switch }
+/** Multi-select chips. */
+function ChipToggle({
+  selected,
+  onChange,
+  options,
+  className,
+}: {
+  selected: string[]
+  onChange: (v: string[]) => void
+  options: { value: string; label: React.ReactNode }[]
+  className?: string
+}) {
+  return (
+    <div className={cn("flex flex-wrap gap-1.5", className)}>
+      {options.map((o) => {
+        const on = selected.includes(o.value)
+        return (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(on ? selected.filter((s) => s !== o.value) : [...selected, o.value])}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+              on
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+            )}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function Range({
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  className,
+  ...rest
+}: { value: number; onChange: (v: number) => void; min: number; max: number; step?: number; className?: string } & Omit<React.ComponentProps<"input">, "onChange" | "value">) {
+  const pct = ((value - min) / (max - min)) * 100
+  return (
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className={cn(
+        "h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-primary [&::-moz-range-thumb]:bg-background [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-primary [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow",
+        className
+      )}
+      style={{ background: `linear-gradient(to right, var(--color-primary) ${pct}%, var(--color-muted) ${pct}%)` }}
+      {...rest}
+    />
+  )
+}
+
+export { Textarea, NativeSelect, Switch, Segmented, ChipToggle, Range }
