@@ -92,3 +92,139 @@ export const cabinLabel: Record<CabinClass, string> = {
   premium_economy: "Premium Economy",
   business: "Business",
 };
+
+function hash(str: string) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function rng(seed: string) {
+  let a = hash(seed);
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function distanceKm(a: string, b: string) {
+  const A = cityByCode[a];
+  const B = cityByCode[b];
+  if (!A || !B) return 1500;
+  const R = 6371;
+  const dLat = ((B.lat - A.lat) * Math.PI) / 180;
+  const dLon = ((B.lon - A.lon) * Math.PI) / 180;
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((A.lat * Math.PI) / 180) * Math.cos((B.lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(x)));
+}
+
+const cabinMultiplier: Record<CabinClass, number> = {
+  economy: 1,
+  premium_economy: 1.65,
+  business: 3.4,
+};
+
+// Departure hours chosen so every route has a red-eye, early, daytime and evening option.
+const slots = [0.75, 5.5, 6.25, 8.5, 10.75, 13.25, 16, 18.5, 20.75, 23.25];
+
+export function searchFlights(origin: string, destination: string, date: string, cabin: CabinClass): Flight[] {
+  const rand = rng(`${origin}-${destination}-${date}-${cabin}`);
+  const dist = distanceKm(origin, destination);
+  const intl = cityByCode[origin]?.international || cityByCode[destination]?.international;
+  const pool = intl ? intlAirlines : domesticAirlines;
+  const count = 6 + Math.floor(rand() * 3);
+  const chosenSlots = [...slots].sort(() => rand() - 0.5).slice(0, count).sort((a, b) => a - b);
+
+  return chosenSlots.map((slot, i) => {
+    const airline = pool[Math.floor(rand() * pool.length)];
+    const stopsRoll = rand();
+    const stops = dist < 900 ? 0 : intl ? (stopsRoll < 0.45 ? 0 : stopsRoll < 0.9 ? 1 : 2) : stopsRoll < 0.72 ? 0 : 1;
+    const cruise = (dist / 780) * 60 + 35;
+    const durationMin = Math.round(cruise + stops * (75 + rand() * 110));
+    const base = intl ? 5200 + dist * 4.4 : 2100 + dist * 3.6;
+    const redEye = slot < 5 || slot > 22.5;
+    const peak = slot >= 6 && slot <= 9.5;
+    let price = base * cabinMultiplier[cabin] * (0.78 + rand() * 0.55);
+    if (redEye) price *= 0.82;
+    if (peak) price *= 1.12;
+    if (stops > 0) price *= 0.86 - (stops - 1) * 0.05;
+    if (airline === "Emirates" || airline === "Singapore Airlines" || airline === "Vistara") price *= 1.1;
+
+    const dep = new Date(`${date}T00:00:00`);
+    dep.setMinutes(Math.round(slot * 60));
+    const arr = new Date(dep.getTime() + durationMin * 60000);
+    return {
+      id: `FL-${hash(`${origin}${destination}${date}${cabin}${i}`) % 90000 + 10000}`,
+      origin,
+      destination,
+      airline,
+      flightNo: `${airlineCode[airline]} ${100 + Math.floor(rand() * 899)}`,
+      departure: toLocalIso(dep),
+      arrival: toLocalIso(arr),
+      durationMin,
+      price: Math.round(price / 10) * 10,
+      cabin,
+      stops,
+      via: stops > 0 ? hubs.filter((h) => h !== origin && h !== destination)[Math.floor(rand() * 4)] : undefined,
+      refundable: rand() > 0.55,
+      baggageKg: cabin === "business" ? 40 : intl ? 30 : 15,
+    };
+  });
+}
+
+const hotelBrands = [
+  ["Taj", "The Leela", "ITC", "Oberoi", "JW Marriott"],
+  ["Novotel", "Hyatt Place", "Courtyard", "Radisson Blu", "Holiday Inn"],
+  ["Lemon Tree", "ibis", "Ginger", "Treebo", "FabHotel"],
+];
+const areas = ["Central Business District", "Airport Zone", "Old Town", "Tech Park", "Riverside", "Convention Quarter"];
+
+export function searchHotels(city: string): Hotel[] {
+  const rand = rng(`hotels-${city}`);
+  const c = cityByCode[city];
+  const index = c?.hotelIndex ?? 1;
+  const name = c?.name ?? city;
+  const hotels: Hotel[] = [];
+  hotelBrands.forEach((tier, t) => {
+    const perTier = 2;
+    const picks = [...tier].sort(() => rand() - 0.5).slice(0, perTier);
+    picks.forEach((brand, i) => {
+      const stars = 5 - t;
+      const base = [9500, 5200, 2600][t];
+      const amenities = ["wifi"];
+      if (t < 2 || rand() > 0.5) amenities.push("breakfast");
+      if (t === 0 || rand() > 0.6) amenities.push("gym");
+      if (t === 0 || rand() > 0.75) amenities.push("pool");
+      if (rand() > 0.5) amenities.push("airport_shuttle");
+      if (t < 2 && rand() > 0.35) amenities.push("meeting_rooms");
+      if (t === 0 && rand() > 0.4) amenities.push("spa");
+      if (rand() > 0.45) amenities.push("parking");
+      hotels.push({
+        id: `HT-${hash(`${city}${brand}${i}`) % 9000 + 1000}`,
+        city,
+        name: `${brand} ${name}${i === 1 && t === 1 ? " Airport" : ""}`,
+        area: areas[Math.floor(rand() * areas.length)],
+        pricePerNight: Math.round((base * index * (0.82 + rand() * 0.4)) / 50) * 50,
+        rating: Math.round((4.8 - t * 0.45 - rand() * 0.5) * 10) / 10,
+        stars,
+        amenities,
+        distanceKm: Math.round((0.4 + rand() * (t === 2 ? 9 : 6)) * 10) / 10,
+        freeCancellation: rand() > 0.4,
+      });
+    });
+  });
+  return hotels;
+}
+
+function toLocalIso(d: Date) {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00`;
+}
