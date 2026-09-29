@@ -1,0 +1,39 @@
+"""The LangGraph optimization pipeline: search -> check -> compose.
+
+Described in docs/08_GenAI_Architecture.md. The nodes are empty for now; each one
+gets filled in on its own build day (see docs/27_Day_by_Day_Checklist.md):
+search_node on Day 22, check_node on Day 23, compose_node on Day 24.
+"""
+from langgraph.graph import END, START, StateGraph
+
+from app.pipeline.state import PipelineState
+
+
+def search_node(state: PipelineState) -> dict:
+    # Day 22: fill flight_options/hotel_options from app.mock_data. No LLM call.
+    return {}
+
+
+def check_node(state: PipelineState) -> dict:
+    # Day 23: compute totals and budget/constraint flags into `check`. No LLM call.
+    return {}
+
+
+def compose_node(state: PipelineState) -> dict:
+    # Day 24: the only LLM call; writes `itinerary` from check_node's numbers.
+    return {}
+
+
+def build_graph():
+    graph = StateGraph(PipelineState)
+    graph.add_node("search", search_node)
+    graph.add_node("check", check_node)
+    graph.add_node("compose", compose_node)
+    graph.add_edge(START, "search")
+    graph.add_edge("search", "check")
+    graph.add_edge("check", "compose")
+    graph.add_edge("compose", END)
+    return graph.compile()
+
+
+pipeline = build_graph()
