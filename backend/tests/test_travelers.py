@@ -34,6 +34,44 @@ def test_list_travelers_requires_auth(client):
     assert client.get("/travelers").status_code == 401
 
 
+# ---- PUT /traveler/{id} -----------------------------------------------------
+
+def test_update_traveler(client, auth_headers, traveler_id):
+    response = client.put(
+        f"/traveler/{traveler_id}",
+        json={"name": "Asha Rao", "preferences": {"seat": "window"}},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == traveler_id
+    assert body["name"] == "Asha Rao"
+    assert body["preferences"] == {"seat": "window"}
+    # The change is really saved, not just echoed back.
+    assert client.get("/travelers", headers=auth_headers).json()[0]["name"] == "Asha Rao"
+
+
+def test_update_traveler_requires_auth(client, traveler_id):
+    assert client.put(f"/traveler/{traveler_id}", json={"name": "Asha"}).status_code == 401
+
+
+def test_update_traveler_missing_name_is_422(client, auth_headers, traveler_id):
+    assert client.put(f"/traveler/{traveler_id}", json={}, headers=auth_headers).status_code == 422
+
+
+def test_update_missing_traveler_is_404(client, auth_headers):
+    response = client.put(f"/traveler/{uuid.uuid4()}", json={"name": "Asha"}, headers=auth_headers)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Traveler not found"
+
+
+def test_update_another_users_traveler_is_404(client, auth_headers, other_headers, traveler_id):
+    response = client.put(f"/traveler/{traveler_id}", json={"name": "Hacked"}, headers=other_headers)
+    assert response.status_code == 404
+    # The owner's traveler is untouched.
+    assert client.get("/travelers", headers=auth_headers).json()[0]["name"] == "Asha"
+
+
 # ---- DELETE /traveler/{id} --------------------------------------------------
 
 def test_delete_traveler(client, auth_headers):
