@@ -14,3 +14,4 @@ pypdf
 pytest
 httpx
 python-dotenv
+email-validator
