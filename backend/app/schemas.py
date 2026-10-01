@@ -10,7 +10,6 @@ from app.models import TripStatus, UserRole
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
-    role: UserRole = UserRole.member
 
 
 class LoginRequest(BaseModel):
