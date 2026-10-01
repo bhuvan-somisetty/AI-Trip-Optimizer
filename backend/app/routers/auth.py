@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models import User
+from app.models import User, UserRole
 from app.schemas import LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from app.security import create_access_token, hash_password, verify_password
 
@@ -15,7 +15,8 @@ def register(body: RegisterRequest, session: Session = Depends(get_session)):
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
-    user = User(email=body.email, hashed_password=hash_password(body.password), role=body.role)
+    # Self sign-up always creates a member; a client can't make itself an admin.
+    user = User(email=body.email, hashed_password=hash_password(body.password), role=UserRole.member)
     session.add(user)
     session.commit()
     session.refresh(user)
