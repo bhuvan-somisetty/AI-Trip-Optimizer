@@ -14,7 +14,7 @@ FastAPI auto-generates interactive OpenAPI docs at `/docs` once the backend is r
 *(Verified — captured from the live backend, not invented.)*
 
 ### POST /auth/register
-Creates a user account. Role defaults to `member` if not provided in the request.
+Creates a user account. The new account is always a `member`. *(Updated 2026-10-02 — a `role` sent in the request used to be accepted, so anyone could sign themselves up as `admin`. It is now ignored: sign-up never creates an admin. Covered by `backend/tests/test_auth.py`.)*
 
 **Request:**
 ```json
@@ -178,6 +178,56 @@ Lists every traveler created by the current user. Requires a valid JWT.
 ```json
 {
   "detail": "Could not validate credentials"
+}
+```
+
+### PUT /traveler/{id}
+*(Verified 2026-10-02 — real output captured from the running backend, plus 5 automated tests in `backend/tests/test_travelers.py`.)*
+Replaces a traveler's name and preferences. Same body as `POST /traveler`. Only the traveler's owner can edit it. Requires a valid JWT.
+
+**Request:**
+```json
+{
+  "name": "Priya Nair",
+  "preferences": { "seat": "window", "diet": "veg" }
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "3c01c324-de1a-4552-bf01-ff843c603411",
+  "name": "Priya Nair",
+  "preferences": { "seat": "window", "diet": "veg" },
+  "created_by": "63bea012-8b42-48b0-800b-68e6af8574a8"
+}
+```
+
+**Response (401 Unauthorized)** — invalid token:
+```json
+{
+  "detail": "Could not validate credentials"
+}
+```
+
+**Response (404 Not Found)** — traveler doesn't exist, **or belongs to another user**:
+```json
+{
+  "detail": "Traveler not found"
+}
+```
+
+**Response (422 Unprocessable Entity)** — `name` missing:
+```json
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["body", "name"],
+      "msg": "Field required",
+      "input": {}
+    }
+  ]
 }
 ```
 
@@ -591,7 +641,7 @@ Returns audit event history. Independent of dashboard aggregation — every pipe
 ## Live Demo Notes
 For the viva, Auth, Travelers and Trips (create, list, get) can all be demoed for real — the optimizer, Dashboard and Audit aren't built yet.
 1. Start the backend against the SQLite dev stand-in: `DATABASE_URL="sqlite:///./test.db" uvicorn app.main:app --port 8010` from `backend/`, with the venv active.
-2. Open `http://127.0.0.1:8010/docs` — FastAPI's interactive Swagger page. "Try it out" on `/auth/register`, `/auth/login`, `/traveler`, `/travelers`, `/traveler/{id}`, `/trip`, `/trips` and `/trips/{id}` shows the real request/response live, including every error case above, without typing anything in a terminal during the demo. For the traveler endpoints, click "Authorize" first and paste in a token from `/auth/login`.
+2. Open `http://127.0.0.1:8010/docs` — FastAPI's interactive Swagger page. "Try it out" on `/auth/register`, `/auth/login`, `/traveler`, `/travelers`, `/traveler/{id}` (PUT and DELETE), `/trip`, `/trips` and `/trips/{id}` shows the real request/response live, including every error case above, without typing anything in a terminal during the demo. For the traveler endpoints, click "Authorize" first and paste in a token from `/auth/login`.
 3. Or via terminal, if a command-line demo is preferred over Swagger:
 ```
 curl -X POST http://127.0.0.1:8010/auth/register -H "Content-Type: application/json" -d "{\"email\":\"demo.viva@example.com\",\"password\":\"Trip@2026\"}"

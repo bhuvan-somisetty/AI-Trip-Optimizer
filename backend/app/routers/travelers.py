@@ -32,6 +32,27 @@ def list_travelers(
     return session.exec(select(Traveler).where(Traveler.created_by == current_user.id)).all()
 
 
+@router.put("/traveler/{traveler_id}", response_model=TravelerResponse)
+def update_traveler(
+    traveler_id: uuid.UUID,
+    body: TravelerCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    traveler = session.get(Traveler, traveler_id)
+    if traveler is None or traveler.created_by != current_user.id:
+        # Same 404 as delete, so the API doesn't reveal which traveler IDs exist.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Traveler not found")
+
+    # PUT replaces the whole traveler, so the body has the same shape as create.
+    traveler.name = body.name
+    traveler.preferences = body.preferences
+    session.add(traveler)
+    session.commit()
+    session.refresh(traveler)
+    return traveler
+
+
 @router.delete("/traveler/{traveler_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_traveler(
     traveler_id: uuid.UUID,
