@@ -3,6 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { actions } from "@/lib/store";
+import * as api from "@/lib/api";
+import { toast } from "@/lib/toast";
 import { ArrowLeft, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,11 +18,39 @@ import { GoogleIcon } from "@/components/auth/google-icon";
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function finish(session: Awaited<ReturnType<typeof api.login>>) {
+    actions.login(session);
+    toast(`Welcome${session.name ? `, ${session.name.split(" ")[0]}` : ""}!`, {
+      description: session.mode === "api" ? "Signed in with the API." : "Signed in to your workspace.",
+    });
+    const next = new URLSearchParams(window.location.search).get("next");
+    router.push(next && next.startsWith("/") ? next : "/dashboard");
+  }
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    // Backend auth isn't wired up yet — go straight to the dashboard for now.
-    router.push("/dashboard");
+    const form = new FormData(e.currentTarget);
+    const email = String(form.get("email") ?? "").trim();
+    const password = String(form.get("password") ?? "");
+    setError(null);
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    setLoading(true);
+    try {
+      finish(await api.login(email, password));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setLoading(false);
+    }
+  }
+
+  function continueWithGoogle() {
+    finish({ name: "Workspace Admin", email: "admin@acmecorp.in", role: "admin", mode: "demo" });
   }
 
   return (
@@ -37,12 +69,18 @@ export default function LoginPage() {
       </div>
 
       <form className="space-y-5" onSubmit={handleSubmit}>
+        {error && (
+          <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <div className="space-y-2">
           <Label htmlFor="email">Email address</Label>
           <div className="relative">
             <Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="email"
+              name="email"
               type="email"
               placeholder="you@company.com"
               autoComplete="email"
@@ -58,6 +96,7 @@ export default function LoginPage() {
             <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="password"
+              name="password"
               type={showPassword ? "text" : "password"}
               placeholder="Enter your password"
               autoComplete="current-password"
@@ -88,8 +127,10 @@ export default function LoginPage() {
         <Button
           type="submit"
           size="lg"
+          disabled={loading}
           className="w-full shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98]"
         >
+          {loading && <Loader2 className="animate-spin" />}
           Login
         </Button>
       </form>
@@ -105,7 +146,7 @@ export default function LoginPage() {
         variant="outline"
         size="lg"
         className="w-full transition-transform active:scale-[0.98]"
-        onClick={() => router.push("/dashboard")}
+        onClick={continueWithGoogle}
       >
         <GoogleIcon className="size-4" />
         Continue with Google
