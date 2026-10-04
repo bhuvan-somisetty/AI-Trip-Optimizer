@@ -6,12 +6,21 @@ search_node on Day 22, check_node on Day 23, compose_node on Day 24.
 """
 from langgraph.graph import END, START, StateGraph
 
+from app.mock_data import flights_for_route, hotels_for_city
 from app.pipeline.state import PipelineState
 
 
 def search_node(state: PipelineState) -> dict:
-    # Day 22: fill flight_options/hotel_options from app.mock_data. No LLM call.
-    return {}
+    # Pure lookup, no LLM: every option the later nodes see comes straight from mock data.
+    request = state["request"]
+    departure_day = request["start_date"].isoformat()
+    flights = [
+        f
+        for f in flights_for_route(request["origin"], request["destination"])
+        if f["departure_time"].startswith(departure_day)
+    ]
+    hotels = hotels_for_city(request["destination"])
+    return {"flight_options": flights, "hotel_options": hotels}
 
 
 def check_node(state: PipelineState) -> dict:
