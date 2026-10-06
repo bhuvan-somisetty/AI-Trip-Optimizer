@@ -38,10 +38,27 @@ function nameFromEmail(email: string) {
     .join(" ");
 }
 
+/** Reads the role claim from the JWT payload; the backend has no /me endpoint. */
+function roleFromToken(token: string): Session["role"] {
+  try {
+    const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), "=")));
+    return payload.role === "admin" ? "admin" : "member";
+  } catch {
+    return "member";
+  }
+}
+
 export async function login(email: string, password: string, name?: string): Promise<Session> {
   try {
     const { access_token } = await call<{ access_token: string }>("/auth/login", { email, password });
-    return { name: name || nameFromEmail(email), email, role: "admin", mode: "api", token: access_token };
+    return {
+      name: name || nameFromEmail(email),
+      email,
+      role: roleFromToken(access_token),
+      mode: "api",
+      token: access_token,
+    };
   } catch (e) {
     if (e instanceof ApiUnavailable) return { name: name || nameFromEmail(email), email, role: "admin", mode: "demo" };
     throw e;
@@ -50,7 +67,7 @@ export async function login(email: string, password: string, name?: string): Pro
 
 export async function register(name: string, email: string, password: string): Promise<Session> {
   try {
-    await call("/auth/register", { email, password, role: "admin" });
+    await call("/auth/register", { email, password });
     return await login(email, password, name);
   } catch (e) {
     if (e instanceof ApiUnavailable) return { name, email, role: "admin", mode: "demo" };
