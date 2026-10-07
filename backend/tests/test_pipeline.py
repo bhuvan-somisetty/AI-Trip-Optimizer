@@ -1,5 +1,8 @@
 from datetime import date
 
+import pytest
+
+import app.pipeline.graph as graph
 from app.pipeline.graph import check_node, pipeline
 
 REQUEST = {
@@ -95,3 +98,73 @@ def test_pipeline_check_runs_on_real_mock_data():
     assert check["flight"]["origin"] == "BLR" and check["flight"]["destination"] == "DEL"
     assert check["hotel"]["city"] == "DEL"
     assert check["total_cost"] == check["flight"]["price"] + check["hotel"]["price_per_night"] * 2
+
+
+# ---- compose_node ---------------------------------------------------------
+
+class FakeLLM:
+    def __init__(self, text):
+        self.text = text
+
+    def invoke(self, prompt):
+        self.prompt = prompt
+        return type("Reply", (), {"content": self.text})()
+
+
+@pytest.fixture
+def no_llm(monkeypatch):
+    monkeypatch.setattr(graph, "get_llm", lambda: None)
+
+
+def run_pipeline(**changes):
+    return pipeline.invoke({"request": {**REQUEST, **changes}})
+
+
+def test_compose_builds_itinerary_from_check_numbers(no_llm):
+    result = run_pipeline()
+    itinerary, check = result["itinerary"], result["check"]
+    assert itinerary["flight"] == check["flight"]
+    assert itinerary["hotel"] == check["hotel"]
+    assert itinerary["total_cost"] == check["total_cost"]
+    assert f"{check['total_cost']:,.0f}" in itinerary["rationale"]
+    assert "failure_reason" not in result
+
+
+def test_compose_ledger_lists_every_option_with_one_winner_each(no_llm):
+    result = run_pipeline(preferences={"max_stops": 0})
+    ledger = result["itinerary"]["tradeoff_ledger"]
+    assert len(ledger) == len(result["flight_options"]) + len(result["hotel_options"])
+    assert sum(e["won"] for e in ledger) == 2
+    for entry in ledger:
+        if not entry["won"]:
+            assert entry["reason"].startswith(("Price:", "Preference "))
+    nights = result["check"]["nights"]
+    hotel_row = next(e for e in ledger if e["won"] and e["alternative"].startswith("HT-"))
+    assert hotel_row["price"] == result["check"]["hotel"]["price_per_night"] * nights
+
+
+def test_compose_same_day_trip_has_no_hotel(no_llm):
+    result = run_pipeline(end_date=REQUEST["start_date"])
+    assert result["itinerary"]["hotel"] is None
+    assert all(e["alternative"].startswith("FL-") for e in result["itinerary"]["tradeoff_ledger"])
+
+
+def test_compose_fails_when_no_flight_found(no_llm):
+    result = run_pipeline(start_date=date(2030, 1, 1), end_date=date(2030, 1, 2))
+    assert "itinerary" not in result
+    assert "No flights found" in result["failure_reason"]
+
+
+def test_compose_uses_llm_rationale_when_numbers_match(monkeypatch):
+    fake = FakeLLM("Picked the cheapest flight that meets every preference.")
+    monkeypatch.setattr(graph, "get_llm", lambda: fake)
+    result = run_pipeline()
+    assert result["itinerary"]["rationale"] == fake.text
+    assert '"total_cost"' in fake.prompt
+
+
+def test_compose_fails_when_llm_invents_a_number(monkeypatch):
+    monkeypatch.setattr(graph, "get_llm", lambda: FakeLLM("The total comes to 123,456."))
+    result = run_pipeline()
+    assert "itinerary" not in result
+    assert result["failure_reason"] == "Rationale used numbers not in the itinerary: 123456"
