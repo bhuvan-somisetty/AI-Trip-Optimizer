@@ -14,6 +14,7 @@ def test_create_trip_starts_as_draft(client, auth_headers, trip_payload):
     assert body["status"] == "DRAFT"
     assert body["dates"] == ["2026-11-01", "2026-11-05"]
     assert body["traveler_id"] == trip_payload["traveler_id"]
+    assert body["origin"] == "BLR" and body["destination"] == "DEL"
     assert body["preferences"] == {"class": "economy"}
     assert body["budget"] == 60000 and isinstance(body["budget"], (int, float))
     assert uuid.UUID(body["id"])
@@ -60,6 +61,31 @@ def test_create_trip_rejects_malformed_dates(client, auth_headers, trip_payload)
         assert create_trip(client, auth_headers, trip_payload).status_code == 422
 
 
+def test_create_trip_requires_origin_and_destination(client, auth_headers, trip_payload):
+    for field in ("origin", "destination"):
+        payload = {k: v for k, v in trip_payload.items() if k != field}
+        assert create_trip(client, auth_headers, payload).status_code == 422
+
+
+def test_create_trip_rejects_malformed_airport_code(client, auth_headers, trip_payload):
+    for bad in ("", "BL", "BLRX", "B1R", "Bengaluru"):
+        trip_payload["origin"] = bad
+        assert create_trip(client, auth_headers, trip_payload).status_code == 422
+
+
+def test_create_trip_uppercases_airport_codes(client, auth_headers, trip_payload):
+    trip_payload["origin"], trip_payload["destination"] = "blr", "del"
+    body = create_trip(client, auth_headers, trip_payload).json()
+    assert body["origin"] == "BLR" and body["destination"] == "DEL"
+
+
+def test_create_trip_rejects_same_origin_and_destination(client, auth_headers, trip_payload):
+    trip_payload["destination"] = "blr"
+    response = create_trip(client, auth_headers, trip_payload)
+    assert response.status_code == 422
+    assert "Origin and destination must be different" in response.text
+
+
 def test_create_trip_allows_same_day(client, auth_headers, trip_payload):
     trip_payload["dates"] = ["2026-11-01", "2026-11-01"]
     assert create_trip(client, auth_headers, trip_payload).status_code == 201
@@ -104,6 +130,8 @@ def test_get_trip_returns_detail(client, auth_headers, trip_payload):
     assert response.status_code == 200
     assert response.json()["id"] == trip_id
     assert response.json()["status"] == "DRAFT"
+    assert response.json()["origin"] == "BLR"
+    assert response.json()["destination"] == "DEL"
 
 
 def test_get_trip_requires_auth(client, auth_headers, trip_payload):
