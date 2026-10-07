@@ -1,10 +1,13 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import * as api from "./api";
 import { cityByCode } from "./catalog";
 import { addDays, formatInr, toIsoDate, uid } from "./format";
 import { builtInDocs } from "./knowledge";
+import { fromTraveler, fromTrip, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
 import { OptimizationError, editItinerary, optimize } from "./optimizer";
+import { toast } from "./toast";
 import type {
   AuditEvent,
   ChatMessage,
@@ -22,11 +25,14 @@ import type {
  * Client-side workspace store. It mirrors the REST resources in docs/07_API_Specification.md
  * (travelers, trips, itineraries, decisions, audit, documents) and persists to localStorage,
  * so the whole product works end-to-end even when the FastAPI backend isn't running.
+ * In API mode (session.mode === "api") travelers and trips are read from and saved to the backend.
  */
 
 export type State = {
   version: number;
   hydrated: boolean;
+  /** true while travelers and trips are loading from the API */
+  syncing: boolean;
   session: Session | null;
   travelers: Traveler[];
   trips: Trip[];
@@ -69,6 +75,7 @@ export const defaultFilters: TripFilters = {
 const empty: State = {
   version: VERSION,
   hydrated: false,
+  syncing: false,
   session: null,
   travelers: [],
   trips: [],
@@ -90,7 +97,7 @@ function emit() {
 
 function persist() {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ ...state, hydrated: undefined }));
+    localStorage.setItem(KEY, JSON.stringify({ ...state, hydrated: undefined, syncing: undefined }));
   } catch {
     /* storage full or blocked — state still lives in memory */
   }
@@ -114,7 +121,7 @@ function hydrate() {
   } catch {
     loaded = null;
   }
-  state = { ...(loaded ?? seed()), hydrated: true };
+  state = { ...(loaded ?? seed()), hydrated: true, syncing: false };
   persist();
 }
 
@@ -156,6 +163,37 @@ function patchTrip(id: string, patch: Partial<Trip>, events: AuditEvent[] = []) 
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const isApi = () => state.session?.mode === "api";
+
+/** Runs an authenticated API call; a 401 ends the session (AppGate then redirects to /login). */
+async function remote<T>(fn: (token: string) => Promise<T>): Promise<T> {
+  const token = state.session?.token;
+  if (!token) throw new api.ApiError(401, "You're signed out. Please log in again.");
+  try {
+    return await fn(token);
+  } catch (e) {
+    if (e instanceof api.ApiError && e.status === 401) {
+      actions.logout();
+      throw new api.ApiError(401, "Your session expired. Please log in again.");
+    }
+    throw e;
+  }
+}
+
+const tripContext = () => ({ defaultFilters, createdBy: actor() });
+
+/**
+ * Optimization and approval still run locally until their backend endpoints land, so while the
+ * server reports DRAFT keep any progress made in this browser instead of discarding it on reload.
+ */
+function withLocalProgress(trip: Trip, local: Trip | undefined): Trip {
+  if (trip.status !== "DRAFT" || !local || local.status === "DRAFT" || local.status === "OPTIMIZING") return trip;
+  const { status, outcome, failureReason, itinerary, decidedAt } = local;
+  return { ...trip, status, outcome, failureReason, itinerary, decidedAt };
+}
+
+let syncing: Promise<void> | null = null;
+
 // ---------------------------------------------------------------- actions
 
 export const actions = {
@@ -163,30 +201,75 @@ export const actions = {
     set(() => ({ session }));
   },
   logout() {
-    set(() => ({ session: null }));
+    // Don't leave one account's travelers and trips behind for the next person on this browser.
+    const wasApi = isApi();
+    set(() => {
+      if (!wasApi) return { session: null };
+      const { travelers, trips } = seed();
+      return { session: null, travelers, trips };
+    });
   },
   updateProfile(patch: Partial<Session>) {
     set((s) => ({ session: s.session ? { ...s.session, ...patch } : s.session }));
   },
 
-  addTraveler(t: Omit<Traveler, "id" | "createdAt">) {
-    const traveler: Traveler = { ...t, id: uid("trv_"), createdAt: new Date().toISOString() };
+  /** Loads the signed-in user's travelers and trips from the API. No-op in demo mode. */
+  syncFromApi() {
+    if (!isApi()) return Promise.resolve();
+    syncing ??= (async () => {
+      const token = state.session?.token;
+      set(() => ({ syncing: true }));
+      try {
+        const [travelers, trips] = await Promise.all([remote(api.listTravelers), remote((tok) => api.listTrips(tok))]);
+        if (state.session?.token !== token) return; // signed out or switched accounts meanwhile
+        set((s) => ({
+          travelers: travelers.map(toTraveler),
+          trips: trips.map((r) => {
+            const trip = toTrip(r, tripContext());
+            return withLocalProgress(trip, s.trips.find((x) => x.id === trip.id));
+          }),
+        }));
+      } catch (e) {
+        toast("Couldn't load your data", { description: (e as Error).message, variant: "error" });
+      } finally {
+        syncing = null;
+        set(() => ({ syncing: false }));
+      }
+    })();
+    return syncing;
+  },
+
+  async addTraveler(t: TravelerInput) {
+    const createdAt = new Date().toISOString();
+    const traveler: Traveler = isApi()
+      ? toTraveler(await remote((tok) => api.createTraveler(tok, fromTraveler(t, createdAt))))
+      : { ...t, id: uid("trv_"), createdAt };
     set((s) => ({
       travelers: [traveler, ...s.travelers],
       audit: [log({ tripId: null, type: "TRAVELER_CREATED", summary: `Added traveler ${traveler.name}` }), ...s.audit],
     }));
     return traveler;
   },
-  updateTraveler(id: string, patch: Partial<Traveler>) {
+  async updateTraveler(id: string, patch: Partial<Traveler>) {
+    let saved: Traveler | undefined;
+    if (isApi()) {
+      const current = state.travelers.find((t) => t.id === id);
+      if (!current) throw new Error("Traveler not found.");
+      // PUT replaces the whole traveler, so send every field.
+      const next = { ...current, ...patch };
+      saved = toTraveler(await remote((tok) => api.updateTraveler(tok, id, fromTraveler(next, current.createdAt))));
+    }
     set((s) => ({
-      travelers: s.travelers.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+      travelers: s.travelers.map((t) => (t.id === id ? (saved ?? { ...t, ...patch }) : t)),
       audit: [log({ tripId: null, type: "TRAVELER_UPDATED", summary: `Updated traveler ${patch.name ?? s.travelers.find((t) => t.id === id)?.name}` }), ...s.audit],
     }));
   },
   /** PRD US-001: a traveler with existing trips cannot be deleted (API returns 409). */
-  deleteTraveler(id: string) {
+  async deleteTraveler(id: string) {
     const trips = state.trips.filter((t) => t.travelerIds.includes(id));
-    if (trips.length) {
+    // The API answers 409 with its own message when the traveler has trips.
+    if (isApi()) await remote((tok) => api.deleteTraveler(tok, id));
+    else if (trips.length) {
       throw new Error(`This traveler is on ${trips.length} trip${trips.length > 1 ? "s" : ""} (${trips.map((t) => t.code).slice(0, 3).join(", ")}${trips.length > 3 ? "…" : ""}) and can't be deleted.`);
     }
     const name = state.travelers.find((t) => t.id === id)?.name;
@@ -196,16 +279,19 @@ export const actions = {
     }));
   },
 
-  createTrip(input: Omit<Trip, "id" | "code" | "status" | "createdAt" | "createdBy">) {
-    const seq = state.tripSeq + 1;
-    const trip: Trip = {
-      ...input,
-      id: uid("trip_"),
-      code: `TRIP-${String(seq).padStart(4, "0")}`,
-      status: "DRAFT",
-      createdBy: actor(),
-      createdAt: new Date().toISOString(),
-    };
+  async createTrip(input: TripInput) {
+    const createdAt = new Date().toISOString();
+    const seq = isApi() ? state.tripSeq : state.tripSeq + 1;
+    const trip: Trip = isApi()
+      ? toTrip(await remote((tok) => api.createTrip(tok, fromTrip(input, createdAt))), tripContext())
+      : {
+          ...input,
+          id: uid("trip_"),
+          code: `TRIP-${String(seq).padStart(4, "0")}`,
+          status: "DRAFT",
+          createdBy: actor(),
+          createdAt,
+        };
     set((s) => ({
       tripSeq: seq,
       trips: [trip, ...s.trips],
@@ -228,6 +314,7 @@ export const actions = {
   },
   /** Decided trips are part of the audit record and can't be removed; audit events are never purged. */
   deleteTrip(id: string) {
+    if (isApi()) throw new Error("Deleting trips isn't available on the server yet.");
     const t = state.trips.find((x) => x.id === id);
     if (!t) return;
     if (t.status === "DECIDED") throw new Error("Decided trips are part of the audit record and can't be deleted.");
@@ -236,8 +323,9 @@ export const actions = {
       audit: [log({ tripId: null, type: "TRIP_DELETED", summary: `Deleted ${t.code} (${t.title}) while ${t.status.toLowerCase().replace("_", " ")}` }), ...s.audit],
     }));
   },
-  duplicateTrip(id: string) {
-    const t = state.trips.find((x) => x.id === id)!;
+  async duplicateTrip(id: string) {
+    const t = state.trips.find((x) => x.id === id);
+    if (!t) throw new Error("Trip not found.");
     return actions.createTrip({
       title: `${t.title} (copy)`,
       travelerIds: t.travelerIds,
