@@ -17,10 +17,20 @@ class TripRequest(TypedDict):
     preferences: dict
 
 
+class Rejection(TypedDict):
+    option_id: str  # e.g. "FL-1003" or "HT-2003"
+    rule: str  # the preference it broke, e.g. "max_stops"
+    detail: str  # human-readable, names the offending value
+
+
 class CheckResult(TypedDict):
+    flight: dict | None  # cheapest flight that passes every rule, None if none does
+    hotel: dict | None  # cheapest hotel that passes every rule, None if none does
+    nights: int
     total_cost: float  # computed in code, never by the LLM
     within_budget: bool
     flags: list[str]  # human-readable constraint problems, empty if none
+    rejected: list[Rejection]  # every option a rule ruled out, for the Trade-off Ledger
 
 
 class LedgerEntry(TypedDict):
