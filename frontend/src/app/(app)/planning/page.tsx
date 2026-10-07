@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,9 @@ const purposes = ["Client meeting", "Conference", "Internal", "Recruitment", "Ve
 
 type Draft = Omit<Trip, "id" | "code" | "status" | "createdAt" | "createdBy">;
 
+// The backend's mock flight and hotel data only covers these airports.
+const apiCityCodes = ["BLR", "DEL", "BOM"];
+
 export default function PlanningPage() {
   const s = useStore();
   const router = useRouter();
@@ -61,8 +65,13 @@ export default function PlanningPage() {
   const [dir, setDir] = useState(1);
   const [travelerOpen, setTravelerOpen] = useState(false);
   const [tSearch, setTSearch] = useState("");
-  const [roundTrip, setRoundTrip] = useState(editing ? editing.returnDate !== null : true);
+  const [roundTripChoice, setRoundTrip] = useState(editing ? editing.returnDate !== null : true);
   const [errors, setErrors] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  // The API takes one traveler and a [start, end] date pair per trip.
+  const apiMode = s.session?.mode === "api";
+  const roundTrip = roundTripChoice || apiMode;
+  const cityOptions = apiMode ? cities.filter((c) => apiCityCodes.includes(c.code)) : cities;
   const [d, setD] = useState<Draft>(() => {
     if (editing) {
       return {
@@ -126,7 +135,9 @@ export default function PlanningPage() {
   function validate(i: number): string[] {
     const e: string[] = [];
     if (i === 0 && !d.travelerIds.length) e.push("Select at least one traveler.");
+    if (i === 0 && apiMode && d.travelerIds.length > 1) e.push("Select one traveler — trips saved to the server have a single traveler.");
     if (i === 1) {
+      if (apiMode && (!apiCityCodes.includes(d.origin) || !apiCityCodes.includes(d.destination))) e.push(`Choose ${apiCityCodes.join(", ")} — the server only has flight and hotel data for these cities.`);
       if (!d.title.trim()) e.push("Give the trip a title.");
       if (d.origin === d.destination) e.push("Origin and destination must differ.");
       if (!d.departDate) e.push("Choose a departure date.");
@@ -155,7 +166,8 @@ export default function PlanningPage() {
     setStep(to);
   }
 
-  function submit(run: boolean) {
+  async function submit(run: boolean) {
+    if (saving) return;
     for (let i = 0; i < 5; i++) {
       const e = validate(i);
       if (e.length) {
@@ -170,9 +182,15 @@ export default function PlanningPage() {
       router.push(`/trips/${editing.id}${run ? "?run=1" : ""}`);
       return;
     }
-    const trip = actions.createTrip(effective);
-    toast(`${trip.code} created`, { description: run ? "Optimizer is composing your itinerary…" : "Saved as draft — run the optimizer when ready." });
-    router.push(`/trips/${trip.id}${run ? "?run=1" : ""}`);
+    setSaving(true);
+    try {
+      const trip = await actions.createTrip(effective);
+      toast(`${trip.code} created`, { description: run ? "Optimizer is composing your itinerary…" : "Saved as draft — run the optimizer when ready." });
+      router.push(`/trips/${trip.id}${run ? "?run=1" : ""}`);
+    } catch (e) {
+      toast("Couldn't create trip", { description: (e as Error).message, variant: "error" });
+      setSaving(false);
+    }
   }
 
   const filteredTravelers = s.travelers.filter((t) => `${t.name} ${t.department} ${t.email}`.toLowerCase().includes(tSearch.toLowerCase()));
@@ -241,7 +259,9 @@ export default function PlanningPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Who is travelling?</CardTitle>
-                    <CardDescription>Select one or more travelers. Their airline preferences are applied automatically.</CardDescription>
+                    <CardDescription>
+                      {apiMode ? "Select the traveler." : "Select one or more travelers."} Their airline preferences are applied automatically.
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex gap-2">
@@ -262,14 +282,14 @@ export default function PlanningPage() {
                             key={t.id}
                             type="button"
                             onClick={() => {
-                              const ids = on ? d.travelerIds.filter((x) => x !== t.id) : [...d.travelerIds, t.id];
+                              const ids = on ? d.travelerIds.filter((x) => x !== t.id) : apiMode ? [t.id] : [...d.travelerIds, t.id];
                               const prefAir = [...new Set(s.travelers.filter((x) => ids.includes(x.id)).flatMap((x) => x.preferences.preferredAirlines))];
                               const first = s.travelers.find((x) => x.id === ids[0]);
                               setD((p) => ({
                                 ...p,
                                 travelerIds: ids,
                                 rooms: Math.max(1, ids.length),
-                                origin: !on && ids.length === 1 && first ? first.homeCity : p.origin,
+                                origin: !on && ids.length === 1 && first && cityOptions.some((c) => c.code === first.homeCity) ? first.homeCity : p.origin,
                                 filters: { ...p.filters, preferredAirlines: prefAir },
                               }));
                             }}
@@ -317,24 +337,26 @@ export default function PlanningPage() {
                           ))}
                         </NativeSelect>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Trip type</Label>
-                        <Segmented
-                          value={roundTrip ? "round" : "oneway"}
-                          onChange={(v) => setRoundTrip(v === "round")}
-                          options={[
-                            { value: "round", label: "Round trip" },
-                            { value: "oneway", label: "One-way" },
-                          ]}
-                        />
-                      </div>
+                      {!apiMode && (
+                        <div className="space-y-2">
+                          <Label>Trip type</Label>
+                          <Segmented
+                            value={roundTrip ? "round" : "oneway"}
+                            onChange={(v) => setRoundTrip(v === "round")}
+                            options={[
+                              { value: "round", label: "Round trip" },
+                              { value: "oneway", label: "One-way" },
+                            ]}
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto_1fr]">
                       <div className="space-y-2">
                         <Label htmlFor="origin">From</Label>
                         <NativeSelect id="origin" value={d.origin} onChange={(e) => up({ origin: e.target.value })}>
-                          {cities.map((c) => (
+                          {cityOptions.map((c) => (
                             <option key={c.code} value={c.code}>
                               {c.name} ({c.code})
                             </option>
@@ -347,7 +369,7 @@ export default function PlanningPage() {
                       <div className="space-y-2">
                         <Label htmlFor="destination">To</Label>
                         <NativeSelect id="destination" value={d.destination} onChange={(e) => up({ destination: e.target.value })}>
-                          {cities.map((c) => (
+                          {cityOptions.map((c) => (
                             <option key={c.code} value={c.code}>
                               {c.name} ({c.code}){c.international ? " · Intl" : ""}
                             </option>
@@ -598,12 +620,12 @@ export default function PlanningPage() {
             <div className="flex gap-2">
               {step === steps.length - 1 ? (
                 <>
-                  <Button variant="outline" size="lg" onClick={() => submit(false)}>
-                    <Save />
+                  <Button variant="outline" size="lg" onClick={() => submit(false)} disabled={saving}>
+                    {saving ? <Loader2 className="animate-spin" /> : <Save />}
                     Save draft
                   </Button>
-                  <Button size="lg" onClick={() => submit(true)} className="shadow-md shadow-primary/25">
-                    <Sparkles />
+                  <Button size="lg" onClick={() => submit(true)} disabled={saving} className="shadow-md shadow-primary/25">
+                    {saving ? <Loader2 className="animate-spin" /> : <Sparkles />}
                     {editing ? "Save & re-optimize" : "Create & optimize"}
                   </Button>
                 </>
@@ -677,7 +699,9 @@ export default function PlanningPage() {
       <TravelerDialog
         open={travelerOpen}
         onOpenChange={setTravelerOpen}
-        onCreated={(t) => setD((p) => ({ ...p, travelerIds: [...p.travelerIds, t.id], rooms: Math.max(p.rooms, p.travelerIds.length + 1) }))}
+        onCreated={(t) =>
+          setD((p) => (apiMode ? { ...p, travelerIds: [t.id], rooms: Math.max(p.rooms, 1) } : { ...p, travelerIds: [...p.travelerIds, t.id], rooms: Math.max(p.rooms, p.travelerIds.length + 1) }))
+        }
       />
     </div>
   );
