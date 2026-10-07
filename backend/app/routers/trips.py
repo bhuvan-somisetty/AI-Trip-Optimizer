@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models import Itinerary, Traveler, Trip, TripStatus, User
+from app.models import Decision, DecisionOutcome, Itinerary, Traveler, Trip, TripStatus, User
 from app.pipeline.graph import pipeline
-from app.schemas import TripCreate, TripResponse, TripResultResponse
+from app.schemas import DecisionCreate, DecisionResponse, TripCreate, TripResponse, TripResultResponse
 from app.security import get_current_user
 
 router = APIRouter(tags=["trips"])
@@ -154,3 +154,53 @@ def get_itinerary(trip: Trip = Depends(get_owned_trip), session: Session = Depen
     if itinerary is None and trip.failure_reason is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip has not been optimized yet")
     return trip_result(trip, itinerary)
+
+
+@router.post("/trips/{trip_id}/review", response_model=TripResponse)
+def start_review(trip: Trip = Depends(get_owned_trip), session: Session = Depends(get_session)):
+    if trip.status != TripStatus.OPTIMIZED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Trip is {trip.status.value}; only OPTIMIZED trips can be moved to review",
+        )
+    trip.status = TripStatus.UNDER_REVIEW
+    session.add(trip)
+    session.commit()
+    session.refresh(trip)
+    return trip
+
+
+@router.post("/trips/{trip_id}/decision", response_model=DecisionResponse)
+def decide_trip(
+    body: DecisionCreate,
+    trip: Trip = Depends(get_owned_trip),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    if trip.status not in {TripStatus.OPTIMIZED, TripStatus.UNDER_REVIEW}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Trip is {trip.status.value}; only OPTIMIZED or UNDER_REVIEW trips can be decided",
+        )
+    if body.outcome == DecisionOutcome.REJECTED and body.reason is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="reason is required when outcome is REJECTED"
+        )
+
+    decision = Decision(trip_id=trip.id, decided_by=current_user.id, outcome=body.outcome, reason=body.reason)
+    trip.status = TripStatus.DECIDED
+    session.add(decision)
+    session.add(trip)
+    session.commit()
+    session.refresh(decision)
+    return decision
+
+
+@router.get("/trips/{trip_id}/decision", response_model=DecisionResponse)
+def get_decision(trip: Trip = Depends(get_owned_trip), session: Session = Depends(get_session)):
+    decision = session.exec(
+        select(Decision).where(Decision.trip_id == trip.id).order_by(Decision.decided_at.desc())
+    ).first()
+    if decision is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip has not been decided yet")
+    return decision
