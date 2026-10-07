@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { UserPlus, Search, Pencil, Trash2, Plane, Mail, MapPin, Utensils, Armchair, Users, Lock } from "lucide-react";
+import { UserPlus, Search, Pencil, Trash2, Plane, Mail, MapPin, Utensils, Armchair, Users, Lock, Loader2 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,10 @@ export default function TravelersPage() {
   const [editing, setEditing] = useState<Traveler | null>(null);
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState<Traveler | null>(null);
+  const [removing, setRemoving] = useState(false);
   const focus = params.get("focus");
+  // In API mode the backend decides (409 if the traveler has trips), so skip the local pre-check.
+  const apiMode = s.session?.mode === "api";
 
   useEffect(() => {
     if (focus) document.getElementById(`trv-${focus}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -137,9 +140,9 @@ export default function TravelersPage() {
 
       <TravelerDialog open={open} onOpenChange={setOpen} traveler={editing} />
 
-      <Dialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
+      <Dialog open={!!deleting} onOpenChange={(o) => !o && !removing && setDeleting(null)}>
         <DialogContent className="max-w-md">
-          {deleting && (stats[deleting.id]?.trips ?? 0) > 0 ? (
+          {deleting && !apiMode && (stats[deleting.id]?.trips ?? 0) > 0 ? (
             <>
               <DialogHeader>
                 <DialogTitle>Can&apos;t delete {deleting.name}</DialogTitle>
@@ -155,24 +158,31 @@ export default function TravelersPage() {
             <>
               <DialogHeader>
                 <DialogTitle>Delete {deleting?.name}?</DialogTitle>
-                <DialogDescription>This traveler has no trips and will be removed permanently.</DialogDescription>
+                <DialogDescription>
+                  {apiMode ? "The traveler will be removed permanently. Travelers with existing trips can't be deleted." : "This traveler has no trips and will be removed permanently."}
+                </DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <DialogClose className={buttonVariants({ variant: "outline", size: "lg" })}>Cancel</DialogClose>
+                <DialogClose className={buttonVariants({ variant: "outline", size: "lg" })} disabled={removing}>
+                  Cancel
+                </DialogClose>
                 <Button
                   size="lg"
                   className="bg-destructive text-white hover:bg-destructive/90"
-                  onClick={() => {
+                  disabled={removing}
+                  onClick={async () => {
+                    setRemoving(true);
                     try {
-                      actions.deleteTraveler(deleting!.id);
+                      await actions.deleteTraveler(deleting!.id);
                       toast("Traveler deleted");
                     } catch (e) {
                       toast("Can't delete", { description: (e as Error).message, variant: "error" });
                     }
+                    setRemoving(false);
                     setDeleting(null);
                   }}
                 >
-                  <Trash2 />
+                  {removing ? <Loader2 className="animate-spin" /> : <Trash2 />}
                   Delete
                 </Button>
               </DialogFooter>
