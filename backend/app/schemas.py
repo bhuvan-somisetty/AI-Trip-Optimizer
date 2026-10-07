@@ -76,6 +76,7 @@ class TripResponse(BaseModel):
     budget: Decimal
     preferences: dict
     status: TripStatus
+    failure_reason: str | None = None
     created_by: uuid.UUID
 
     @field_serializer("budget")
@@ -98,6 +99,36 @@ class TripResponse(BaseModel):
                 "budget": data.budget,
                 "preferences": data.preferences,
                 "status": data.status,
+                "failure_reason": data.failure_reason,
                 "created_by": data.created_by,
             }
         return data
+
+
+class ItineraryResponse(BaseModel):
+    flight: dict
+    hotel: dict | None
+    total_cost: float
+    within_budget: bool
+    flags: list[str]
+    rationale: str
+
+
+class LedgerEntryResponse(BaseModel):
+    alternative: str
+    price: float
+    won: bool
+    reason: str
+
+
+class TripResultResponse(BaseModel):
+    """What POST /trips/{id}/optimize and GET /trips/{id}/itinerary return.
+
+    On success `itinerary` and `tradeoff_ledger` are filled and `reason` is null;
+    on OPTIMIZATION_FAILED `itinerary` is null and `reason` says why.
+    """
+
+    status: TripStatus
+    itinerary: ItineraryResponse | None
+    tradeoff_ledger: list[LedgerEntryResponse]
+    reason: str | None
