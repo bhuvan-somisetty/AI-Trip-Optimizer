@@ -53,6 +53,8 @@ def traveler_id(client, auth_headers):
 def trip_payload(traveler_id):
     return {
         "traveler_id": traveler_id,
+        "origin": "BLR",
+        "destination": "DEL",
         "dates": ["2026-11-01", "2026-11-05"],
         "budget": 60000,
         "preferences": {"class": "economy"},
