@@ -46,6 +46,8 @@ class Trip(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     traveler_id: uuid.UUID = Field(foreign_key="travelers.id", index=True)
+    origin: str = Field(max_length=3)  # airport code, e.g. "BLR" (matches data/mock_flights.json)
+    destination: str = Field(max_length=3)
     start_date: date
     end_date: date
     budget: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
