@@ -3,10 +3,10 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Plane } from "lucide-react";
-import { useStore } from "@/lib/store";
+import { actions, useStore } from "@/lib/store";
 import { useApplyTheme } from "@/components/app/theme";
 
-/** Waits for the persisted workspace to load, then enforces sign-in for app routes. */
+/** Waits for the persisted workspace to load, enforces sign-in for app routes, and loads API data. */
 export function AppGate({ children }: { children: React.ReactNode }) {
   const s = useStore();
   const router = useRouter();
@@ -17,7 +17,13 @@ export function AppGate({ children }: { children: React.ReactNode }) {
     if (s.hydrated && !s.session) router.replace(`/login?next=${encodeURIComponent(pathname ?? "/dashboard")}`);
   }, [s.hydrated, s.session, router, pathname]);
 
-  if (!s.hydrated || !s.session) {
+  // Runs after sign-in and on every app load with a saved API session.
+  const apiToken = s.session?.mode === "api" ? s.session.token : undefined;
+  useEffect(() => {
+    if (s.hydrated && apiToken) void actions.syncFromApi();
+  }, [s.hydrated, apiToken]);
+
+  if (!s.hydrated || !s.session || s.syncing) {
     return (
       <div className="flex h-dvh w-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
