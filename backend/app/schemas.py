@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, EmailStr, Field, field_serializer, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator, model_validator
 
 from app.models import TripStatus, UserRole
 
@@ -42,9 +42,17 @@ class TravelerResponse(BaseModel):
 
 class TripCreate(BaseModel):
     traveler_id: uuid.UUID
+    # 3-letter airport codes, the same format the mock flight/hotel data uses.
+    origin: str = Field(pattern=r"^[A-Za-z]{3}$")
+    destination: str = Field(pattern=r"^[A-Za-z]{3}$")
     dates: tuple[date, date]  # [start, end], matches 07_API_Specification.md
     budget: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
     preferences: dict = {}
+
+    @field_validator("origin", "destination")
+    @classmethod
+    def uppercase_code(cls, value: str) -> str:
+        return value.upper()
 
     @model_validator(mode="after")
     def end_not_before_start(self):
@@ -52,10 +60,18 @@ class TripCreate(BaseModel):
             raise ValueError("End date cannot be before start date")
         return self
 
+    @model_validator(mode="after")
+    def origin_differs_from_destination(self):
+        if self.origin == self.destination:
+            raise ValueError("Origin and destination must be different")
+        return self
+
 
 class TripResponse(BaseModel):
     id: uuid.UUID
     traveler_id: uuid.UUID
+    origin: str
+    destination: str
     dates: tuple[date, date]
     budget: Decimal
     preferences: dict
@@ -76,6 +92,8 @@ class TripResponse(BaseModel):
             return {
                 "id": data.id,
                 "traveler_id": data.traveler_id,
+                "origin": data.origin,
+                "destination": data.destination,
                 "dates": (data.start_date, data.end_date),
                 "budget": data.budget,
                 "preferences": data.preferences,
