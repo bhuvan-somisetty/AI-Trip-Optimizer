@@ -42,7 +42,7 @@ class LedgerEntry(TypedDict):
 
 class Itinerary(TypedDict):
     flight: dict
-    hotel: dict
+    hotel: dict | None  # None for a same-day trip (0 nights)
     total_cost: float
     rationale: str
     tradeoff_ledger: list[LedgerEntry]
@@ -54,3 +54,4 @@ class PipelineState(TypedDict, total=False):
     hotel_options: list[dict]  # written by search_node
     check: CheckResult  # written by check_node
     itinerary: Itinerary  # written by compose_node
+    failure_reason: str  # written by compose_node instead of `itinerary` when none can be built
