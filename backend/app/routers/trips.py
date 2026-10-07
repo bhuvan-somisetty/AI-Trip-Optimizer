@@ -39,6 +39,8 @@ def create_trip(
 
     trip = Trip(
         traveler_id=body.traveler_id,
+        origin=body.origin,
+        destination=body.destination,
         start_date=body.dates[0],
         end_date=body.dates[1],
         budget=body.budget,
