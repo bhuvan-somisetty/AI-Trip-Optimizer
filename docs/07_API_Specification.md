@@ -260,7 +260,7 @@ Deletes a traveler. Requires a valid JWT.
 ---
 
 ## Trips
-*(**Verified 2026-09-22** for `POST /trip`, `GET /trips` and `GET /trips/{id}` — `app/routers/trips.py` is built and every example below is real output captured from the running backend against the SQLite dev stand-in, plus 19 automated tests in `backend/tests/test_trips.py`. `optimize` and `GET /trips/{id}/itinerary` were built 2026-10-08; `PATCH itinerary`, `decision` and `preview` below are still **Planned**.)*
+*(**Verified 2026-09-22** for `POST /trip`, `GET /trips` and `GET /trips/{id}` — `app/routers/trips.py` is built and every example below is real output captured from the running backend against the SQLite dev stand-in, plus 19 automated tests in `backend/tests/test_trips.py`. `optimize`, `GET /trips/{id}/itinerary`, `review` and `decision` were built 2026-10-08; `PATCH itinerary` and `preview` below are still **Planned**.)*
 
 **Ownership rule:** a user only ever sees trips they created. Asking for someone else's trip returns the same `404 Trip not found` as a trip that doesn't exist, so the API doesn't reveal which trip IDs exist. The check lives in one reusable dependency, `get_owned_trip`, that every future `/trips/{id}/...` route will reuse.
 
@@ -517,8 +517,18 @@ Edits a line item on the itinerary; total cost is recalculated server-side, neve
 }
 ```
 
+### POST /trips/{id}/review
+*(**Built 2026-10-08**, tests in `backend/tests/test_decisions.py`.)* Moves an `OPTIMIZED` trip to `UNDER_REVIEW`. No body. Returns the trip (same shape as `GET /trips/{id}`) with `"status": "UNDER_REVIEW"`. Requires a valid JWT and that the trip belongs to the requesting user.
+
+**Response (409 Conflict)** — trip isn't `OPTIMIZED`:
+```json
+{
+  "detail": "Trip is DRAFT; only OPTIMIZED trips can be moved to review"
+}
+```
+
 ### POST /trips/{id}/decision
-Records the human approve/reject decision. Reject requires a reason. Sets trip status to `DECIDED` (PRD US-007). Requires a valid JWT.
+*(**Built 2026-10-08**, tests in `backend/tests/test_decisions.py`.)* Records the human approve/reject decision and sets the trip to `DECIDED` (PRD US-007). Works on an `OPTIMIZED` or `UNDER_REVIEW` trip. A decided trip can't be optimized or decided again (409). Decisions are saved in the `decisions` table and never edited. Requires a valid JWT and that the trip belongs to the requesting user.
 
 **Request:**
 ```json
@@ -527,14 +537,17 @@ Records the human approve/reject decision. Reject requires a reason. Sets trip s
   "reason": "Layover too long for this traveler."
 }
 ```
+`outcome` is `APPROVED` or `REJECTED`. `reason` is required for `REJECTED` and optional for `APPROVED`; surrounding spaces are trimmed and a blank reason counts as missing.
 
-**Response (200 OK):**
+**Response (200 OK)** — real output (SQLite dev stand-in):
 ```json
 {
-  "id": "d3c1b9a5-...",
-  "trip_id": "f7a1c9e0-...",
+  "id": "df3320ab-719b-469a-87d0-af1a323de2ef",
+  "trip_id": "e139ec4d-756c-46e8-b10d-507067920e32",
   "outcome": "REJECTED",
-  "reason": "Layover too long for this traveler."
+  "reason": "Layover too long for this traveler.",
+  "decided_by": "87a5b994-9629-43f1-b825-afee30fb9014",
+  "decided_at": "2026-10-07T17:32:36.838340"
 }
 ```
 
@@ -545,19 +558,23 @@ Records the human approve/reject decision. Reject requires a reason. Sets trip s
 }
 ```
 
-**Response (401 Unauthorized)** — missing/invalid JWT:
+**Response (401 Unauthorized)** — no `Authorization` header: `{ "detail": "Not authenticated" }`
+
+**Response (404 Not Found)** — trip doesn't exist, or belongs to another user: `{ "detail": "Trip not found" }`
+
+**Response (409 Conflict)** — trip is `DRAFT`, `OPTIMIZING`, `OPTIMIZATION_FAILED` or already `DECIDED`:
 ```json
 {
-  "detail": "Could not validate credentials"
+  "detail": "Trip is DECIDED; only OPTIMIZED or UNDER_REVIEW trips can be decided"
 }
 ```
 
-**Response (404 Not Found)** — trip doesn't exist:
-```json
-{
-  "detail": "Trip not found"
-}
-```
+**Response (422 Unprocessable Entity)** — `outcome` isn't `APPROVED` or `REJECTED`.
+
+### GET /trips/{id}/decision
+*(**Built 2026-10-08.**)* Returns the trip's decision in the same shape as above, so the trip page can show who decided, when, and why.
+
+**Response (404 Not Found)** — not decided yet: `{ "detail": "Trip has not been decided yet" }`; trip doesn't exist or isn't yours: `{ "detail": "Trip not found" }`.
 
 ### POST /trips/{id}/preview
 *(Stretch — What-If Simulator, PRD US-011.)* Re-runs the pipeline against one changed input (`budget` or a preference) with `persist:false`, and returns a diff against the current saved itinerary without saving anything. Requires a valid JWT.
