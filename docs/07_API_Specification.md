@@ -260,7 +260,7 @@ Deletes a traveler. Requires a valid JWT.
 ---
 
 ## Trips
-*(**Verified 2026-09-22** for `POST /trip`, `GET /trips` and `GET /trips/{id}` — `app/routers/trips.py` is built and every example below is real output captured from the running backend against the SQLite dev stand-in, plus 19 automated tests in `backend/tests/test_trips.py`. `optimize`, `itinerary`, `decision` and `preview` below are still **Planned**.)*
+*(**Verified 2026-09-22** for `POST /trip`, `GET /trips` and `GET /trips/{id}` — `app/routers/trips.py` is built and every example below is real output captured from the running backend against the SQLite dev stand-in, plus 19 automated tests in `backend/tests/test_trips.py`. `optimize` and `GET /trips/{id}/itinerary` were built 2026-10-08; `PATCH itinerary`, `decision` and `preview` below are still **Planned**.)*
 
 **Ownership rule:** a user only ever sees trips they created. Asking for someone else's trip returns the same `404 Trip not found` as a trip that doesn't exist, so the API doesn't reveal which trip IDs exist. The check lives in one reusable dependency, `get_owned_trip`, that every future `/trips/{id}/...` route will reuse.
 
@@ -340,7 +340,7 @@ A `budget` of zero or below, or a `dates` list that isn't exactly two valid date
 ### GET /trips/{id}
 Returns one trip. Requires a valid JWT and that the trip belongs to the requesting user.
 
-*(The current itinerary is not included yet — the `itineraries` table doesn't exist until the optimizer is built in Weeks 5–6.)*
+*(The itinerary isn't included here — fetch it with `GET /trips/{id}/itinerary`. Every trip response also carries `failure_reason`: `null`, or why the last optimize run failed.)*
 
 **Response (200 OK):**
 ```json
@@ -419,50 +419,70 @@ Lists the requesting user's trips, newest first, optionally filtered by status. 
 ```
 
 ### POST /trips/{id}/optimize
-Runs the LangGraph pipeline — searches mock flight/hotel data, checks budget and constraints, and composes an itinerary alongside a full Trade-off Ledger (PRD US-003, US-004, US-005). Moves status through `OPTIMIZING → OPTIMIZED`, or to `OPTIMIZATION_FAILED` if nothing fits. Requires a valid JWT.
+*(**Built 2026-10-08** — examples below are real output from the backend, with tests in `backend/tests/test_optimize.py`.)*
 
-**Response (200 OK):**
+Runs the LangGraph pipeline on a saved trip: `search_node` finds mock flights and hotels, `check_node` applies the trip's preferences and budget, and `compose_node` builds the itinerary, the full Trade-off Ledger and a rationale (PRD US-003, US-004, US-005, US-006). Requires a valid JWT and that the trip belongs to the requesting user.
+
+**Status flow:** the trip is saved as `OPTIMIZING` before the pipeline starts, then ends as `OPTIMIZED` or `OPTIMIZATION_FAILED`. Only `DRAFT`, `OPTIMIZED` and `OPTIMIZATION_FAILED` trips can be optimized; re-running replaces the saved itinerary (one per trip, in the `itineraries` table).
+
+**Over budget is not a failure.** The cheapest itinerary that meets every preference is still returned, with `within_budget: false` and a flag naming the line items (PRD US-005). The run only fails when no flight (or, for an overnight trip, no hotel) is found or meets the preferences.
+
+**Rationale:** written by the LLM when `OPENAI_API_KEY` is set, otherwise by a fixed template from the same numbers. Every number in an LLM rationale must already appear in the itinerary's facts; if one doesn't, the run fails instead of showing it (product principle: no unsupported financial claims).
+
+**Response (200 OK)** — BLR → DEL, 2026-11-01 to 2026-11-03, budget 20000, `preferences: {"max_stops": 0}` (ledger shortened to 3 of 9 rows):
 ```json
 {
   "status": "OPTIMIZED",
   "itinerary": {
-    "flight_option": { "carrier": "IndiGo", "price": 8200 },
-    "stay_option": { "hotel": "Ibis", "price": 46000 },
-    "total_cost": 54200,
-    "rationale": "Chosen for lowest total cost within budget while matching the aisle-seat preference."
+    "flight": {
+      "id": "FL-1003", "origin": "BLR", "destination": "DEL",
+      "departure_time": "2026-11-01T23:40:00", "arrival_time": "2026-11-02T02:15:00",
+      "airline": "SpiceJet", "price": 4100, "cabin_class": "economy", "stops": 0
+    },
+    "hotel": {
+      "id": "HT-2002", "city": "DEL", "name": "Sample Budget Inn", "price_per_night": 1600,
+      "rating": 3.5, "amenities": ["wifi"], "distance_to_center_km": 4.2
+    },
+    "total_cost": 7300.0,
+    "within_budget": true,
+    "flags": [],
+    "rationale": "Chose flight FL-1003 SpiceJet economy, 0 stop(s) at 4,100 and hotel HT-2002 Sample Budget Inn, rated 3.5 at 1,600 a night for 2 night(s) (3,200), the cheapest options that meet every trip preference. Total cost is 7,300 against a budget of 20,000, leaving 12,700 unspent. 1 option(s) were ruled out by trip preferences."
   },
   "tradeoff_ledger": [
-    {
-      "alternative": { "carrier": "Vistara", "price": 9800 },
-      "price": 61000,
-      "won": false,
-      "reason": "Over budget by ₹1,000"
-    }
-  ]
+    { "alternative": "FL-1004 Vistara economy, 1 stop(s)", "price": 3600.0, "won": false, "reason": "Preference max_stops: FL-1004 has 1 stop(s), trip allows 0" },
+    { "alternative": "FL-1003 SpiceJet economy, 0 stop(s)", "price": 4100.0, "won": true, "reason": "Cheapest option that meets every trip preference" },
+    { "alternative": "FL-1001 IndiGo economy, 0 stop(s)", "price": 5200.0, "won": false, "reason": "Price: 1,100 more than FL-1003" }
+  ],
+  "reason": null
 }
 ```
+Hotel ledger rows show the whole stay's price (`price_per_night × nights`) so they compare directly. A same-day trip has `"hotel": null` and no hotel rows.
 
-**Response (200 OK)** — no combination fits the budget:
+**Response (200 OK)** — nothing found, trip is now `OPTIMIZATION_FAILED` (the same `reason` is saved as the trip's `failure_reason`):
 ```json
 {
   "status": "OPTIMIZATION_FAILED",
-  "reason": "No combination of flight and stay options fits within the stated budget."
+  "itinerary": null,
+  "tradeoff_ledger": [],
+  "reason": "No flights found from BLR to DEL on 2030-01-01"
 }
 ```
 
-**Response (401 Unauthorized)** — missing/invalid JWT:
+**Response (401 Unauthorized)** — no `Authorization` header: `{ "detail": "Not authenticated" }`
+
+**Response (404 Not Found)** — trip doesn't exist, or belongs to another user: `{ "detail": "Trip not found" }`
+
+**Response (409 Conflict)** — trip is `OPTIMIZING`, `UNDER_REVIEW` or `DECIDED`:
 ```json
 {
-  "detail": "Could not validate credentials"
+  "detail": "Trip is DECIDED; only DRAFT, OPTIMIZED or OPTIMIZATION_FAILED trips can be optimized"
 }
 ```
 
-**Response (404 Not Found)** — trip doesn't exist:
-```json
-{
-  "detail": "Trip not found"
-}
-```
+### GET /trips/{id}/itinerary
+*(**Built 2026-10-08.**)* Returns the trip's saved result in exactly the same shape as `POST /trips/{id}/optimize`, so the trip detail page can reload it without re-running the pipeline. After a failed run it returns `itinerary: null` with the `reason`.
+
+**Response (404 Not Found)** — trip never optimized: `{ "detail": "Trip has not been optimized yet" }`; trip doesn't exist or isn't yours: `{ "detail": "Trip not found" }`.
 
 ### PATCH /trips/{id}/itinerary
 Edits a line item on the itinerary; total cost is recalculated server-side, never client-supplied (PRD US-007). Requires a valid JWT.
