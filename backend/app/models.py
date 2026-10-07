@@ -56,5 +56,23 @@ class Trip(SQLModel, table=True):
         default=TripStatus.DRAFT,
         sa_column=Column(SAEnum(TripStatus, native_enum=False, length=32), nullable=False, index=True),
     )
+    failure_reason: str | None = None  # why the last optimize run failed, cleared on the next run
     created_by: uuid.UUID = Field(foreign_key="users.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Itinerary(SQLModel, table=True):
+    """The pipeline's latest result for a trip; re-optimizing replaces it."""
+
+    __tablename__ = "itineraries"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    trip_id: uuid.UUID = Field(foreign_key="trips.id", unique=True, index=True)
+    flight: dict = Field(sa_column=Column(JSON, nullable=False))
+    hotel: dict | None = Field(default=None, sa_column=Column(JSON))  # None for a same-day trip
+    total_cost: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+    within_budget: bool
+    flags: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    rationale: str
+    tradeoff_ledger: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
