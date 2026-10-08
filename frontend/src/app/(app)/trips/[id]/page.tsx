@@ -22,6 +22,7 @@ import {
   Plane,
   Wallet,
   Briefcase,
+  Loader2,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,6 +60,9 @@ export default function TripDetailPage() {
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
+  // The backend has no delete-trip endpoint yet.
+  const canDelete = s.session?.mode !== "api";
   const autoRan = useRef(false);
 
   useEffect(() => {
@@ -209,18 +213,25 @@ export default function TripDetailPage() {
               <Button
                 variant="outline"
                 size="lg"
-                onClick={() => {
-                  const copy = actions.duplicateTrip(t.id);
-                  toast(`Duplicated as ${copy.code}`);
-                  router.push(`/trips/${copy.id}`);
+                disabled={duplicating}
+                onClick={async () => {
+                  setDuplicating(true);
+                  try {
+                    const copy = await actions.duplicateTrip(t.id);
+                    toast(`Duplicated as ${copy.code}`);
+                    router.push(`/trips/${copy.id}`);
+                  } catch (e) {
+                    toast("Couldn't duplicate trip", { description: (e as Error).message, variant: "error" });
+                    setDuplicating(false);
+                  }
                 }}
               >
-                <Copy />
+                {duplicating ? <Loader2 className="animate-spin" /> : <Copy />}
                 Duplicate
               </Button>
             </>
           )}
-          {!decided && t.status !== "OPTIMIZING" && (
+          {canDelete && !decided && t.status !== "OPTIMIZING" && (
             <Button variant="ghost" size="icon-lg" aria-label="Delete trip" onClick={() => setConfirmDelete(true)}>
               <Trash2 />
             </Button>
