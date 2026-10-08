@@ -51,8 +51,9 @@ const purposes = ["Client meeting", "Conference", "Internal", "Recruitment", "Ve
 
 type Draft = Omit<Trip, "id" | "code" | "status" | "createdAt" | "createdBy">;
 
-// The backend's mock flight and hotel data only covers these airports.
+// The backend's mock flight and hotel data only covers these airports and dates.
 const apiCityCodes = ["BLR", "DEL", "BOM"];
+const apiDemoDates = { depart: "2026-11-01", return: "2026-11-05" };
 
 export default function PlanningPage() {
   const s = useStore();
@@ -86,6 +87,21 @@ export default function PlanningPage() {
         rooms: editing.rooms,
         filters: editing.filters,
         notes: editing.notes,
+      };
+    }
+    if (apiMode) {
+      return {
+        title: "",
+        travelerIds: [],
+        origin: "BLR",
+        destination: "DEL",
+        departDate: apiDemoDates.depart,
+        returnDate: apiDemoDates.return,
+        purpose: "Client meeting",
+        budget: 0,
+        rooms: 1,
+        filters: { ...defaultFilters },
+        notes: "",
       };
     }
     const depart = addDays(new Date(), 21);
@@ -401,6 +417,7 @@ export default function PlanningPage() {
                         <Input id="rooms" type="number" min={1} max={10} value={d.rooms} onChange={(e) => up({ rooms: Math.max(1, Number(e.target.value) || 1) })} />
                       </div>
                     </div>
+                    {apiMode && <p className="-mt-2 text-xs text-muted-foreground">Demo data covers 1–5 Nov 2026.</p>}
 
                     {cityByCode[d.destination]?.international && (
                       <div className="flex gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm">
