@@ -104,6 +104,9 @@ function persist() {
 }
 
 function set(updater: (s: State) => Partial<State>) {
+  // Pages like /login write (actions.login) without ever reading the store; load the saved
+  // workspace first so the empty initial state isn't persisted over it.
+  hydrate();
   state = { ...state, ...updater(state) };
   persist();
   emit();
