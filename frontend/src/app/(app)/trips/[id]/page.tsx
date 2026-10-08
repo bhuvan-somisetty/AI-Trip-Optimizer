@@ -48,6 +48,9 @@ type Tab = "itinerary" | "ledger" | "ask" | "whatif" | "activity" | "request";
 
 const flow: TripStatus[] = ["DRAFT", "OPTIMIZING", "OPTIMIZED", "UNDER_REVIEW", "DECIDED"];
 
+// Shown on controls that have no backend endpoint yet (API mode only).
+const soon = "Available soon for trips saved on the server";
+
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
   const params = useSearchParams();
@@ -61,9 +64,36 @@ export default function TripDetailPage() {
   const [reasonError, setReasonError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [busy, setBusy] = useState<"review" | "decide" | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const apiMode = s.session?.mode === "api";
   // The backend has no delete-trip endpoint yet.
-  const canDelete = s.session?.mode !== "api";
+  const canDelete = !apiMode;
   const autoRan = useRef(false);
+  const loadedFor = useRef<string | null>(null);
+
+  // API mode: fetch the saved itinerary (and decision) when the page opens, or if a status change left it missing.
+  const tripId = trip?.id;
+  const tripStatus = trip?.status;
+  const missingDetails =
+    !!trip &&
+    (((trip.status === "OPTIMIZED" || trip.status === "UNDER_REVIEW" || trip.status === "DECIDED") && !trip.itinerary) ||
+      (trip.status === "DECIDED" && !trip.outcome) ||
+      (trip.status === "OPTIMIZATION_FAILED" && !trip.failureReason));
+  useEffect(() => {
+    if (!apiMode || !tripId) return;
+    if (loadedFor.current === tripId && !missingDetails) return;
+    loadedFor.current = tripId;
+    let live = true;
+    setLoadingDetails(true);
+    actions
+      .loadTripDetails(tripId)
+      .catch((e) => toast("Couldn't load the itinerary", { description: (e as Error).message, variant: "error" }))
+      .finally(() => live && setLoadingDetails(false));
+    return () => {
+      live = false;
+    };
+  }, [apiMode, tripId, tripStatus, missingDetails]);
 
   useEffect(() => {
     if (!trip || autoRan.current || params.get("run") !== "1") return;
@@ -87,7 +117,9 @@ export default function TripDetailPage() {
   const t = trip;
   const it = t.itinerary;
   const decided = t.status === "DECIDED";
-  const editable = !decided && !!it && t.status !== "OPTIMIZING";
+  // Swapping line items has no backend endpoint yet, so API trips show the ledger read-only.
+  const canEdit = !decided && !!it && t.status !== "OPTIMIZING";
+  const editable = canEdit && !apiMode;
   const blocking = it?.issues.filter((i) => i.severity === "error") ?? [];
   const events = s.audit.filter((a) => a.tripId === t.id);
   const names = travelerNames(t, s.travelers);
@@ -95,13 +127,29 @@ export default function TripDetailPage() {
   async function run() {
     toast("Optimizer started", { description: `${t.code}: searching flights and stays…`, variant: "info" });
     setTab("itinerary");
-    await actions.runOptimization(t.id);
+    try {
+      await actions.runOptimization(t.id);
+    } catch (e) {
+      toast("Couldn't run the optimizer", { description: (e as Error).message, variant: "error" });
+      return;
+    }
     const after = getState().trips.find((x) => x.id === t.id);
     if (after?.status === "OPTIMIZED" && after.itinerary) {
       toast("Itinerary ready", { description: `${formatInr(after.itinerary.totalCost)} · ${after.itinerary.issues.length} flag${after.itinerary.issues.length === 1 ? "" : "s"} to review.` });
     } else if (after?.status === "OPTIMIZATION_FAILED") {
-      toast("Optimization failed", { description: "No feasible combination — adjust the filters.", variant: "error" });
+      toast("Optimization failed", { description: after.failureReason ?? "No feasible combination — adjust the filters.", variant: "error" });
     }
+  }
+
+  async function review() {
+    setBusy("review");
+    try {
+      await actions.startReview(t.id);
+      toast("Moved to review");
+    } catch (e) {
+      toast("Couldn't start review", { description: (e as Error).message, variant: "error" });
+    }
+    setBusy(null);
   }
 
   function swapOption(kind: LedgerEntry["kind"], optionId: string, label: string) {
@@ -111,13 +159,22 @@ export default function TripDetailPage() {
     toast(`Swapped to ${label}`, { description: `Total ${formatInr(before)} → ${formatInr(after)}. Logged to the audit trail.` });
   }
 
-  function submitDecision() {
-    if (!decision) return;
-    if (decision === "REJECTED" && !reason.trim()) {
+  async function submitDecision() {
+    if (!decision || busy) return;
+    // In API mode the backend enforces the rejection reason (400) and its message is shown.
+    if (!apiMode && decision === "REJECTED" && !reason.trim()) {
       setReasonError(true);
       return;
     }
-    actions.decide(t.id, decision, reason);
+    setBusy("decide");
+    try {
+      await actions.decide(t.id, decision, reason);
+    } catch (e) {
+      toast(decision === "APPROVED" ? "Couldn't approve" : "Couldn't reject", { description: (e as Error).message, variant: "error" });
+      setBusy(null);
+      return;
+    }
+    setBusy(null);
     toast(decision === "APPROVED" ? `${t.code} approved` : `${t.code} rejected`, {
       description: decision === "APPROVED" ? "Decision recorded. Ready for booking by the travel desk." : "Reason stored with the decision.",
       variant: decision === "APPROVED" ? "success" : "info",
@@ -126,11 +183,12 @@ export default function TripDetailPage() {
     setReason("");
   }
 
-  const tabs: { value: Tab; label: string; disabled?: boolean; count?: number }[] = [
+  const tabs: { value: Tab; label: string; disabled?: boolean; count?: number; title?: string }[] = [
     { value: "itinerary", label: "Itinerary" },
     { value: "ledger", label: "Trade-off Ledger", disabled: !it, count: it?.ledger.length },
     { value: "ask", label: "Ask this itinerary", disabled: !it },
-    { value: "whatif", label: "What-if", disabled: !it },
+    // Previews run the in-browser optimizer, whose prices don't match the backend's, and can't be saved yet.
+    { value: "whatif", label: "What-if", disabled: !it || apiMode, title: apiMode ? soon : undefined },
     { value: "activity", label: "Activity", count: events.length },
     { value: "request", label: "Request details" },
   ];
@@ -165,10 +223,19 @@ export default function TripDetailPage() {
         <div className="no-print flex flex-wrap gap-2">
           {(t.status === "DRAFT" || t.status === "OPTIMIZATION_FAILED") && (
             <>
-              <Link href={`/planning?edit=${t.id}`} className={buttonVariants({ variant: "outline", size: "lg" })}>
-                <Pencil />
-                Edit request
-              </Link>
+              {apiMode ? (
+                <span title={soon}>
+                  <Button variant="outline" size="lg" disabled>
+                    <Pencil />
+                    Edit request
+                  </Button>
+                </span>
+              ) : (
+                <Link href={`/planning?edit=${t.id}`} className={buttonVariants({ variant: "outline", size: "lg" })}>
+                  <Pencil />
+                  Edit request
+                </Link>
+              )}
               <Button size="lg" onClick={run} className="shadow-md shadow-primary/25">
                 <Sparkles />
                 {t.status === "DRAFT" ? "Run optimizer" : "Retry optimizer"}
@@ -182,15 +249,8 @@ export default function TripDetailPage() {
                 Re-run
               </Button>
               {t.status === "OPTIMIZED" && (
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => {
-                    actions.startReview(t.id);
-                    toast("Moved to review");
-                  }}
-                >
-                  <Eye />
+                <Button variant="outline" size="lg" disabled={busy === "review"} onClick={review}>
+                  {busy === "review" ? <Loader2 className="animate-spin" /> : <Eye />}
                   Start review
                 </Button>
               )}
@@ -285,7 +345,7 @@ export default function TripDetailPage() {
             <p className="text-muted-foreground">
               {(() => {
                 const ev = events.find((e) => e.type === "DECISION");
-                const r = ev?.payload?.reason as string | null | undefined;
+                const r = t.decisionReason ?? (ev?.payload?.reason as string | null | undefined);
                 return `${ev?.actor ?? "Reviewer"} recorded this decision${r ? `: “${r}”` : "."} Approved itineraries are final — duplicate the trip to request changes.`;
               })()}
             </p>
@@ -300,6 +360,7 @@ export default function TripDetailPage() {
             <button
               key={x.value}
               disabled={x.disabled}
+              title={x.title}
               onClick={() => setTab(x.value)}
               className={cn(
                 "relative flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
@@ -317,6 +378,15 @@ export default function TripDetailPage() {
       {tab === "itinerary" && (
         <div className="space-y-6">
           {t.status === "OPTIMIZING" && <PipelineProgress />}
+
+          {loadingDetails && !it && t.status !== "OPTIMIZING" && (
+            <Card>
+              <CardContent className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Loading the saved itinerary…
+              </CardContent>
+            </Card>
+          )}
 
           {t.status === "DRAFT" && (
             <Card>
@@ -343,13 +413,17 @@ export default function TripDetailPage() {
                 <div className="flex-1 space-y-1">
                   <p className="font-semibold">Optimization failed</p>
                   <p className="text-sm text-muted-foreground">{t.failureReason}</p>
-                  <p className="text-sm text-muted-foreground">Nothing was guessed or partially booked. Adjust the filters and try again.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Nothing was guessed or partially booked. {apiMode ? "Duplicate the trip with different dates or a different route, or retry." : "Adjust the filters and try again."}
+                  </p>
                 </div>
                 <div className="flex gap-2">
-                  <Link href={`/planning?edit=${t.id}`} className={buttonVariants({ variant: "outline" })}>
-                    <Pencil />
-                    Adjust filters
-                  </Link>
+                  {!apiMode && (
+                    <Link href={`/planning?edit=${t.id}`} className={buttonVariants({ variant: "outline" })}>
+                      <Pencil />
+                      Adjust filters
+                    </Link>
+                  )}
                   <Button onClick={run}>
                     <RefreshCw />
                     Retry
@@ -361,12 +435,13 @@ export default function TripDetailPage() {
 
           {it && t.status !== "OPTIMIZING" && (
             <>
-              <CostSummary trip={t} it={it} />
+              {/* The backend has no market baseline yet, so savings stay hidden in API mode. */}
+              <CostSummary trip={t} it={it} showSavings={!apiMode} />
               <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
                 <div className="space-y-4">
                   <FlightCard flight={it.outbound} label="Outbound" pax={it.travelers} editable={editable} onChange={() => { setLedgerKind("outbound"); setTab("ledger"); }} />
                   {it.return && <FlightCard flight={it.return} label="Return" pax={it.travelers} editable={editable} onChange={() => { setLedgerKind("return"); setTab("ledger"); }} />}
-                  {it.stay && <StayCard hotel={it.stay} nights={it.nights} rooms={it.rooms} editable={editable} onChange={() => { setLedgerKind("stay"); setTab("ledger"); }} />}
+                  {it.stay && <StayCard hotel={it.stay} nights={it.nights} rooms={it.rooms} cost={apiMode ? it.stayCost : undefined} editable={editable} onChange={() => { setLedgerKind("stay"); setTab("ledger"); }} />}
                   <Rationale it={it} />
                 </div>
                 <div className="space-y-4">
@@ -388,7 +463,9 @@ export default function TripDetailPage() {
         </div>
       )}
 
-      {tab === "ledger" && it && <TradeoffLedger key={ledgerKind} it={it} editable={editable} onUse={swapOption} initialKind={ledgerKind} />}
+      {tab === "ledger" && it && (
+        <TradeoffLedger key={ledgerKind} it={it} editable={canEdit} onUse={swapOption} initialKind={ledgerKind} swapUnavailable={apiMode ? soon : undefined} />
+      )}
 
       {tab === "ask" && it && (
         <Card className="h-[min(70dvh,640px)] gap-0 overflow-hidden py-0">
@@ -396,7 +473,15 @@ export default function TripDetailPage() {
             mode="itinerary"
             tripId={t.id}
             className="h-full"
-            suggestions={["Why this outbound flight?", "Why not a cheaper flight?", "Why not an earlier flight?", "Why this hotel?", "What are the policy issues?", "How much does it cost?", "How much did we save?"]}
+            suggestions={[
+              "Why this outbound flight?",
+              "Why not a cheaper flight?",
+              ...(apiMode ? [] : ["Why not an earlier flight?"]),
+              "Why this hotel?",
+              "What are the policy issues?",
+              "How much does it cost?",
+              ...(apiMode ? [] : ["How much did we save?"]),
+            ]}
           />
         </Card>
       )}
@@ -455,7 +540,7 @@ export default function TripDetailPage() {
       )}
 
       {/* Decision dialog */}
-      <Dialog open={decision !== null} onOpenChange={(o) => { if (!o) { setDecision(null); setReasonError(false); } }}>
+      <Dialog open={decision !== null} onOpenChange={(o) => { if (!o && busy !== "decide") { setDecision(null); setReasonError(false); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{decision === "APPROVED" ? `Approve ${t.code}?` : `Reject ${t.code}?`}</DialogTitle>
@@ -472,7 +557,7 @@ export default function TripDetailPage() {
                 <p className="font-medium text-destructive">{blocking.length} blocking issue{blocking.length > 1 ? "s" : ""}</p>
                 <ul className="mt-1 list-disc pl-4 text-xs text-muted-foreground">
                   {blocking.map((b) => (
-                    <li key={b.id}>{b.rule} — {b.lineItem}</li>
+                    <li key={b.id}>{b.lineItem ? `${b.rule} — ${b.lineItem}` : `${b.rule}: ${b.message}`}</li>
                   ))}
                 </ul>
                 <p className="mt-1 text-xs text-muted-foreground">Approving records an explicit override — add a justification below.</p>
@@ -503,13 +588,16 @@ export default function TripDetailPage() {
             )}
           </div>
           <DialogFooter>
-            <DialogClose className={buttonVariants({ variant: "outline", size: "lg" })}>Cancel</DialogClose>
+            <DialogClose className={buttonVariants({ variant: "outline", size: "lg" })} disabled={busy === "decide"}>
+              Cancel
+            </DialogClose>
             <Button
               size="lg"
+              disabled={busy === "decide"}
               onClick={submitDecision}
               className={decision === "APPROVED" ? "bg-success text-white hover:bg-success/90" : "bg-destructive text-white hover:bg-destructive/90"}
             >
-              {decision === "APPROVED" ? <CheckCircle2 /> : <XCircle />}
+              {busy === "decide" ? <Loader2 className="animate-spin" /> : decision === "APPROVED" ? <CheckCircle2 /> : <XCircle />}
               {decision === "APPROVED" ? "Approve itinerary" : "Reject itinerary"}
             </Button>
           </DialogFooter>
