@@ -19,6 +19,7 @@ import {
   Plane,
   CalendarDays,
   Users,
+  Loader2,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +75,8 @@ export default function TripsPage() {
   const [sort, setSort] = useState<Sort>("newest");
   const [view, setView] = useState<"table" | "grid">("table");
   const [showFilters, setShowFilters] = useState(true);
+  // The backend has no delete-trip endpoint yet.
+  const canDelete = s.session?.mode !== "api";
 
   const purposes = useMemo(() => [...new Set(s.trips.map((t) => t.purpose))].sort(), [s.trips]);
   const activeFilters = Object.entries(f).filter(([k, v]) => (k === "timeframe" ? v !== "all" : Boolean(v))).length;
@@ -357,7 +360,7 @@ export default function TripsPage() {
                         {t.itinerary ? formatInr(t.itinerary.totalCost) : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        <RowMenu trip={t} onOptimize={() => optimizeNow(t)} onRemove={() => remove(t)} />
+                        <RowMenu trip={t} onOptimize={() => optimizeNow(t)} onRemove={canDelete ? () => remove(t) : undefined} />
                       </TableCell>
                     </TableRow>
                   );
@@ -385,7 +388,7 @@ export default function TripsPage() {
                     </div>
                     <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
                       <TripStatusBadge trip={t} />
-                      <RowMenu trip={t} onOptimize={() => optimizeNow(t)} onRemove={() => remove(t)} />
+                      <RowMenu trip={t} onOptimize={() => optimizeNow(t)} onRemove={canDelete ? () => remove(t) : undefined} />
                     </div>
                   </div>
                   <div className="flex items-center gap-3 rounded-xl bg-muted/60 p-3">
@@ -433,8 +436,9 @@ export default function TripsPage() {
   );
 }
 
-function RowMenu({ trip, onOptimize, onRemove }: { trip: Trip; onOptimize: () => void; onRemove: () => void }) {
+function RowMenu({ trip, onOptimize, onRemove }: { trip: Trip; onOptimize: () => void; onRemove?: () => void }) {
   const router = useRouter();
+  const [duplicating, setDuplicating] = useState(false);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent" aria-label="Trip actions">
@@ -452,16 +456,23 @@ function RowMenu({ trip, onOptimize, onRemove }: { trip: Trip; onOptimize: () =>
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
-          onClick={() => {
-            const copy = actions.duplicateTrip(trip.id);
-            toast(`Duplicated as ${copy.code}`);
-            router.push(`/trips/${copy.id}`);
+          disabled={duplicating}
+          onClick={async () => {
+            setDuplicating(true);
+            try {
+              const copy = await actions.duplicateTrip(trip.id);
+              toast(`Duplicated as ${copy.code}`);
+              router.push(`/trips/${copy.id}`);
+            } catch (e) {
+              toast("Couldn't duplicate trip", { description: (e as Error).message, variant: "error" });
+            }
+            setDuplicating(false);
           }}
         >
-          <Copy />
+          {duplicating ? <Loader2 className="animate-spin" /> : <Copy />}
           Duplicate
         </DropdownMenuItem>
-        {trip.status !== "DECIDED" && (
+        {trip.status !== "DECIDED" && onRemove && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={onRemove}>
