@@ -9,16 +9,17 @@ import { formatDate, formatDuration, formatInr, formatTime } from "@/lib/format"
 import type { Flight, Hotel, Itinerary, Trip } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-export function CostSummary({ trip, it }: { trip: Trip; it: Itinerary }) {
+/** `showSavings={false}` hides the savings metric when there is no baseline to compare against. */
+export function CostSummary({ trip, it, showSavings = true }: { trip: Trip; it: Itinerary; showSavings?: boolean }) {
   const pct = Math.round((it.totalCost / trip.budget) * 100);
   const over = it.totalCost > trip.budget;
   return (
     <Card className="overflow-hidden py-0">
-      <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
-        <Metric label="Total cost" value={formatInr(it.totalCost)} sub={`${it.travelers} traveler${it.travelers > 1 ? "s" : ""} · ${it.nights} night${it.nights > 1 ? "s" : ""}`} strong />
+      <div className={cn("grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0", showSavings ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
+        <Metric label="Total cost" value={formatInr(it.totalCost)} sub={`${it.travelers} traveler${it.travelers > 1 ? "s" : ""} · ${it.nights} night${it.nights === 1 ? "" : "s"}`} strong />
         <Metric label="Budget" value={formatInr(trip.budget)} sub={over ? `${formatInr(it.totalCost - trip.budget)} over` : `${formatInr(trip.budget - it.totalCost)} headroom`} tone={over ? "bad" : "good"} />
-        <Metric label="Savings vs typical" value={formatInr(it.savings)} sub={`Typical market cost ${formatInr(it.baselineCost)}`} tone={it.savings > 0 ? "good" : undefined} />
-        <Metric label="Options evaluated" value={String(it.ledger.length)} sub={`Pipeline ran in ${it.runMs} ms`} />
+        {showSavings && <Metric label="Savings vs typical" value={formatInr(it.savings)} sub={`Typical market cost ${formatInr(it.baselineCost)}`} tone={it.savings > 0 ? "good" : undefined} />}
+        <Metric label="Options evaluated" value={String(it.ledger.length)} sub={it.runMs > 0 ? `Pipeline ran in ${it.runMs} ms` : "Saved optimizer result"} />
       </div>
       <div className="border-t px-5 py-4">
         <div className="mb-2 flex items-center justify-between text-xs">
@@ -82,7 +83,7 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
             <div className="relative h-px w-full bg-border">
               {flight.stops > 0 && <span className="absolute top-1/2 left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-warning" />}
             </div>
-            <span className={cn("text-xs font-medium", flight.stops === 0 ? "text-emerald-600 dark:text-success" : "text-amber-600")}>{flight.stops === 0 ? "Non-stop" : `${flight.stops} stop · ${flight.via}`}</span>
+            <span className={cn("text-xs font-medium", flight.stops === 0 ? "text-emerald-600 dark:text-success" : "text-amber-600")}>{flight.stops === 0 ? "Non-stop" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}${flight.via ? ` · ${flight.via}` : ""}`}</span>
           </div>
           <div className="text-right">
             <p className="text-2xl font-semibold tabular-nums">{formatTime(flight.arrival)}</p>
@@ -106,7 +107,8 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
   );
 }
 
-export function StayCard({ hotel, nights, rooms, onChange, editable }: { hotel: Hotel; nights: number; rooms: number; onChange?: () => void; editable?: boolean }) {
+/** `cost` overrides the nightly-rate × nights × rooms total, e.g. when the backend priced the stay. */
+export function StayCard({ hotel, nights, rooms, cost, onChange, editable }: { hotel: Hotel; nights: number; rooms: number; cost?: number; onChange?: () => void; editable?: boolean }) {
   return (
     <Card className="gap-4">
       <CardHeader>
@@ -132,7 +134,7 @@ export function StayCard({ hotel, nights, rooms, onChange, editable }: { hotel: 
             ))}
           </span>
           <span className="rounded-md bg-success/15 px-1.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-success">{hotel.rating} / 5</span>
-          <span className="flex items-center gap-1 text-muted-foreground"><MapPin className="size-3.5" />{hotel.area} · {hotel.distanceKm} km</span>
+          <span className="flex items-center gap-1 text-muted-foreground"><MapPin className="size-3.5" />{hotel.area ? `${hotel.area} · ` : ""}{hotel.distanceKm} km</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {hotel.amenities.map((a) => (
@@ -143,8 +145,10 @@ export function StayCard({ hotel, nights, rooms, onChange, editable }: { hotel: 
           </Badge>
         </div>
         <div className="flex items-end justify-between border-t pt-3">
-          <span className="text-xs text-muted-foreground">{formatInr(hotel.pricePerNight)} × {nights} × {rooms}</span>
-          <span className="text-base font-semibold tabular-nums">{formatInr(hotel.pricePerNight * nights * rooms)}</span>
+          <span className="text-xs text-muted-foreground">
+            {formatInr(hotel.pricePerNight)} × {nights} night{nights === 1 ? "" : "s"}{cost === undefined ? ` × ${rooms}` : ""}
+          </span>
+          <span className="text-base font-semibold tabular-nums">{formatInr(cost ?? hotel.pricePerNight * nights * rooms)}</span>
         </div>
       </CardContent>
     </Card>
@@ -184,9 +188,11 @@ export function ConstraintFlags({ it }: { it: Itinerary }) {
                   <span className={cn("mr-1.5 text-[11px] font-semibold tracking-wide uppercase", m.iconClass)}>{m.label}</span>
                   {i.rule}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Line item: <span className="font-medium text-foreground">{i.lineItem}</span>
-                </p>
+                {i.lineItem && (
+                  <p className="text-xs text-muted-foreground">
+                    Line item: <span className="font-medium text-foreground">{i.lineItem}</span>
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">{i.message}</p>
               </div>
             </div>
