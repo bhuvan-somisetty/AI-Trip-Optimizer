@@ -1,10 +1,10 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator, model_validator
 
-from app.models import TripStatus, UserRole
+from app.models import DecisionOutcome, TripStatus, UserRole
 
 
 class RegisterRequest(BaseModel):
@@ -132,3 +132,23 @@ class TripResultResponse(BaseModel):
     itinerary: ItineraryResponse | None
     tradeoff_ledger: list[LedgerEntryResponse]
     reason: str | None
+
+
+class DecisionCreate(BaseModel):
+    outcome: DecisionOutcome
+    reason: str | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def blank_reason_is_none(cls, value: str | None) -> str | None:
+        # "   " is not a reason; the endpoint then treats it as missing.
+        return value.strip() or None if value is not None else None
+
+
+class DecisionResponse(BaseModel):
+    id: uuid.UUID
+    trip_id: uuid.UUID
+    outcome: DecisionOutcome
+    reason: str | None
+    decided_by: uuid.UUID
+    decided_at: datetime
