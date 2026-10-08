@@ -201,18 +201,23 @@ export function answerFromItinerary(question: string, trip: Trip): { content: st
   }
 
   const kind = /return|back|home/.test(q) ? "return" : /hotel|stay|room|accommodation/.test(q) ? "stay" : "outbound";
+  // Ledger rows from the local optimizer start their detail with the departure time ("06:15 → …"); backend rows don't.
+  const timed = (l: LedgerEntry) => /^\d{2}:\d{2}/.test(l.detail);
+  const noTimes = `The ledger doesn't list departure times for the ${kind} alternatives, so I can't compare them by time.`;
 
   if (/earl(y|ier)|morning/.test(q) && kind !== "stay") {
     const chosen = kind === "return" ? it.return : it.outbound;
     if (!chosen) return { content: "This is a one-way trip, so there is no return flight.", covered: true };
-    const earlier = it.ledger.filter((l) => l.kind === kind && !l.won && l.detail.slice(0, 5) < formatTime(chosen.departure));
+    if (!it.ledger.some((l) => l.kind === kind && !l.won && timed(l))) return { content: noTimes, covered: true };
+    const earlier = it.ledger.filter((l) => l.kind === kind && !l.won && timed(l) && l.detail.slice(0, 5) < formatTime(chosen.departure));
     if (!earlier.length) return { content: `${chosen.airline} ${chosen.flightNo} at ${formatTime(chosen.departure)} is already the earliest ${kind} option that was searched.`, covered: true };
     return { content: `There were ${earlier.length} earlier ${kind} option${earlier.length > 1 ? "s" : ""}:\n\n${earlier.map(describe).join("\n")}`, covered: true };
   }
   if (/later|evening|afternoon/.test(q) && kind !== "stay") {
     const chosen = kind === "return" ? it.return : it.outbound;
     if (!chosen) return { content: "This is a one-way trip, so there is no return flight.", covered: true };
-    const later = it.ledger.filter((l) => l.kind === kind && !l.won && l.detail.slice(0, 5) > formatTime(chosen.departure));
+    if (!it.ledger.some((l) => l.kind === kind && !l.won && timed(l))) return { content: noTimes, covered: true };
+    const later = it.ledger.filter((l) => l.kind === kind && !l.won && timed(l) && l.detail.slice(0, 5) > formatTime(chosen.departure));
     if (!later.length) return { content: `${chosen.airline} ${chosen.flightNo} is already the latest ${kind} option searched.`, covered: true };
     return { content: `Later ${kind} options that were considered:\n\n${later.map(describe).join("\n")}`, covered: true };
   }
@@ -233,6 +238,10 @@ export function answerFromItinerary(question: string, trip: Trip): { content: st
     };
   }
   if (/sav/.test(q)) {
+    // Backend itineraries have no market baseline yet (baseline = total, savings = 0); don't present that as a figure.
+    if (!it.savings && it.baselineCost === it.totalCost) {
+      return { content: `Savings against a typical market cost aren't calculated for this itinerary yet. The total is ${formatInr(it.totalCost)} against a ${formatInr(trip.budget)} budget.`, covered: true };
+    }
     return { content: `The itinerary costs ${formatInr(it.totalCost)} vs a typical market cost of ${formatInr(it.baselineCost)} for this route and stay — a saving of ${formatInr(it.savings)}.`, covered: true };
   }
   if (/issue|policy|flag|problem|warning|constraint|approv/.test(q)) {
@@ -244,7 +253,7 @@ export function answerFromItinerary(question: string, trip: Trip): { content: st
   }
   if (/flight|fly|depart|airline/.test(q)) {
     const f = kind === "return" && it.return ? it.return : it.outbound;
-    return { content: `${f.airline} ${f.flightNo}: departs ${formatTime(f.departure)}, arrives ${formatTime(f.arrival)}, ${formatDuration(f.durationMin)}, ${f.stops === 0 ? "non-stop" : `${f.stops} stop via ${f.via}`}, ${formatInr(f.price)} per traveler.`, covered: true };
+    return { content: `${f.airline} ${f.flightNo}: departs ${formatTime(f.departure)}, arrives ${formatTime(f.arrival)}, ${formatDuration(f.durationMin)}, ${f.stops === 0 ? "non-stop" : `${f.stops} stop${f.stops > 1 ? "s" : ""}${f.via ? ` via ${f.via}` : ""}`}, ${formatInr(f.price)} per traveler.`, covered: true };
   }
   return {
     content: `I can only answer from this itinerary's own data. Try asking "why not a cheaper flight?", "why this hotel?", "what are the policy issues?" or "how much does it cost?".\n\nSummary: ${it.rationale}`,
