@@ -63,6 +63,8 @@ export type Trip = {
   createdBy: string;
   createdAt: string;
   decidedAt?: string;
+  /** The reviewer's note or rejection reason, when loaded from the API */
+  decisionReason?: string | null;
 };
 
 export type Flight = {
