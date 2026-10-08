@@ -5,7 +5,7 @@ import * as api from "./api";
 import { cityByCode } from "./catalog";
 import { addDays, formatInr, toIsoDate, uid } from "./format";
 import { builtInDocs } from "./knowledge";
-import { fromTraveler, fromTrip, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
+import { fromTraveler, fromTrip, toItinerary, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
 import { OptimizationError, editItinerary, optimize } from "./optimizer";
 import { toast } from "./toast";
 import type {
@@ -183,14 +183,29 @@ async function remote<T>(fn: (token: string) => Promise<T>): Promise<T> {
 const tripContext = () => ({ defaultFilters, createdBy: actor() });
 
 /**
- * Optimization and approval still run locally until their backend endpoints land, so while the
- * server reports DRAFT keep any progress made in this browser instead of discarding it on reload.
+ * The backend status is the truth. Itineraries and decisions are only fetched when a trip's page
+ * opens, so keep ones already loaded while the status hasn't changed (the Trips list shows their cost).
  */
-function withLocalProgress(trip: Trip, local: Trip | undefined): Trip {
-  if (trip.status !== "DRAFT" || !local || local.status === "DRAFT" || local.status === "OPTIMIZING") return trip;
-  const { status, outcome, failureReason, itinerary, decidedAt } = local;
-  return { ...trip, status, outcome, failureReason, itinerary, decidedAt };
+function withLoadedDetails(trip: Trip, local: Trip | undefined): Trip {
+  if (!local || local.status !== trip.status) return trip;
+  const { itinerary, outcome, decidedAt, decisionReason } = local;
+  return { ...trip, itinerary, outcome, decidedAt, decisionReason };
 }
+
+const decisionFields = (d: api.DecisionResponse) => ({ outcome: d.outcome, decidedAt: d.decided_at, decisionReason: d.reason });
+
+/** After a 409 the local status is stale; re-read the trip so the page shows the backend's. */
+async function refreshAfterConflict(id: string, e: unknown) {
+  if (!(e instanceof api.ApiError) || e.status !== 409) return;
+  try {
+    const r = await remote((tok) => api.getTrip(tok, id));
+    patchTrip(id, { status: r.status, failureReason: r.failure_reason ?? undefined });
+  } catch {
+    /* keep the local copy; the original error is what the user needs to see */
+  }
+}
+
+const notOnServerYet = "This isn't available for trips saved on the server yet.";
 
 let syncing: Promise<void> | null = null;
 
@@ -226,7 +241,7 @@ export const actions = {
           travelers: travelers.map(toTraveler),
           trips: trips.map((r) => {
             const trip = toTrip(r, tripContext());
-            return withLocalProgress(trip, s.trips.find((x) => x.id === trip.id));
+            return withLoadedDetails(trip, s.trips.find((x) => x.id === trip.id));
           }),
         }));
       } catch (e) {
@@ -341,9 +356,56 @@ export const actions = {
     });
   },
 
+  /** API mode: loads the saved itinerary (and decision) for one trip, when its page opens. */
+  async loadTripDetails(id: string) {
+    const trip = state.trips.find((t) => t.id === id);
+    if (!isApi() || !trip) return;
+    if (!["OPTIMIZED", "UNDER_REVIEW", "DECIDED", "OPTIMIZATION_FAILED"].includes(trip.status)) return;
+    const [result, decision] = await Promise.all([
+      remote((tok) => api.getItinerary(tok, id)),
+      trip.status === "DECIDED" ? remote((tok) => api.getDecision(tok, id)) : null,
+    ]);
+    const fresh = state.trips.find((t) => t.id === id);
+    if (!fresh) return;
+    // runMs 0 marks a saved result rather than a run timed in this browser.
+    patchTrip(id, { status: result.status, itinerary: toItinerary(result, fresh, 0), failureReason: result.reason ?? undefined, ...(decision ? decisionFields(decision) : {}) });
+  },
+
   async runOptimization(id: string) {
     const trip = state.trips.find((t) => t.id === id);
     if (!trip) return;
+    if (isApi()) {
+      const previous = trip.status;
+      patchTrip(id, { status: "OPTIMIZING", failureReason: undefined });
+      const started = performance.now();
+      let result: api.TripResult;
+      try {
+        result = await remote((tok) => api.optimizeTrip(tok, id));
+      } catch (e) {
+        patchTrip(id, { status: previous });
+        await refreshAfterConflict(id, e);
+        throw e;
+      }
+      const fresh = state.trips.find((t) => t.id === id);
+      if (!fresh) return;
+      const itinerary = toItinerary(result, fresh, Math.round(performance.now() - started));
+      if (result.status === "OPTIMIZED" && itinerary) {
+        patchTrip(id, { status: "OPTIMIZED", itinerary, failureReason: undefined }, [
+          log({
+            tripId: id,
+            type: "PIPELINE_RUN",
+            summary: `Optimizer composed itinerary: ${formatInr(itinerary.totalCost)} (${itinerary.ledger.length} options evaluated, ${itinerary.issues.length} flags)`,
+            payload: { totalCost: itinerary.totalCost, runMs: itinerary.runMs, issues: itinerary.issues.length },
+          }),
+        ]);
+      } else {
+        const reason = result.reason ?? "The optimizer couldn't build an itinerary.";
+        patchTrip(id, { status: result.status, failureReason: reason, itinerary: undefined }, [
+          log({ tripId: id, type: "PIPELINE_FAILED", summary: `Optimization failed: ${reason}` }),
+        ]);
+      }
+      return;
+    }
     patchTrip(id, { status: "OPTIMIZING", failureReason: undefined });
     await sleep(2600);
     const fresh = state.trips.find((t) => t.id === id);
@@ -365,10 +427,20 @@ export const actions = {
       ]);
     }
   },
-  startReview(id: string) {
-    patchTrip(id, { status: "UNDER_REVIEW" }, [log({ tripId: id, type: "REVIEW_STARTED", summary: "Itinerary moved to review" })]);
+  async startReview(id: string) {
+    let status: Trip["status"] = "UNDER_REVIEW";
+    if (isApi()) {
+      try {
+        status = (await remote((tok) => api.startReview(tok, id))).status;
+      } catch (e) {
+        await refreshAfterConflict(id, e);
+        throw e;
+      }
+    }
+    patchTrip(id, { status }, [log({ tripId: id, type: "REVIEW_STARTED", summary: "Itinerary moved to review" })]);
   },
   editLineItem(id: string, kind: "outbound" | "return" | "stay", optionId: string) {
+    if (isApi()) throw new Error(notOnServerYet);
     const trip = state.trips.find((t) => t.id === id);
     if (!trip?.itinerary) return;
     const before = trip.itinerary.totalCost;
@@ -383,19 +455,30 @@ export const actions = {
       }),
     ]);
   },
-  /** PRD US-007: approve → DECIDED; reject requires a stored reason. */
-  decide(id: string, outcome: Outcome, reason: string) {
-    if (outcome === "REJECTED" && !reason.trim()) throw new Error("A reason is required to reject an itinerary.");
-    patchTrip(id, { status: "DECIDED", outcome, decidedAt: new Date().toISOString() }, [
+  /** PRD US-007: approve → DECIDED; reject requires a stored reason (the API answers 400 without one). */
+  async decide(id: string, outcome: Outcome, reason: string) {
+    let fields: Partial<Trip> = { outcome, decidedAt: new Date().toISOString(), decisionReason: reason.trim() || null };
+    if (isApi()) {
+      try {
+        fields = decisionFields(await remote((tok) => api.decideTrip(tok, id, outcome, reason.trim())));
+      } catch (e) {
+        await refreshAfterConflict(id, e);
+        throw e;
+      }
+    } else if (outcome === "REJECTED" && !reason.trim()) {
+      throw new Error("A reason is required to reject an itinerary.");
+    }
+    patchTrip(id, { status: "DECIDED", ...fields }, [
       log({
         tripId: id,
         type: "DECISION",
-        summary: `${outcome === "APPROVED" ? "Approved" : "Rejected"} itinerary${reason.trim() ? ` — "${reason.trim()}"` : ""}`,
-        payload: { outcome, reason: reason.trim() || null },
+        summary: `${outcome === "APPROVED" ? "Approved" : "Rejected"} itinerary${fields.decisionReason ? ` — "${fields.decisionReason}"` : ""}`,
+        payload: { outcome, reason: fields.decisionReason ?? null },
       }),
     ]);
   },
   applyPreview(id: string, patch: Partial<Trip>) {
+    if (isApi()) throw new Error(notOnServerYet);
     const trip = state.trips.find((t) => t.id === id);
     if (!trip) return;
     const next = { ...trip, ...patch };
