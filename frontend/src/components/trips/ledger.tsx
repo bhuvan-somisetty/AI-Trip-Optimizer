@@ -17,20 +17,25 @@ export function TradeoffLedger({
   editable,
   onUse,
   initialKind = "outbound",
+  swapUnavailable,
 }: {
   it: Itinerary;
   editable: boolean;
   onUse: (kind: Kind, optionId: string, label: string) => void;
   initialKind?: Kind;
+  /** When set, "Use this" is shown disabled with this text as its tooltip. */
+  swapUnavailable?: string;
 }) {
   const [kind, setKind] = useState<Kind>(initialKind);
   const [codes, setCodes] = useState<string[]>([]);
   const [sort, setSort] = useState<"price" | "score">("price");
+  // Backend results carry no option scores, so skip the score bar and sort there.
+  const scored = it.ledger.some((l) => l.score > 0);
 
   const kinds: { value: Kind; label: React.ReactNode }[] = [
     { value: "outbound", label: <span className="flex items-center gap-1.5"><Plane className="size-3.5" />Outbound</span> },
     ...(it.return ? [{ value: "return" as Kind, label: <span className="flex items-center gap-1.5"><PlaneLanding className="size-3.5" />Return</span> }] : []),
-    { value: "stay", label: <span className="flex items-center gap-1.5"><Hotel className="size-3.5" />Stay</span> },
+    ...(it.ledger.some((l) => l.kind === "stay") ? [{ value: "stay" as Kind, label: <span className="flex items-center gap-1.5"><Hotel className="size-3.5" />Stay</span> }] : []),
   ];
 
   const rows = useMemo(() => {
@@ -49,7 +54,7 @@ export function TradeoffLedger({
         <CardTitle>Trade-off Ledger</CardTitle>
         <CardDescription>
           Every alternative the optimizer considered, its price, and the structured reason it won or lost.
-          {editable && " Swap any feasible option in — totals and flags recalculate instantly."}
+          {editable && !swapUnavailable && " Swap any feasible option in — totals and flags recalculate instantly."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -63,10 +68,12 @@ export function TradeoffLedger({
                 .filter((c) => counts[c])
                 .map((c) => ({ value: c, label: `${reasonMeta[c].label} · ${counts[c]}` }))}
             />
-            <NativeSelect value={sort} onChange={(e) => setSort(e.target.value as "price" | "score")} className="w-36" aria-label="Sort ledger">
-              <option value="price">Sort: price</option>
-              <option value="score">Sort: score</option>
-            </NativeSelect>
+            {scored && (
+              <NativeSelect value={sort} onChange={(e) => setSort(e.target.value as "price" | "score")} className="w-36" aria-label="Sort ledger">
+                <option value="price">Sort: price</option>
+                <option value="score">Sort: score</option>
+              </NativeSelect>
+            )}
           </div>
         </div>
 
@@ -90,7 +97,7 @@ export function TradeoffLedger({
                   </Badge>
                   {!l.feasible && <span className="text-[11px] text-muted-foreground">screened out</span>}
                 </div>
-                <p className="text-xs text-muted-foreground">{l.detail}</p>
+                {l.detail !== l.reason && <p className="text-xs text-muted-foreground">{l.detail}</p>}
                 <p className="text-sm">{l.reason}</p>
               </div>
               <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end sm:justify-center sm:gap-1.5">
@@ -101,17 +108,21 @@ export function TradeoffLedger({
                   </p>
                   {l.price === minPrice && <p className="text-[11px] font-medium text-emerald-600 dark:text-success">Lowest price</p>}
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted" title={`Score ${l.score}/100`}>
-                    <div className={cn("h-full rounded-full", l.won ? "bg-success" : "bg-primary/60")} style={{ width: `${l.score}%` }} />
+                {scored && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted" title={`Score ${l.score}/100`}>
+                      <div className={cn("h-full rounded-full", l.won ? "bg-success" : "bg-primary/60")} style={{ width: `${l.score}%` }} />
+                    </div>
+                    <span className="w-7 text-right text-xs text-muted-foreground tabular-nums">{l.score}</span>
                   </div>
-                  <span className="w-7 text-right text-xs text-muted-foreground tabular-nums">{l.score}</span>
-                </div>
+                )}
                 {editable && !l.won && l.feasible && (
-                  <Button variant="outline" size="xs" onClick={() => onUse(l.kind, l.optionId, l.label)}>
-                    <ArrowRightLeft />
-                    Use this
-                  </Button>
+                  <span title={swapUnavailable}>
+                    <Button variant="outline" size="xs" disabled={!!swapUnavailable} onClick={() => onUse(l.kind, l.optionId, l.label)}>
+                      <ArrowRightLeft />
+                      Use this
+                    </Button>
+                  </span>
                 )}
               </div>
             </div>
