@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { UserPlus, X, Save } from "lucide-react";
+import { UserPlus, X, Save, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +24,7 @@ export function TravelerForm({
   submitLabel,
 }: {
   initial?: Partial<TravelerFormValues>;
-  onSubmit: (values: TravelerFormValues) => void;
+  onSubmit: (values: TravelerFormValues) => void | Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
 }) {
@@ -38,6 +38,7 @@ export function TravelerForm({
   const [preferredAirlines, setPreferredAirlines] = useState<string[]>(initial?.preferences?.preferredAirlines ?? []);
   const [tags, setTags] = useState<string[]>(initial?.preferences?.tags ?? []);
   const [tagInput, setTagInput] = useState("");
+  const [saving, setSaving] = useState(false);
 
   function addTag(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter" && e.key !== ",") return;
@@ -47,21 +48,27 @@ export function TravelerForm({
     setTagInput("");
   }
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    onSubmit({
-      name: name.trim(),
-      email: email.trim(),
-      department,
-      homeCity,
-      preferences: {
-        seat: seat || undefined,
-        dietary: dietary || undefined,
-        notes: notes || undefined,
-        tags,
-        preferredAirlines,
-      },
-    });
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onSubmit({
+        name: name.trim(),
+        email: email.trim(),
+        department,
+        homeCity,
+        preferences: {
+          seat: seat || undefined,
+          dietary: dietary || undefined,
+          notes: notes || undefined,
+          tags,
+          preferredAirlines,
+        },
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -137,12 +144,12 @@ export function TravelerForm({
 
       <DialogFooter className="mt-2">
         {onCancel && (
-          <Button type="button" variant="outline" size="lg" onClick={onCancel}>
+          <Button type="button" variant="outline" size="lg" onClick={onCancel} disabled={saving}>
             Cancel
           </Button>
         )}
-        <Button type="submit" size="lg" disabled={!name.trim()}>
-          {initial?.name ? <Save /> : <UserPlus />}
+        <Button type="submit" size="lg" disabled={!name.trim() || saving}>
+          {saving ? <Loader2 className="animate-spin" /> : initial?.name ? <Save /> : <UserPlus />}
           {submitLabel ?? (initial?.name ? "Save changes" : "Add traveler")}
         </Button>
       </DialogFooter>
@@ -172,16 +179,20 @@ export function TravelerDialog({
           key={traveler?.id ?? "new"}
           initial={traveler ?? undefined}
           onCancel={() => onOpenChange(false)}
-          onSubmit={(values) => {
-            if (traveler) {
-              actions.updateTraveler(traveler.id, values);
-              toast("Traveler updated", { description: values.name });
-            } else {
-              const t = actions.addTraveler(values);
-              toast("Traveler added", { description: `${t.name} can now be selected on trips.` });
-              onCreated?.(t);
+          onSubmit={async (values) => {
+            try {
+              if (traveler) {
+                await actions.updateTraveler(traveler.id, values);
+                toast("Traveler updated", { description: values.name });
+              } else {
+                const t = await actions.addTraveler(values);
+                toast("Traveler added", { description: `${t.name} can now be selected on trips.` });
+                onCreated?.(t);
+              }
+              onOpenChange(false);
+            } catch (e) {
+              toast(traveler ? "Couldn't update traveler" : "Couldn't add traveler", { description: (e as Error).message, variant: "error" });
             }
-            onOpenChange(false);
           }}
         />
       </DialogContent>
