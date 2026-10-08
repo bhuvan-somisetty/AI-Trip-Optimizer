@@ -22,6 +22,11 @@ class TripStatus(str, Enum):
     OPTIMIZATION_FAILED = "OPTIMIZATION_FAILED"
 
 
+class DecisionOutcome(str, Enum):
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class User(SQLModel, table=True):
     __tablename__ = "users"
 
@@ -76,3 +81,18 @@ class Itinerary(SQLModel, table=True):
     rationale: str
     tradeoff_ledger: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Decision(SQLModel, table=True):
+    """A human approve/reject on a trip's itinerary (PRD US-007). Rows are never edited."""
+
+    __tablename__ = "decisions"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    trip_id: uuid.UUID = Field(foreign_key="trips.id", index=True)
+    decided_by: uuid.UUID = Field(foreign_key="users.id")
+    outcome: DecisionOutcome = Field(
+        sa_column=Column(SAEnum(DecisionOutcome, native_enum=False, length=16), nullable=False)
+    )
+    reason: str | None = None  # required when outcome is REJECTED
+    decided_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
