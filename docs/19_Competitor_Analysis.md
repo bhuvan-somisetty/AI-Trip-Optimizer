@@ -6,7 +6,7 @@
 >
 > **Amended 2026-09-16:** Ask This Itinerary removed as one of our own features (RAG-based features cut per instructor instruction — see `03_PRD.md` amendment note, `17_Risk_Register.md` R-011). Entries below that cited Ask This Itinerary as our differentiator against competitors' conversational AI (Navan's Ava, ITILITE's Iris) now lean on the Trade-off Ledger alone — still a real gap none of these competitors close.
 
-Expands the summary in `00_Investigation_Report.md` A7. This project sits in the **corporate/business travel management** category — tools a company uses to plan and manage trips for its own employees, distinct from consumer trip planners (Expedia, Google Flights, etc.), which are out of scope for comparison since they don't serve the same B2B buyer.
+This project sits in the **corporate/business travel management** category — tools a company uses to plan and manage trips for its own employees, distinct from consumer trip planners (Expedia, Google Flights, etc.), which are out of scope for comparison since they don't serve the same B2B buyer.
 
 ## SAP Concur
 **Website:** https://www.concur.com — ✅ live-verified
