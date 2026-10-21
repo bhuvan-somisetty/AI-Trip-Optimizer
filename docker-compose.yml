@@ -10,6 +10,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_trip_optimizer"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
   backend:
     build: ./backend
@@ -18,8 +23,12 @@ services:
       - .env
     ports:
       - "8000:8000"
+    volumes:
+      # Mock flight and hotel files; app/mock_data.py reads them from /data.
+      - ./data:/data:ro
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:
