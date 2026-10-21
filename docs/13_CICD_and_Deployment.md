@@ -32,4 +32,3 @@ Alembic migrations run as a deploy step (before the new backend version starts s
 - **Deployment Link deadline** — the live Vercel + Render/Railway URLs, working end-to-end.
 - **Project Demo Video** — recorded against the deployed instance, not localhost, so it reflects what a grader can actually click through themselves.
 
-See `24_Submission_Checklist.md` for the full deadline-by-deadline breakdown.

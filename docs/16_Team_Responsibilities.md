@@ -2,7 +2,7 @@
 
 > **Provenance:** The team of 2 is confirmed via the PRD (two names listed as team members) — the brief sheet itself has no explicit team-size field. The workstream split below is the team's own division of labor, not instructor-assigned.
 
-> **Amended 2026-09-13:** Originally split by *topic* (Product/Data/Optimizer vs. App/RAG/Assistant), so both people touched some frontend and some backend. The team decided to switch to a strict **backend vs. frontend** split instead — Swetalin owns all backend/API/database work, Bhuvan owns all frontend/UI work. This is the team's own decision, not an instructor instruction. Applied across `26_Day_by_Day_Build_Plan.md` and `27_Day_by_Day_Checklist.md`.
+> **Amended 2026-09-13:** Originally split by *topic* (Product/Data/Optimizer vs. App/RAG/Assistant), so both people touched some frontend and some backend. The team decided to switch to a strict **backend vs. frontend** split instead — Swetalin owns all backend/API/database work, Bhuvan owns all frontend/UI work. This is the team's own decision, not an instructor instruction.
 >
 > **Amended 2026-09-16:** RAG/Trip Knowledge Assistant/Ask This Itinerary work removed from both workstreams below — cut from scope per instructor instruction ("RAG is not needed," see `03_PRD.md` amendment, `17_Risk_Register.md` R-011).
 

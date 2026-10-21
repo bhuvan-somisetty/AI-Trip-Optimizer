@@ -5,3 +5,6 @@ __pycache__/
 venv/
 *.db
 *.log
+
+# Private notes kept on the laptop only
+local_docs/

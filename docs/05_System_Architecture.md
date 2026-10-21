@@ -50,7 +50,7 @@ A `StateGraph` with three nodes for the MVP:
 2. **Budget & Constraint Check node** — deterministic Python logic (not the LLM) verifies each candidate against budget/rules.
 3. **Compose node** — an LLM call (via `langchain-openai`, structured output) writes the rationale and Trade-off Ledger *using the code-computed numbers as context* — it does not invent totals.
 
-Full node/state design in `08_GenAI_Architecture.md`. The multi-agent stretch goal (splitting this into 4 coordinating agents) is described in `00_Investigation_Report.md` A19 and only attempted after this single pipeline works end-to-end.
+Full node/state design in `08_GenAI_Architecture.md`. The multi-agent stretch goal (splitting this into 4 coordinating agents) is only attempted after this single pipeline works end-to-end.
 
 ## 5. Data Layer
 A single, plain PostgreSQL instance handles all relational data — no vector extension is needed (see ADR-001 in `18_Architecture_Decision_Records.md`, now moot after the RAG feature cut). Full schema in `06_Database_Design.md`.
