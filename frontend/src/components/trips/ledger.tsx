@@ -26,6 +26,8 @@ export function TradeoffLedger({
   const [kind, setKind] = useState<Kind>(initialKind);
   const [codes, setCodes] = useState<string[]>([]);
   const [sort, setSort] = useState<"price" | "score">("price");
+  // Server-optimized itineraries pick the cheapest feasible option and carry no scores.
+  const scored = it.ledger.some((l) => l.score !== undefined);
 
   const kinds: { value: Kind; label: React.ReactNode }[] = [
     { value: "outbound", label: <span className="flex items-center gap-1.5"><Plane className="size-3.5" />Outbound</span> },
@@ -35,8 +37,8 @@ export function TradeoffLedger({
 
   const rows = useMemo(() => {
     const list = it.ledger.filter((l) => l.kind === kind && (!codes.length || codes.includes(l.reasonCode)));
-    return [...list].sort((a, b) => (sort === "price" ? a.price - b.price : b.score - a.score));
-  }, [it.ledger, kind, codes, sort]);
+    return [...list].sort((a, b) => (sort === "price" || !scored ? a.price - b.price : (b.score ?? 0) - (a.score ?? 0)));
+  }, [it.ledger, kind, codes, sort, scored]);
 
   const counts = it.ledger
     .filter((l) => l.kind === kind)
@@ -63,10 +65,12 @@ export function TradeoffLedger({
                 .filter((c) => counts[c])
                 .map((c) => ({ value: c, label: `${reasonMeta[c].label} · ${counts[c]}` }))}
             />
-            <NativeSelect value={sort} onChange={(e) => setSort(e.target.value as "price" | "score")} className="w-36" aria-label="Sort ledger">
-              <option value="price">Sort: price</option>
-              <option value="score">Sort: score</option>
-            </NativeSelect>
+            {scored && (
+              <NativeSelect value={sort} onChange={(e) => setSort(e.target.value as "price" | "score")} className="w-36" aria-label="Sort ledger">
+                <option value="price">Sort: price</option>
+                <option value="score">Sort: score</option>
+              </NativeSelect>
+            )}
           </div>
         </div>
 
@@ -101,12 +105,14 @@ export function TradeoffLedger({
                   </p>
                   {l.price === minPrice && <p className="text-[11px] font-medium text-emerald-600 dark:text-success">Lowest price</p>}
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted" title={`Score ${l.score}/100`}>
-                    <div className={cn("h-full rounded-full", l.won ? "bg-success" : "bg-primary/60")} style={{ width: `${l.score}%` }} />
+                {l.score !== undefined && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted" title={`Score ${l.score}/100`}>
+                      <div className={cn("h-full rounded-full", l.won ? "bg-success" : "bg-primary/60")} style={{ width: `${l.score}%` }} />
+                    </div>
+                    <span className="w-7 text-right text-xs text-muted-foreground tabular-nums">{l.score}</span>
                   </div>
-                  <span className="w-7 text-right text-xs text-muted-foreground tabular-nums">{l.score}</span>
-                </div>
+                )}
                 {editable && !l.won && l.feasible && (
                   <Button variant="outline" size="xs" onClick={() => onUse(l.kind, l.optionId, l.label)}>
                     <ArrowRightLeft />
