@@ -116,8 +116,9 @@ def hotel_label(hotel: dict) -> str:
     return f"{hotel['id']} {hotel['name']}, rated {hotel['rating']}"
 
 
-def ledger_entries(options, chosen, price_of, label, rejected_by_id) -> list[dict]:
+def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id) -> list[dict]:
     # Every option search_node found gets one row: the winner, or why it lost.
+    # `kind` ("flight" or "stay") lets clients group rows without parsing option ids.
     entries = []
     for option in sorted(options, key=price_of):
         price = float(price_of(option))
@@ -128,7 +129,7 @@ def ledger_entries(options, chosen, price_of, label, rejected_by_id) -> list[dic
             reason = f"Preference {rejection['rule']}: {rejection['detail']}"
         else:
             reason = f"Price: {price - price_of(chosen):,.0f} more than {chosen['id']}"
-        entries.append({"alternative": label(option), "price": price, "won": option is chosen, "reason": reason})
+        entries.append({"kind": kind, "alternative": label(option), "price": price, "won": option is chosen, "reason": reason})
     return entries
 
 
@@ -137,10 +138,12 @@ def build_ledger(state: PipelineState) -> list[dict]:
     nights = check["nights"]
     rejected_by_id = {r["option_id"]: r for r in check["rejected"]}
     ledger = ledger_entries(
+        "flight",
         state["flight_options"], check["flight"], lambda f: f["price"], flight_label, rejected_by_id
     )
     if nights > 0:
         ledger += ledger_entries(
+            "stay",
             state["hotel_options"],
             check["hotel"],
             lambda h: h["price_per_night"] * nights,
@@ -213,7 +216,13 @@ def get_llm():
         return None
     from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(model=config.OPENAI_MODEL, api_key=config.OPENAI_API_KEY, temperature=0, timeout=20)
+    return ChatOpenAI(
+        model=config.OPENAI_MODEL,
+        api_key=config.OPENAI_API_KEY,
+        base_url=config.OPENAI_BASE_URL,
+        temperature=0,
+        timeout=20,
+    )
 
 
 def compose_node(state: PipelineState) -> dict:
