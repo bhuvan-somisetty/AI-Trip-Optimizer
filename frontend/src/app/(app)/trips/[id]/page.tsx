@@ -61,8 +61,10 @@ export default function TripDetailPage() {
   const [reasonError, setReasonError] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const apiMode = s.session?.mode === "api";
   // The backend has no delete-trip endpoint yet.
-  const canDelete = s.session?.mode !== "api";
+  const canDelete = !apiMode;
   const autoRan = useRef(false);
 
   useEffect(() => {
@@ -87,7 +89,8 @@ export default function TripDetailPage() {
   const t = trip;
   const it = t.itinerary;
   const decided = t.status === "DECIDED";
-  const editable = !decided && !!it && t.status !== "OPTIMIZING";
+  // The backend has no endpoint for swapping an option, so server itineraries are read-only here.
+  const editable = !apiMode && !decided && !!it && t.status !== "OPTIMIZING";
   const blocking = it?.issues.filter((i) => i.severity === "error") ?? [];
   const events = s.audit.filter((a) => a.tripId === t.id);
   const names = travelerNames(t, s.travelers);
@@ -100,7 +103,7 @@ export default function TripDetailPage() {
     if (after?.status === "OPTIMIZED" && after.itinerary) {
       toast("Itinerary ready", { description: `${formatInr(after.itinerary.totalCost)} · ${after.itinerary.issues.length} flag${after.itinerary.issues.length === 1 ? "" : "s"} to review.` });
     } else if (after?.status === "OPTIMIZATION_FAILED") {
-      toast("Optimization failed", { description: "No feasible combination — adjust the filters.", variant: "error" });
+      toast("Optimization failed", { description: after.failureReason ?? "No feasible combination — adjust the filters.", variant: "error" });
     }
   }
 
@@ -111,13 +114,33 @@ export default function TripDetailPage() {
     toast(`Swapped to ${label}`, { description: `Total ${formatInr(before)} → ${formatInr(after)}. Logged to the audit trail.` });
   }
 
-  function submitDecision() {
+  async function startReview() {
+    setBusy(true);
+    try {
+      await actions.startReview(t.id);
+      toast("Moved to review");
+    } catch (e) {
+      toast("Couldn't start the review", { description: (e as Error).message, variant: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitDecision() {
     if (!decision) return;
     if (decision === "REJECTED" && !reason.trim()) {
       setReasonError(true);
       return;
     }
-    actions.decide(t.id, decision, reason);
+    setBusy(true);
+    try {
+      await actions.decide(t.id, decision, reason);
+    } catch (e) {
+      toast("Couldn't record the decision", { description: (e as Error).message, variant: "error" });
+      return;
+    } finally {
+      setBusy(false);
+    }
     toast(decision === "APPROVED" ? `${t.code} approved` : `${t.code} rejected`, {
       description: decision === "APPROVED" ? "Decision recorded. Ready for booking by the travel desk." : "Reason stored with the decision.",
       variant: decision === "APPROVED" ? "success" : "info",
@@ -130,7 +153,8 @@ export default function TripDetailPage() {
     { value: "itinerary", label: "Itinerary" },
     { value: "ledger", label: "Trade-off Ledger", disabled: !it, count: it?.ledger.length },
     { value: "ask", label: "Ask this itinerary", disabled: !it },
-    { value: "whatif", label: "What-if", disabled: !it },
+    // What-if re-runs the browser optimizer over its own catalog, so it can't be compared with a server itinerary.
+    ...(apiMode ? [] : [{ value: "whatif" as Tab, label: "What-if", disabled: !it }]),
     { value: "activity", label: "Activity", count: events.length },
     { value: "request", label: "Request details" },
   ];
@@ -177,20 +201,16 @@ export default function TripDetailPage() {
           )}
           {(t.status === "OPTIMIZED" || t.status === "UNDER_REVIEW") && (
             <>
-              <Button variant="outline" size="lg" onClick={run}>
-                <RefreshCw />
-                Re-run
-              </Button>
+              {/* The backend won't re-optimize a trip that is under review (409). */}
+              {(!apiMode || t.status === "OPTIMIZED") && (
+                <Button variant="outline" size="lg" onClick={run}>
+                  <RefreshCw />
+                  Re-run
+                </Button>
+              )}
               {t.status === "OPTIMIZED" && (
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => {
-                    actions.startReview(t.id);
-                    toast("Moved to review");
-                  }}
-                >
-                  <Eye />
+                <Button variant="outline" size="lg" disabled={busy} onClick={startReview}>
+                  {busy ? <Loader2 className="animate-spin" /> : <Eye />}
                   Start review
                 </Button>
               )}
@@ -285,7 +305,7 @@ export default function TripDetailPage() {
             <p className="text-muted-foreground">
               {(() => {
                 const ev = events.find((e) => e.type === "DECISION");
-                const r = ev?.payload?.reason as string | null | undefined;
+                const r = t.decisionReason ?? (ev?.payload?.reason as string | null | undefined);
                 return `${ev?.actor ?? "Reviewer"} recorded this decision${r ? `: “${r}”` : "."} Approved itineraries are final — duplicate the trip to request changes.`;
               })()}
             </p>
@@ -401,7 +421,7 @@ export default function TripDetailPage() {
         </Card>
       )}
 
-      {tab === "whatif" && it && <WhatIf trip={t} editable={!decided} />}
+      {tab === "whatif" && it && !apiMode && <WhatIf trip={t} editable={!decided} />}
 
       {tab === "activity" && (
         <Card>
@@ -506,6 +526,7 @@ export default function TripDetailPage() {
             <DialogClose className={buttonVariants({ variant: "outline", size: "lg" })}>Cancel</DialogClose>
             <Button
               size="lg"
+              disabled={busy}
               onClick={submitDecision}
               className={decision === "APPROVED" ? "bg-success text-white hover:bg-success/90" : "bg-destructive text-white hover:bg-destructive/90"}
             >
