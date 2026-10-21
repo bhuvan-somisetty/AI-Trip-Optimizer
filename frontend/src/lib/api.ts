@@ -1,4 +1,4 @@
-import type { Session, TripStatus } from "./types";
+import type { Outcome, Session, TripStatus } from "./types";
 
 /**
  * Thin client for the FastAPI backend (docs/07_API_Specification.md). When the API
@@ -131,7 +131,7 @@ export type TripBody = {
   budget: number;
   preferences: Record<string, unknown>;
 };
-export type TripResponse = TripBody & { id: string; status: TripStatus; created_by: string };
+export type TripResponse = TripBody & { id: string; status: TripStatus; failure_reason: string | null; created_by: string };
 
 const id = encodeURIComponent;
 
@@ -151,3 +151,83 @@ export const listTrips = (token: string, status?: TripStatus) =>
 export const getTrip = (token: string, tripId: string) => call<TripResponse>("GET", `/trips/${id(tripId)}`, { token });
 
 export const createTrip = (token: string, body: TripBody) => call<TripResponse>("POST", "/trip", { token, body });
+
+// ---------------------------------------------------------------- optimize, review, decide
+
+/** One row of the backend's Trade-off Ledger. Stay prices are the total for the whole stay. */
+export type LedgerEntryResponse = {
+  /** "flight" | "stay"; null for itineraries saved before the backend recorded it */
+  kind: "flight" | "stay" | null;
+  alternative: string;
+  price: number;
+  won: boolean;
+  reason: string;
+};
+
+export type FlightResponse = {
+  id: string;
+  origin: string;
+  destination: string;
+  departure_time: string;
+  arrival_time: string;
+  airline: string;
+  price: number;
+  cabin_class: string;
+  stops: number;
+};
+
+export type HotelResponse = {
+  id: string;
+  city: string;
+  name: string;
+  price_per_night: number;
+  rating: number;
+  amenities: string[];
+  distance_to_center_km: number;
+};
+
+export type ItineraryResponse = {
+  flight: FlightResponse;
+  hotel: HotelResponse | null;
+  total_cost: number;
+  within_budget: boolean;
+  flags: string[];
+  rationale: string;
+};
+
+/** What optimize and GET itinerary return; `itinerary` is null and `reason` set when optimization failed. */
+export type TripResultResponse = {
+  status: TripStatus;
+  itinerary: ItineraryResponse | null;
+  tradeoff_ledger: LedgerEntryResponse[];
+  reason: string | null;
+};
+
+export type DecisionResponse = {
+  id: string;
+  trip_id: string;
+  outcome: Outcome;
+  reason: string | null;
+  decided_by: string;
+  decided_at: string;
+};
+
+// The pipeline's LLM call alone may take ~20 s.
+const OPTIMIZE_TIMEOUT_MS = 60000;
+
+/** 409 when the trip is under review, decided, or already optimizing. */
+export const optimizeTrip = (token: string, tripId: string) =>
+  call<TripResultResponse>("POST", `/trips/${id(tripId)}/optimize`, { token, timeoutMs: OPTIMIZE_TIMEOUT_MS });
+
+/** 404 when the trip hasn't been optimized yet. */
+export const getItinerary = (token: string, tripId: string) => call<TripResultResponse>("GET", `/trips/${id(tripId)}/itinerary`, { token });
+
+/** OPTIMIZED → UNDER_REVIEW; 409 from any other status. */
+export const startReview = (token: string, tripId: string) => call<TripResponse>("POST", `/trips/${id(tripId)}/review`, { token });
+
+/** 400 when rejecting without a reason; 409 unless the trip is OPTIMIZED or UNDER_REVIEW. */
+export const decideTrip = (token: string, tripId: string, outcome: Outcome, reason: string | null) =>
+  call<DecisionResponse>("POST", `/trips/${id(tripId)}/decision`, { token, body: { outcome, reason } });
+
+/** 404 when the trip hasn't been decided yet. */
+export const getDecision = (token: string, tripId: string) => call<DecisionResponse>("GET", `/trips/${id(tripId)}/decision`, { token });
