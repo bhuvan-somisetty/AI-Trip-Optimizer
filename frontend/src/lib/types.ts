@@ -59,6 +59,8 @@ export type Trip = {
   status: TripStatus;
   outcome?: Outcome;
   failureReason?: string;
+  /** reason stored with the decision (required for rejections) */
+  decisionReason?: string;
   itinerary?: Itinerary;
   createdBy: string;
   createdAt: string;
@@ -78,21 +80,23 @@ export type Flight = {
   cabin: CabinClass;
   stops: number;
   via?: string;
-  refundable: boolean;
-  baggageKg: number;
+  /** not in the backend's flight data, so undefined for server-optimized itineraries */
+  refundable?: boolean;
+  baggageKg?: number;
 };
 
 export type Hotel = {
   id: string;
   city: string;
   name: string;
-  area: string;
+  /** area, stars and freeCancellation aren't in the backend's hotel data */
+  area?: string;
   pricePerNight: number;
   rating: number;
-  stars: number;
+  stars?: number;
   amenities: string[];
   distanceKm: number;
-  freeCancellation: boolean;
+  freeCancellation?: boolean;
 };
 
 export type ReasonCode = "WINNER" | "PRICE" | "BUDGET" | "CONSTRAINT" | "PREFERENCE";
@@ -104,7 +108,8 @@ export type LedgerEntry = {
   label: string;
   detail: string;
   price: number;
-  score: number;
+  /** 0-100 weighted score from the browser optimizer; the backend picks by price and has none */
+  score?: number;
   won: boolean;
   /** false when a hard filter or policy rule screened this option out */
   feasible: boolean;
