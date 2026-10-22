@@ -175,6 +175,24 @@ def test_compose_uses_llm_rationale_when_numbers_match(monkeypatch):
     assert '"total_cost"' in fake.prompt
 
 
+class FailingLLM:
+    def invoke(self, prompt):
+        raise RuntimeError("503 model overloaded")
+
+
+def test_compose_uses_template_rationale_when_llm_call_fails(monkeypatch):
+    monkeypatch.setattr(graph, "get_llm", lambda: FailingLLM())
+    result = run_pipeline()
+    facts = graph.rationale_facts({**result, "request": REQUEST})
+    assert result["itinerary"]["rationale"] == graph.template_rationale(facts)
+
+
+def test_compose_uses_template_rationale_when_llm_reply_is_empty(monkeypatch):
+    monkeypatch.setattr(graph, "get_llm", lambda: FakeLLM("   "))
+    result = run_pipeline()
+    assert result["itinerary"]["rationale"].startswith("Chose flight ")
+
+
 def test_compose_fails_when_llm_invents_a_number(monkeypatch):
     monkeypatch.setattr(graph, "get_llm", lambda: FakeLLM("The total comes to 123,456."))
     result = run_pipeline()
