@@ -153,6 +153,10 @@ def build_ledger(state: PipelineState) -> list[dict]:
     return ledger
 
 
+# check_node's selection rule, stated once so the rationale can explain the choice.
+WHY_CHOSEN = "cheapest option that meets every trip preference"
+
+
 def rationale_facts(state: PipelineState) -> dict:
     # The only numbers the rationale may use; all of them were computed in code.
     request = state["request"]
@@ -162,7 +166,12 @@ def rationale_facts(state: PipelineState) -> dict:
         "route": f"{request['origin']} to {request['destination']}",
         "dates": f"{request['start_date'].isoformat()} to {request['end_date'].isoformat()}",
         "budget": request["budget"],
-        "flight": {"option": flight_label(check["flight"]), "price": check["flight"]["price"]},
+        "flight": {
+            "option": flight_label(check["flight"]),
+            "price": check["flight"]["price"],
+            "why_chosen": WHY_CHOSEN,
+            "options_compared": len(state["flight_options"]),
+        },
         "hotel": None
         if hotel is None
         else {
@@ -170,6 +179,8 @@ def rationale_facts(state: PipelineState) -> dict:
             "price_per_night": hotel["price_per_night"],
             "nights": check["nights"],
             "stay_cost": hotel["price_per_night"] * check["nights"],
+            "why_chosen": WHY_CHOSEN,
+            "options_compared": len(state["hotel_options"]),
         },
         "total_cost": check["total_cost"],
         "within_budget": check["within_budget"],
@@ -198,10 +209,14 @@ def template_rationale(facts: dict) -> str:
     return text
 
 
-RATIONALE_PROMPT = """You explain a business trip itinerary to the person who will approve it.
-Write 3 to 5 plain sentences: which flight and hotel were chosen and why, the total against the
-budget, and any flags. Use ONLY the facts below. Never introduce, round, convert or calculate a
-number that is not written in the facts. No currency symbols, no markdown.
+RATIONALE_PROMPT = """You explain a business trip itinerary to the manager who will approve it.
+Write 3 to 5 short sentences in plain, natural English: which flight and hotel were chosen and why
+(use why_chosen and options_compared), the total cost against the budget, and any flags or options
+ruled out. Write like a helpful colleague, not a report: never mention field names such as
+price_per_night or within_budget, never say true or false, and skip anything that is empty.
+
+Use ONLY the facts below. Never introduce, round, convert or calculate a number that is not written
+in the facts. No currency symbols, no markdown.
 
 Facts:
 {facts}"""
