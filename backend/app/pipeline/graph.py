@@ -4,6 +4,7 @@ Described in docs/08_GenAI_Architecture.md. search_node and check_node are plain
 Python; compose_node is the only step that calls the LLM.
 """
 import json
+import logging
 import re
 
 from langgraph.graph import END, START, StateGraph
@@ -11,6 +12,8 @@ from langgraph.graph import END, START, StateGraph
 from app import config
 from app.mock_data import flights_for_route, hotels_for_city
 from app.pipeline.state import PipelineState
+
+logger = logging.getLogger(__name__)
 
 
 def search_node(state: PipelineState) -> dict:
@@ -237,6 +240,8 @@ def get_llm():
         base_url=config.OPENAI_BASE_URL,
         temperature=0,
         timeout=20,
+        # One retry rides out a brief 503; more would burn the free tier's small daily quota.
+        max_retries=1,
     )
 
 
@@ -249,17 +254,23 @@ def compose_node(state: PipelineState) -> dict:
 
     facts = rationale_facts(state)
     llm = get_llm()
-    if llm is None:
-        rationale = template_rationale(facts)
-    else:
+    rationale = None
+    if llm is not None:
         facts_text = json.dumps(facts, indent=2)
-        rationale = llm.invoke(RATIONALE_PROMPT.format(facts=facts_text)).content.strip()
-        # Guardrail (docs/08_GenAI_Architecture.md): every number in the prose must
-        # already be in the facts, otherwise the run fails instead of showing it.
-        invented = numbers_in(rationale) - numbers_in(facts_text)
-        if invented:
-            listed = ", ".join(f"{n:g}" for n in sorted(invented))
-            return {"failure_reason": f"Rationale used numbers not in the itinerary: {listed}"}
+        try:
+            rationale = llm.invoke(RATIONALE_PROMPT.format(facts=facts_text)).content.strip() or None
+        except Exception:
+            # A busy or rate-limited LLM shouldn't fail a trip whose choices are already made.
+            logger.warning("Rationale LLM call failed, using the template rationale", exc_info=True)
+        if rationale is not None:
+            # Guardrail (docs/08_GenAI_Architecture.md): every number in the prose must
+            # already be in the facts, otherwise the run fails instead of showing it.
+            invented = numbers_in(rationale) - numbers_in(facts_text)
+            if invented:
+                listed = ", ".join(f"{n:g}" for n in sorted(invented))
+                return {"failure_reason": f"Rationale used numbers not in the itinerary: {listed}"}
+    if rationale is None:
+        rationale = template_rationale(facts)
 
     return {
         "itinerary": {
