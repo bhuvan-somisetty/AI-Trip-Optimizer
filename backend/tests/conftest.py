@@ -6,6 +6,7 @@ from sqlmodel import SQLModel, Session, create_engine
 import app.models  # noqa: F401  (registers models on SQLModel.metadata)
 from app.database import get_session
 from app.main import app
+from app import config
 from app.pipeline import graph
 
 
@@ -14,6 +15,12 @@ def no_real_llm(monkeypatch):
     # A real key in .env must never make tests call the LLM: that costs quota and
     # makes results depend on the network. Tests that need an LLM patch in a fake.
     monkeypatch.setattr(graph, "get_llm", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def mock_data_source(monkeypatch):
+    # DATA_SOURCE=live in .env must not make tests spend SerpApi searches either.
+    monkeypatch.setattr(config, "DATA_SOURCE", "mock")
 
 
 @pytest.fixture
