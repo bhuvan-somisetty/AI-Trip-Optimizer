@@ -411,7 +411,8 @@ export const actions = {
   },
   editLineItem(id: string, kind: "outbound" | "return" | "stay", optionId: string) {
     const trip = state.trips.find((t) => t.id === id);
-    if (!trip?.itinerary) return;
+    // Server itineraries can't be re-priced in the browser (the page hides this in API mode too).
+    if (!trip?.itinerary || isApi()) return;
     const before = trip.itinerary.totalCost;
     const itinerary = editItinerary(trip, state.policy, kind, optionId);
     const label = itinerary.ledger.find((l) => l.kind === kind && l.won)?.label;
@@ -440,7 +441,7 @@ export const actions = {
   },
   applyPreview(id: string, patch: Partial<Trip>) {
     const trip = state.trips.find((t) => t.id === id);
-    if (!trip) return;
+    if (!trip || isApi()) return;
     const next = { ...trip, ...patch };
     const itinerary = optimize(next, state.policy);
     patchTrip(id, { ...patch, itinerary, status: "UNDER_REVIEW" }, [

@@ -1,11 +1,15 @@
 import type { CabinClass, Flight, Hotel } from "./types";
 
 /**
- * Mock supplier catalog. There is no live GDS access (see docs/09_Mock_Data_Spec.md),
- * so flights and hotels are generated deterministically from the route + date:
- * the same search always returns the same options, which keeps the Trade-off
- * Ledger reproducible and auditable.
+ * City list for the trip forms, plus the DEMO-MODE-ONLY generated flight and hotel catalog.
+ * The generated options are used only when NEXT_PUBLIC_DEMO_MODE=true and the user is in demo
+ * mode; signed-in (API mode) trips are priced on the server from real providers
+ * (backend/app/travel_data.py).
  */
+
+/** Demo options always carry every field, unlike live provider data. */
+export type DemoFlight = Flight & Required<Pick<Flight, "arrival" | "durationMin" | "refundable" | "baggageKg">>;
+export type DemoHotel = Hotel & Required<Pick<Hotel, "area" | "rating" | "stars" | "distanceKm" | "freeCancellation">>;
 
 export type City = {
   code: string;
@@ -135,7 +139,7 @@ const cabinMultiplier: Record<CabinClass, number> = {
 // Departure hours chosen so every route has a red-eye, early, daytime and evening option.
 const slots = [0.75, 5.5, 6.25, 8.5, 10.75, 13.25, 16, 18.5, 20.75, 23.25];
 
-export function searchFlights(origin: string, destination: string, date: string, cabin: CabinClass): Flight[] {
+export function searchFlights(origin: string, destination: string, date: string, cabin: CabinClass): DemoFlight[] {
   const rand = rng(`${origin}-${destination}-${date}-${cabin}`);
   const dist = distanceKm(origin, destination);
   const intl = cityByCode[origin]?.international || cityByCode[destination]?.international;
@@ -187,12 +191,12 @@ const hotelBrands = [
 ];
 const areas = ["Central Business District", "Airport Zone", "Old Town", "Tech Park", "Riverside", "Convention Quarter"];
 
-export function searchHotels(city: string): Hotel[] {
+export function searchHotels(city: string): DemoHotel[] {
   const rand = rng(`hotels-${city}`);
   const c = cityByCode[city];
   const index = c?.hotelIndex ?? 1;
   const name = c?.name ?? city;
-  const hotels: Hotel[] = [];
+  const hotels: DemoHotel[] = [];
   hotelBrands.forEach((tier, t) => {
     const perTier = 2;
     const picks = [...tier].sort(() => rand() - 0.5).slice(0, perTier);

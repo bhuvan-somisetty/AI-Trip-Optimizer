@@ -67,6 +67,10 @@ export type Trip = {
   decidedAt?: string;
 };
 
+/**
+ * Fields marked optional are ones the live providers don't send (backend/app/travel_data.py).
+ * They stay undefined rather than being guessed, and the UI hides them.
+ */
 export type Flight = {
   id: string;
   origin: string;
@@ -74,8 +78,8 @@ export type Flight = {
   airline: string;
   flightNo: string;
   departure: string;
-  arrival: string;
-  durationMin: number;
+  arrival?: string;
+  durationMin?: number;
   price: number;
   cabin: CabinClass;
   stops: number;
@@ -83,20 +87,25 @@ export type Flight = {
   /** not in the backend's flight data, so undefined for server-optimized itineraries */
   refundable?: boolean;
   baggageKg?: number;
+  /** "cached": a real fare found in the last 48 hours, not re-checked; "live": quoted now */
+  priceStatus?: "cached" | "live";
+  bookingLink?: string;
+  source?: string;
 };
 
 export type Hotel = {
   id: string;
   city: string;
   name: string;
-  /** area, stars and freeCancellation aren't in the backend's hotel data */
   area?: string;
   pricePerNight: number;
-  rating: number;
+  rating?: number;
   stars?: number;
   amenities: string[];
-  distanceKm: number;
+  distanceKm?: number;
   freeCancellation?: boolean;
+  priceStatus?: "cached" | "live";
+  source?: string;
 };
 
 export type ReasonCode = "WINNER" | "PRICE" | "BUDGET" | "CONSTRAINT" | "PREFERENCE";
@@ -135,6 +144,7 @@ export type Itinerary = {
   flightCost: number;
   stayCost: number;
   totalCost: number;
+  /** 0 for server itineraries: only the local demo optimizer has a market baseline. */
   baselineCost: number;
   savings: number;
   ledger: LedgerEntry[];

@@ -233,6 +233,9 @@ export function answerFromItinerary(question: string, trip: Trip): { content: st
     };
   }
   if (/sav/.test(q)) {
+    if (it.savings === undefined || it.baselineCost === undefined) {
+      return { content: "These are real fares from the flight provider, and there's no market baseline to compare savings against.", covered: true };
+    }
     return { content: `The itinerary costs ${formatInr(it.totalCost)} vs a typical market cost of ${formatInr(it.baselineCost)} for this route and stay — a saving of ${formatInr(it.savings)}.`, covered: true };
   }
   if (/issue|policy|flag|problem|warning|constraint|approv/.test(q)) {
@@ -240,11 +243,11 @@ export function answerFromItinerary(question: string, trip: Trip): { content: st
     return { content: `The constraint check raised ${it.issues.length} item${it.issues.length > 1 ? "s" : ""}:\n\n${it.issues.map((i) => `• [${i.severity.toUpperCase()}] ${i.rule} — ${i.lineItem}. ${i.message}`).join("\n")}`, covered: true };
   }
   if (/hotel|stay/.test(q) && it.stay) {
-    return { content: `${it.stay.name} in ${dest}: ${it.stay.rating}★, ${it.stay.distanceKm} km from centre, ${formatInr(it.stay.pricePerNight)}/night for ${it.nights} night${it.nights > 1 ? "s" : ""}.`, covered: true };
+    return { content: `${it.stay.name} in ${dest}: ${it.stay.rating !== undefined ? `${it.stay.rating}★` : "no guest rating"}${it.stay.distanceKm !== undefined ? `, ${it.stay.distanceKm} km from centre` : ""}, ${formatInr(it.stay.pricePerNight)}/night for ${it.nights} night${it.nights > 1 ? "s" : ""}.`, covered: true };
   }
   if (/flight|fly|depart|airline/.test(q)) {
     const f = kind === "return" && it.return ? it.return : it.outbound;
-    return { content: `${f.airline} ${f.flightNo}: departs ${formatTime(f.departure)}, arrives ${formatTime(f.arrival)}, ${formatDuration(f.durationMin)}, ${f.stops === 0 ? "non-stop" : `${f.stops} stop via ${f.via}`}, ${formatInr(f.price)} per traveler.`, covered: true };
+    return { content: `${f.airline} ${f.flightNo}: departs ${formatTime(f.departure)}${f.arrival ? `, arrives ${formatTime(f.arrival)}` : ""}${f.durationMin ? `, ${formatDuration(f.durationMin)}` : ""}, ${f.stops === 0 ? "non-stop" : `${f.stops} stop via ${f.via}`}, ${formatInr(f.price)} per traveler.`, covered: true };
   }
   return {
     content: `I can only answer from this itinerary's own data. Try asking "why not a cheaper flight?", "why this hotel?", "what are the policy issues?" or "how much does it cost?".\n\nSummary: ${it.rationale}`,

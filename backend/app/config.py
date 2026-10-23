@@ -17,7 +17,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") or None
 OPENAI_MODEL = os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
 
-# Where search_node gets flights and hotels: "mock" reads data/*.json, "live" searches
-# Google Flights and Google Hotels through SerpApi's MCP server (needs SERPAPI_API_KEY).
-DATA_SOURCE = (os.getenv("DATA_SOURCE") or "mock").strip().lower()
-SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
+# Real travel data (app/travel_data.py).
+# Flights: free token from https://www.travelpayouts.com (Profile -> API token).
+TRAVELPAYOUTS_TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN", "")
+# Hotels: a LiteAPI *production* key from https://dashboard.liteapi.travel (needs a card on file;
+# rate searches are free). Without one, hotel prices are shown as unavailable.
+LITEAPI_API_KEY = os.getenv("LITEAPI_API_KEY", "")
+SEARCH_CACHE_MINUTES = int(os.getenv("SEARCH_CACHE_MINUTES") or "30")

@@ -1,12 +1,15 @@
+import json
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, Session, create_engine
 
 import app.models  # noqa: F401  (registers models on SQLModel.metadata)
+from app import travel_data
 from app.database import get_session
 from app.main import app
-from app import config
 from app.pipeline import graph
 
 
@@ -17,10 +20,26 @@ def no_real_llm(monkeypatch):
     monkeypatch.setattr(graph, "get_llm", lambda: None)
 
 
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
 @pytest.fixture(autouse=True)
-def mock_data_source(monkeypatch):
-    # DATA_SOURCE=live in .env must not make tests spend SerpApi searches either.
-    monkeypatch.setattr(config, "DATA_SOURCE", "mock")
+def offline_search(monkeypatch):
+    # Tests never call the real providers: search returns a fixed set of flights and hotels
+    # instead, so results are repeatable and no API quota is spent.
+    flights = json.loads((FIXTURES / "flights.json").read_text(encoding="utf-8"))
+    hotels = json.loads((FIXTURES / "hotels.json").read_text(encoding="utf-8"))
+
+    def search_flights(origin, destination, day, cabin_class=None):
+        return [
+            f
+            for f in flights
+            if f["origin"] == origin and f["destination"] == destination
+            and f["departure_time"].startswith(day.isoformat())
+        ]
+
+    monkeypatch.setattr(travel_data, "search_flights", search_flights)
+    monkeypatch.setattr(travel_data, "search_hotels", lambda city, check_in, check_out: [h for h in hotels if h["city"] == city])
 
 
 @pytest.fixture

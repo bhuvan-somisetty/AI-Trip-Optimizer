@@ -10,7 +10,6 @@ python-jose[cryptography]
 langgraph
 langchain-core
 langchain-openai
-mcp
 pgvector
 pypdf
 pytest

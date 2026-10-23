@@ -16,7 +16,7 @@ export function monthlySpend(trips: Trip[], months: number) {
     const b = buckets.find((x) => x.key === `${d.getFullYear()}-${d.getMonth()}`);
     if (!b) continue;
     b.spend += t.itinerary.totalCost;
-    b.savings += t.itinerary.savings;
+    b.savings += t.itinerary.savings ?? 0;
     b.trips += 1;
   }
   return buckets;

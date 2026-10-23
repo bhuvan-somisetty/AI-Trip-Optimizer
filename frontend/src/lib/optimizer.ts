@@ -1,9 +1,7 @@
-import { cabinLabel, cityByCode, searchFlights, searchHotels, amenityLabel } from "./catalog";
+import { cabinLabel, cityByCode, searchFlights, searchHotels, amenityLabel, type DemoFlight, type DemoHotel } from "./catalog";
 import { formatInr, formatDuration, formatTime } from "./format";
 import type {
   ConstraintIssue,
-  Flight,
-  Hotel,
   Itinerary,
   LedgerEntry,
   Policy,
@@ -60,12 +58,12 @@ function hourOf(iso: string) {
   return d.getHours() + d.getMinutes() / 60;
 }
 
-export function isRedEye(f: Flight) {
+export function isRedEye(f: DemoFlight) {
   const h = hourOf(f.departure);
   return h < 5 || h >= 22.5;
 }
 
-function inWindow(f: Flight, w: TimeWindow) {
+function inWindow(f: DemoFlight, w: TimeWindow) {
   const range = windowHours[w];
   if (!range) return true;
   let h = hourOf(f.departure);
@@ -79,7 +77,7 @@ export function nightsBetween(a: string, b: string | null) {
   return Math.max(1, Math.round(ms / 86400000));
 }
 
-function screenFlights(flights: Flight[], trip: Trip): Screened<Flight>[] {
+function screenFlights(flights: DemoFlight[], trip: Trip): Screened<DemoFlight>[] {
   const f = trip.filters;
   const w = weights[f.priority];
   const prices = flights.map((x) => x.price);
@@ -98,7 +96,7 @@ function screenFlights(flights: Flight[], trip: Trip): Screened<Flight>[] {
     if (f.preferredAirlines.includes(fl.airline)) comfort += 0.25;
     const score = Math.round((w.cost * costScore + w.time * timeScore + w.comfort * Math.max(0, Math.min(1, comfort))) * 100);
 
-    let reject: Screened<Flight>["reject"];
+    let reject: Screened<DemoFlight>["reject"];
     if (f.excludedAirlines.includes(fl.airline)) {
       reject = { code: "CONSTRAINT", reason: `${fl.airline} is on the excluded-airline list for this trip.` };
     } else if (fl.stops > f.maxStops) {
@@ -118,7 +116,7 @@ function screenFlights(flights: Flight[], trip: Trip): Screened<Flight>[] {
   });
 }
 
-function screenHotels(hotels: Hotel[], trip: Trip, policy: Policy): Screened<Hotel>[] {
+function screenHotels(hotels: DemoHotel[], trip: Trip, policy: Policy): Screened<DemoHotel>[] {
   const f = trip.filters;
   const w = weights[f.priority];
   const intl = cityByCode[trip.destination]?.international;
@@ -134,7 +132,7 @@ function screenHotels(hotels: Hotel[], trip: Trip, policy: Policy): Screened<Hot
     const comfort = (h.rating - 3) / 2 * 0.7 + (h.amenities.length / 8) * 0.3;
     const score = Math.round((w.cost * costScore + w.time * locScore + w.comfort * Math.max(0, Math.min(1, comfort))) * 100);
 
-    let reject: Screened<Hotel>["reject"];
+    let reject: Screened<DemoHotel>["reject"];
     const missing = f.requiredAmenities.filter((a) => !h.amenities.includes(a));
     if (h.rating < f.minHotelRating) {
       reject = { code: "CONSTRAINT", reason: `Guest rating ${h.rating} is below the ${f.minHotelRating}+ minimum.` };
@@ -156,9 +154,9 @@ function screenHotels(hotels: Hotel[], trip: Trip, policy: Policy): Screened<Hot
 
 export class OptimizationError extends Error {}
 
-type Combo = { out: Screened<Flight>; ret: Screened<Flight> | null; stay: Screened<Hotel> | null; cost: number; score: number };
+type Combo = { out: Screened<DemoFlight>; ret: Screened<DemoFlight> | null; stay: Screened<DemoHotel> | null; cost: number; score: number };
 
-function costOf(trip: Trip, out: Flight, ret: Flight | null, stay: Hotel | null, nights: number) {
+function costOf(trip: Trip, out: DemoFlight, ret: DemoFlight | null, stay: DemoHotel | null, nights: number) {
   const pax = Math.max(1, trip.travelerIds.length);
   const flightCost = (out.price + (ret?.price ?? 0)) * pax;
   const stayCost = stay ? stay.pricePerNight * nights * trip.rooms : 0;
@@ -208,18 +206,18 @@ export function optimize(trip: Trip, policy: Policy): Itinerary {
 function compose(
   trip: Trip,
   policy: Policy,
-  out: Flight,
-  ret: Flight | null,
-  stay: Hotel | null,
+  out: DemoFlight,
+  ret: DemoFlight | null,
+  stay: DemoHotel | null,
   nights: number,
-  pools: { outAll: Screened<Flight>[]; retAll: Screened<Flight>[]; stayAll: Screened<Hotel>[] },
+  pools: { outAll: Screened<DemoFlight>[]; retAll: Screened<DemoFlight>[]; stayAll: Screened<DemoHotel>[] },
   edited = false
 ): Itinerary {
   const { flightCost, stayCost, total } = costOf(trip, out, ret, stay, nights);
   const pax = Math.max(1, trip.travelerIds.length);
 
   const ledger: LedgerEntry[] = [];
-  const flightEntries = (kind: "outbound" | "return", pool: Screened<Flight>[], chosen: Flight | null) => {
+  const flightEntries = (kind: "outbound" | "return", pool: Screened<DemoFlight>[], chosen: DemoFlight | null) => {
     for (const s of [...pool].sort((a, b) => a.option.price - b.option.price)) {
       const fl = s.option;
       const won = chosen?.id === fl.id;
@@ -353,9 +351,9 @@ function median(xs: number[]) {
 export function checkConstraints(
   trip: Trip,
   policy: Policy,
-  out: Flight,
-  ret: Flight | null,
-  stay: Hotel | null,
+  out: DemoFlight,
+  ret: DemoFlight | null,
+  stay: DemoHotel | null,
   total: number
 ): ConstraintIssue[] {
   const issues: ConstraintIssue[] = [];
@@ -442,7 +440,9 @@ export function checkConstraints(
 }
 
 export function writeRationale(trip: Trip, it: Itinerary) {
-  const o = it.outbound;
+  // Only ever called on demo itineraries, whose options carry every field.
+  const o = it.outbound as DemoFlight;
+  const stay = it.stay as DemoHotel | null;
   const dest = cityByCode[trip.destination]?.name ?? trip.destination;
   const parts: string[] = [];
   const outRejected = it.ledger.filter((l) => l.kind === "outbound" && !l.won);
@@ -458,9 +458,9 @@ export function writeRationale(trip: Trip, it: Itinerary) {
   if (it.return) {
     parts.push(`The return is ${it.return.airline} ${it.return.flightNo} at ${formatInr(it.return.price)}.`);
   }
-  if (it.stay) {
+  if (stay) {
     parts.push(
-      `In ${dest}, ${it.stay.name} (${it.stay.rating}★, ${it.stay.distanceKm} km from centre) was chosen at ${formatInr(it.stay.pricePerNight)}/night for ${it.nights} night${it.nights > 1 ? "s" : ""}.`
+      `In ${dest}, ${stay.name} (${stay.rating}★, ${stay.distanceKm} km from centre) was chosen at ${formatInr(stay.pricePerNight)}/night for ${it.nights} night${it.nights > 1 ? "s" : ""}.`
     );
   }
   const errors = it.issues.filter((i) => i.severity === "error");
@@ -472,7 +472,7 @@ export function writeRationale(trip: Trip, it: Itinerary) {
       `The total of ${formatInr(it.totalCost)} is within the ${formatInr(trip.budget)} budget${warnings.length ? `, with ${warnings.length} policy warning${warnings.length > 1 ? "s" : ""} to review` : " and passes every policy rule"}.`
     );
   }
-  if (it.savings > 0) parts.push(`That is ${formatInr(it.savings)} below the typical market cost of ${formatInr(it.baselineCost)} for this route and stay.`);
+  if (it.savings && it.baselineCost) parts.push(`That is ${formatInr(it.savings)} below the typical market cost of ${formatInr(it.baselineCost)} for this route and stay.`);
   return parts.join(" ");
 }
 
@@ -484,9 +484,10 @@ export function editItinerary(trip: Trip, policy: Policy, kind: "outbound" | "re
     ? screenFlights(searchFlights(trip.destination, trip.origin, trip.returnDate, trip.filters.cabin), trip)
     : [];
   const stayAll = screenHotels(searchHotels(trip.destination), trip, policy);
-  const out = kind === "outbound" ? outAll.find((s) => s.option.id === optionId)!.option : it.outbound;
-  const ret = kind === "return" ? retAll.find((s) => s.option.id === optionId)!.option : it.return;
-  const stay = kind === "stay" ? stayAll.find((s) => s.option.id === optionId)!.option : it.stay;
+  // Demo-only: live itineraries come from the backend and can't be edited here.
+  const out = kind === "outbound" ? outAll.find((s) => s.option.id === optionId)!.option : (it.outbound as DemoFlight);
+  const ret = kind === "return" ? retAll.find((s) => s.option.id === optionId)!.option : (it.return as DemoFlight | null);
+  const stay = kind === "stay" ? stayAll.find((s) => s.option.id === optionId)!.option : (it.stay as DemoHotel | null);
   const next = compose(trip, policy, out, ret, stay, it.nights, { outAll, retAll, stayAll }, true);
   next.runMs = it.runMs;
   return next;

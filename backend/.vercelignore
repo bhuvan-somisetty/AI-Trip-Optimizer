@@ -1,0 +1,7 @@
+.venv
+.env
+tests
+.pytest_cache
+**/__pycache__
+Dockerfile
+.env.local

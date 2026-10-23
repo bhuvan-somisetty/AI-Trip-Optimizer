@@ -6,47 +6,41 @@ Python; compose_node is the only step that calls the LLM.
 import json
 import logging
 import re
+from datetime import date
 
 from langgraph.graph import END, START, StateGraph
 
-from app import config, live_data
-from app.mock_data import flights_for_route, hotels_for_city
+from app import config
+from app import travel_data
 from app.pipeline.state import PipelineState
 
 logger = logging.getLogger(__name__)
 
 
 def search_node(state: PipelineState) -> dict:
-    # Pure lookup, no LLM: every option the later nodes see comes straight from the data source.
+    # Pure lookup, no LLM: every option the later nodes see came from a real provider.
     request = state["request"]
-    if config.DATA_SOURCE == "live":
-        return live_search(request)
-    departure_day = request["start_date"].isoformat()
-    flights = [
-        f
-        for f in flights_for_route(request["origin"], request["destination"])
-        if f["departure_time"].startswith(departure_day)
-    ]
-    hotels = hotels_for_city(request["destination"])
-    return {"flight_options": flights, "hotel_options": hotels}
-
-
-def live_search(request) -> dict:
-    # Live prices come from Google Flights / Google Hotels via SerpApi's MCP server. A failed
-    # search fails the run with the reason, rather than quietly using sample data instead.
+    found: dict = {"flight_options": [], "hotel_options": []}
     try:
-        flights = live_data.flights_for_trip(
+        found["flight_options"] = travel_data.search_flights(
             request["origin"],
             request["destination"],
             request["start_date"],
             request["preferences"].get("cabin_class"),
         )
-        hotels = []
-        if request["end_date"] > request["start_date"]:  # a same-day trip needs no hotel
-            hotels = live_data.hotels_for_trip(request["destination"], request["start_date"], request["end_date"])
-    except live_data.LiveSearchError as e:
-        return {"flight_options": [], "hotel_options": [], "search_error": f"Live search failed: {e}"}
-    return {"flight_options": flights, "hotel_options": hotels}
+    except travel_data.TravelDataError as e:
+        found["search_error"] = str(e)
+        return found
+    if request["end_date"] > request["start_date"]:
+        try:
+            found["hotel_options"] = travel_data.search_hotels(
+                request["destination"], request["start_date"], request["end_date"]
+            )
+        except travel_data.HotelsUnavailable as e:
+            found["hotels_unavailable"] = str(e)
+        except travel_data.TravelDataError as e:
+            found["search_error"] = str(e)
+    return found
 
 
 def flight_rule_broken(flight: dict, preferences: dict) -> tuple[str, str] | None:
@@ -59,8 +53,16 @@ def flight_rule_broken(flight: dict, preferences: dict) -> tuple[str, str] | Non
     return None
 
 
+def days_off(flight: dict, day) -> int:
+    # Search also returns fares from nearby days; 0 means the flight leaves on `day`.
+    departure = flight.get("departure_time")
+    return (date.fromisoformat(departure[:10]) - day).days if departure else 0
+
+
 def hotel_rule_broken(hotel: dict, preferences: dict) -> tuple[str, str] | None:
     min_rating = preferences.get("min_hotel_rating")
+    if min_rating is not None and hotel["rating"] is None:
+        return "min_hotel_rating", f"{hotel['id']} has no guest rating, trip needs at least {min_rating}"
     if min_rating is not None and hotel["rating"] < min_rating:
         return "min_hotel_rating", f"{hotel['id']} is rated {hotel['rating']}, trip needs at least {min_rating}"
     return None
@@ -84,23 +86,46 @@ def check_node(state: PipelineState) -> dict:
     preferences = request["preferences"]
     nights = (request["end_date"] - request["start_date"]).days
     route = f"{request['origin']} to {request['destination']} on {request['start_date'].isoformat()}"
-    flags: list[str] = [state["search_error"]] if state.get("search_error") else []
+    flags: list[str] = []
     rejected: list = []
 
-    flights = screen(state["flight_options"], flight_rule_broken, preferences, rejected)
+    # The trip's dates are fixed (hotel nights hang off them), so only a flight on the start
+    # date can be booked. Fares from nearby days stay in the ledger as date trade-offs.
+    on_day = []
+    for option in state["flight_options"]:
+        moved = days_off(option, request["start_date"])
+        if moved == 0:
+            on_day.append(option)
+        else:
+            side = "before" if moved < 0 else "after"
+            rejected.append({
+                "option_id": option["id"],
+                "rule": "travel_date",
+                "detail": f"{option['id']} departs {option['departure_time'][:10]}, "
+                          f"{abs(moved)} day(s) {side} the trip starts",
+            })
+    flights = screen(on_day, flight_rule_broken, preferences, rejected)
     flight = min(flights, key=lambda f: f["price"], default=None)
-    if not state["flight_options"]:
+    if state.get("search_error"):
+        flags.append(state["search_error"])
+    elif not state["flight_options"]:
         flags.append(f"No flights found from {route}")
+    elif not on_day:
+        nearest = sorted(state["flight_options"], key=lambda f: f["price"])[:3]
+        listed = ", ".join(f"{f['id']} on {f['departure_time'][:10]} for {f['price']:,}" for f in nearest)
+        flags.append(f"No flights found from {route}; nearest real fares: {listed}")
     elif flight is None:
         flags.append(f"No flight from {route} meets the trip's preferences")
 
     hotel = None
-    if nights > 0:
+    if nights > 0 and state.get("hotels_unavailable"):
+        flags.append(state["hotels_unavailable"])
+    elif nights > 0:
         hotels = screen(state["hotel_options"], hotel_rule_broken, preferences, rejected)
         hotel = min(hotels, key=lambda h: h["price_per_night"], default=None)
-        if not state["hotel_options"]:
+        if not state["hotel_options"] and not state.get("search_error"):
             flags.append(f"No hotels found in {request['destination']}")
-        elif hotel is None:
+        elif state["hotel_options"] and hotel is None:
             flags.append(f"No hotel in {request['destination']} meets the trip's preferences")
 
     flight_cost = flight["price"] if flight else 0
@@ -132,11 +157,15 @@ def check_node(state: PipelineState) -> dict:
 
 
 def flight_label(flight: dict) -> str:
-    return f"{flight['id']} {flight['airline']} {flight['cabin_class']}, {flight['stops']} stop(s)"
+    label = f"{flight['id']} {flight['airline']} {flight['cabin_class']}, {flight['stops']} stop(s)"
+    if flight.get("departure_time"):
+        label += f", departs {flight['departure_time'][:10]}"
+    return label
 
 
 def hotel_label(hotel: dict) -> str:
-    return f"{hotel['id']} {hotel['name']}, rated {hotel['rating']}"
+    rating = "unrated" if hotel["rating"] is None else f"rated {hotel['rating']}"
+    return f"{hotel['id']} {hotel['name']}, {rating}"
 
 
 def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id) -> list[dict]:
@@ -147,6 +176,11 @@ def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id) -> li
         price = float(price_of(option))
         if chosen and option["id"] == chosen["id"]:
             reason = "Cheapest option that meets every trip preference"
+        elif option["id"] in rejected_by_id and rejected_by_id[option["id"]]["rule"] == "travel_date":
+            reason = f"Different day: {rejected_by_id[option['id']]['detail']}"
+            if chosen:
+                difference = price - price_of(chosen)
+                reason += f"; {abs(difference):,.0f} {'less' if difference < 0 else 'more'} than {chosen['id']}"
         elif option["id"] in rejected_by_id:
             rejection = rejected_by_id[option["id"]]
             reason = f"Preference {rejection['rule']}: {rejection['detail']}"
@@ -228,7 +262,7 @@ def template_rationale(facts: dict) -> str:
     else:
         text += f"which is {facts['difference_from_budget']:,.0f} over budget."
     if facts["options_ruled_out"]:
-        text += f" {len(facts['options_ruled_out'])} option(s) were ruled out by trip preferences."
+        text += f" {len(facts['options_ruled_out'])} option(s) were ruled out by the trip's dates or preferences."
     return text
 
 
@@ -269,7 +303,8 @@ def compose_node(state: PipelineState) -> dict:
     # The only LLM call in the pipeline, and it only writes prose: the choice, the total
     # and the Trade-off Ledger all come from check_node's numbers.
     check = state["check"]
-    if check["flight"] is None or (check["nights"] > 0 and check["hotel"] is None):
+    hotel_missing = check["nights"] > 0 and check["hotel"] is None and not state.get("hotels_unavailable")
+    if check["flight"] is None or hotel_missing:
         return {"failure_reason": "; ".join(check["flags"]) or "No itinerary could be built"}
 
     facts = rationale_facts(state)

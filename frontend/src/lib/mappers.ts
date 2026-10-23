@@ -143,6 +143,8 @@ function toLedgerEntry(e: LedgerEntryResponse, i: number, nights: number): Ledge
 
 function toIssue(flag: string, i: number): ConstraintIssue {
   const overBudget = /^Total .* over/.test(flag);
+  // Without a live hotel provider the trip is still valid, just flight-only.
+  if (/hotel prices are unavailable/i.test(flag)) return { id: `iss_${i}`, rule: "Hotel prices", lineItem: "Stay", severity: "info", message: flag };
   return {
     id: `iss_${i}`,
     rule: overBudget ? "Budget" : "Availability",
@@ -151,6 +153,9 @@ function toIssue(flag: string, i: number): ConstraintIssue {
     message: flag,
   };
 }
+
+/** Providers leave fields out as null; the frontend types use undefined for "not known". */
+const orUndefined = <T,>(v: T | null | undefined) => (v === null ? undefined : v);
 
 /**
  * Converts the backend optimizer's result into the frontend Itinerary. Only data the backend
@@ -168,23 +173,30 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
     origin: f.origin,
     destination: f.destination,
     airline: f.airline,
-    flightNo: f.id,
+    flightNo: f.flight_number ?? f.id,
     departure: f.departure_time,
-    arrival: f.arrival_time,
-    durationMin: Math.round((Date.parse(f.arrival_time) - Date.parse(f.departure_time)) / 60000),
+    arrival: orUndefined(f.arrival_time),
+    durationMin: orUndefined(f.duration_minutes),
     price: f.price,
-    cabin: f.cabin_class as CabinClass,
+    cabin: cabins.includes(f.cabin_class as CabinClass) ? (f.cabin_class as CabinClass) : "economy",
     stops: f.stops,
+    priceStatus: f.price_status,
+    bookingLink: orUndefined(f.link),
+    source: f.source,
   };
   const stay: Hotel | null = h
     ? {
         id: h.id,
         city: h.city,
         name: h.name,
+        area: orUndefined(h.address),
         pricePerNight: h.price_per_night,
-        rating: h.rating,
-        amenities: h.amenities,
-        distanceKm: h.distance_to_center_km,
+        rating: orUndefined(h.rating),
+        stars: orUndefined(h.stars),
+        amenities: h.amenities ?? [],
+        distanceKm: orUndefined(h.distance_to_center_km),
+        priceStatus: h.price_status,
+        source: h.source,
       }
     : null;
   return {

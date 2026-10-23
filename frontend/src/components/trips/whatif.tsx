@@ -52,7 +52,7 @@ export function WhatIf({ trip, editable }: { trip: Trip; editable: boolean }) {
         { label: "Cabin", a: cabinLabel[orig.outbound.cabin], b: cabinLabel[next.outbound.cabin] },
         { label: "Budget", a: formatInr(trip.budget), b: formatInr(budget) },
         { label: "Total cost", a: formatInr(orig.totalCost), b: formatInr(next.totalCost), better: next.totalCost === orig.totalCost ? null : next.totalCost < orig.totalCost },
-        { label: "Savings vs typical", a: formatInr(orig.savings), b: formatInr(next.savings), better: next.savings === orig.savings ? null : next.savings > orig.savings },
+        { label: "Savings vs typical", a: formatInr(orig.savings ?? 0), b: formatInr(next.savings ?? 0), better: next.savings === orig.savings ? null : (next.savings ?? 0) > (orig.savings ?? 0) },
         { label: "Blocking issues", a: String(orig.issues.filter((i) => i.severity === "error").length), b: String(next.issues.filter((i) => i.severity === "error").length) },
         { label: "Warnings", a: String(orig.issues.filter((i) => i.severity === "warning").length), b: String(next.issues.filter((i) => i.severity === "warning").length) },
       ]

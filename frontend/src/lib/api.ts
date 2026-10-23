@@ -85,7 +85,14 @@ function roleFromToken(token: string): Session["role"] {
   }
 }
 
-// Auth calls give up quickly so an offline backend drops straight into demo mode.
+/**
+ * Demo mode runs the whole app in the browser on generated flights and hotels. It is off unless
+ * NEXT_PUBLIC_DEMO_MODE=true, so a real deployment never falls back to made-up data when the
+ * backend is down; the login form shows "Can't reach the server" instead.
+ */
+export const DEMO_ENABLED = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
+// Auth calls give up quickly so an offline backend drops straight into demo mode (when enabled).
 const AUTH_TIMEOUT_MS = 2500;
 
 export async function login(email: string, password: string, name?: string): Promise<Session> {
@@ -102,7 +109,7 @@ export async function login(email: string, password: string, name?: string): Pro
       token: access_token,
     };
   } catch (e) {
-    if (e instanceof ApiUnavailable) return { name: name || nameFromEmail(email), email, role: "admin", mode: "demo" };
+    if (e instanceof ApiUnavailable && DEMO_ENABLED) return { name: name || nameFromEmail(email), email, role: "admin", mode: "demo" };
     throw e;
   }
 }
@@ -112,7 +119,7 @@ export async function register(name: string, email: string, password: string): P
     await call("POST", "/auth/register", { body: { email, password }, timeoutMs: AUTH_TIMEOUT_MS });
     return await login(email, password, name);
   } catch (e) {
-    if (e instanceof ApiUnavailable) return { name, email, role: "admin", mode: "demo" };
+    if (e instanceof ApiUnavailable && DEMO_ENABLED) return { name, email, role: "admin", mode: "demo" };
     throw e;
   }
 }
@@ -164,26 +171,37 @@ export type LedgerEntryResponse = {
   reason: string;
 };
 
+/** A flight as backend/app/travel_data.py returns it; fields the provider didn't send are null. */
 export type FlightResponse = {
   id: string;
   origin: string;
   destination: string;
   departure_time: string;
-  arrival_time: string;
+  arrival_time?: string | null;
   airline: string;
+  flight_number?: string | null;
   price: number;
+  currency?: string;
   cabin_class: string;
   stops: number;
+  duration_minutes?: number | null;
+  price_status?: "cached" | "live";
+  link?: string | null;
+  source?: string;
 };
 
 export type HotelResponse = {
   id: string;
   city: string;
   name: string;
+  address?: string | null;
   price_per_night: number;
-  rating: number;
-  amenities: string[];
-  distance_to_center_km: number;
+  rating?: number | null;
+  stars?: number | null;
+  amenities?: string[];
+  distance_to_center_km?: number | null;
+  price_status?: "cached" | "live";
+  source?: string;
 };
 
 export type ItineraryResponse = {
@@ -212,8 +230,8 @@ export type DecisionResponse = {
   decided_at: string;
 };
 
-// The pipeline's LLM call alone may take ~20 s.
-const OPTIMIZE_TIMEOUT_MS = 60000;
+// The pipeline calls the flight and hotel providers and then the LLM (~20 s), which can take a while.
+const OPTIMIZE_TIMEOUT_MS = 90000;
 
 /** 409 when the trip is under review, decided, or already optimizing. */
 export const optimizeTrip = (token: string, tripId: string) =>

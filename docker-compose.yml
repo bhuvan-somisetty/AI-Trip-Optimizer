@@ -23,9 +23,6 @@ services:
       - .env
     ports:
       - "8000:8000"
-    volumes:
-      # Mock flight and hotel files; app/mock_data.py reads them from /data.
-      - ./data:/data:ro
     depends_on:
       postgres:
         condition: service_healthy

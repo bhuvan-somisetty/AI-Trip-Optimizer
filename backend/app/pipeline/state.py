@@ -9,7 +9,7 @@ from typing import TypedDict
 
 
 class TripRequest(TypedDict):
-    origin: str  # airport code, e.g. "BLR" (matches data/mock_flights.json)
+    origin: str  # IATA airport code, e.g. "BLR"
     destination: str  # airport/city code, e.g. "DEL"
     start_date: date
     end_date: date
@@ -42,7 +42,7 @@ class LedgerEntry(TypedDict):
 
 class Itinerary(TypedDict):
     flight: dict
-    hotel: dict | None  # None for a same-day trip (0 nights)
+    hotel: dict | None  # None for a same-day trip, or when live hotel prices are unavailable
     total_cost: float
     rationale: str
     tradeoff_ledger: list[LedgerEntry]
@@ -52,7 +52,8 @@ class PipelineState(TypedDict, total=False):
     request: TripRequest  # set by the caller before the graph runs
     flight_options: list[dict]  # written by search_node
     hotel_options: list[dict]  # written by search_node
-    search_error: str  # written by search_node when a live search fails
+    search_error: str  # written by search_node when a live search couldn't run
+    hotels_unavailable: str  # written by search_node when no live hotel provider is configured
     check: CheckResult  # written by check_node
     itinerary: Itinerary  # written by compose_node
     failure_reason: str  # written by compose_node instead of `itinerary` when none can be built
