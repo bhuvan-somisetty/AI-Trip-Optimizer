@@ -65,6 +65,10 @@ export type Trip = {
   decidedAt?: string;
 };
 
+/**
+ * Fields marked optional are ones the live providers don't send (backend/app/travel_data.py).
+ * They stay undefined rather than being guessed, and the UI hides them.
+ */
 export type Flight = {
   id: string;
   origin: string;
@@ -72,27 +76,33 @@ export type Flight = {
   airline: string;
   flightNo: string;
   departure: string;
-  arrival: string;
-  durationMin: number;
+  arrival?: string;
+  durationMin?: number;
   price: number;
   cabin: CabinClass;
   stops: number;
   via?: string;
-  refundable: boolean;
-  baggageKg: number;
+  refundable?: boolean;
+  baggageKg?: number;
+  /** "cached": a real fare found in the last 48 hours, not re-checked; "live": quoted now */
+  priceStatus?: "cached" | "live";
+  bookingLink?: string;
+  source?: string;
 };
 
 export type Hotel = {
   id: string;
   city: string;
   name: string;
-  area: string;
+  area?: string;
   pricePerNight: number;
-  rating: number;
-  stars: number;
+  rating?: number;
+  stars?: number;
   amenities: string[];
-  distanceKm: number;
-  freeCancellation: boolean;
+  distanceKm?: number;
+  freeCancellation?: boolean;
+  priceStatus?: "cached" | "live";
+  source?: string;
 };
 
 export type ReasonCode = "WINNER" | "PRICE" | "BUDGET" | "CONSTRAINT" | "PREFERENCE";
@@ -104,7 +114,8 @@ export type LedgerEntry = {
   label: string;
   detail: string;
   price: number;
-  score: number;
+  /** Demo optimizer only; the backend picks the cheapest option that passes every rule. */
+  score?: number;
   won: boolean;
   /** false when a hard filter or policy rule screened this option out */
   feasible: boolean;
@@ -130,8 +141,11 @@ export type Itinerary = {
   flightCost: number;
   stayCost: number;
   totalCost: number;
-  baselineCost: number;
-  savings: number;
+  /** Only the local demo optimizer has a market baseline to compare against. */
+  baselineCost?: number;
+  savings?: number;
+  /** Set when the backend built this from real provider data. */
+  live?: { flags: string[]; withinBudget: boolean };
   ledger: LedgerEntry[];
   issues: ConstraintIssue[];
   rationale: string;

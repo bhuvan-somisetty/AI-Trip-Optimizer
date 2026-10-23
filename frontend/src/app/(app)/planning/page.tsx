@@ -51,9 +51,6 @@ const purposes = ["Client meeting", "Conference", "Internal", "Recruitment", "Ve
 
 type Draft = Omit<Trip, "id" | "code" | "status" | "createdAt" | "createdBy">;
 
-// The backend's mock flight and hotel data only covers these airports.
-const apiCityCodes = ["BLR", "DEL", "BOM"];
-
 export default function PlanningPage() {
   const s = useStore();
   const router = useRouter();
@@ -71,7 +68,7 @@ export default function PlanningPage() {
   // The API takes one traveler and a [start, end] date pair per trip.
   const apiMode = s.session?.mode === "api";
   const roundTrip = roundTripChoice || apiMode;
-  const cityOptions = apiMode ? cities.filter((c) => apiCityCodes.includes(c.code)) : cities;
+  const cityOptions = cities;
   const [d, setD] = useState<Draft>(() => {
     if (editing) {
       return {
@@ -110,11 +107,12 @@ export default function PlanningPage() {
   const selected = s.travelers.filter((t) => d.travelerIds.includes(t.id));
   const effective: Draft = { ...d, returnDate: roundTrip ? d.returnDate : null };
 
-  // Live feasibility preview — runs the same optimizer the pipeline uses, with no budget ceiling.
+  // Demo-mode feasibility preview: runs the local demo optimizer with no budget ceiling. In API
+  // mode there is no preview, because real fares are only searched when the trip is optimized.
   const effectiveKey = JSON.stringify(effective);
   const preview = useMemo(() => {
     const effective = JSON.parse(effectiveKey) as Draft;
-    if (!effective.travelerIds.length || effective.origin === effective.destination) return null;
+    if (apiMode || !effective.travelerIds.length || effective.origin === effective.destination) return null;
     const probe = { ...effective, id: "preview", code: "", status: "DRAFT", createdAt: "", createdBy: "", budget: 1e12 } as Trip;
     const pools = optionsFor(probe, s.policy);
     const counts = {
@@ -128,7 +126,7 @@ export default function PlanningPage() {
     } catch (e) {
       return { ok: false as const, reason: e instanceof OptimizationError ? e.message : "No feasible options.", counts };
     }
-  }, [effectiveKey, s.policy]);
+  }, [effectiveKey, s.policy, apiMode]);
 
   const suggestedBudget = preview?.ok ? Math.ceil((preview.cost * 1.12) / 1000) * 1000 : 0;
 
@@ -137,7 +135,6 @@ export default function PlanningPage() {
     if (i === 0 && !d.travelerIds.length) e.push("Select at least one traveler.");
     if (i === 0 && apiMode && d.travelerIds.length > 1) e.push("Select one traveler — trips saved to the server have a single traveler.");
     if (i === 1) {
-      if (apiMode && (!apiCityCodes.includes(d.origin) || !apiCityCodes.includes(d.destination))) e.push(`Choose ${apiCityCodes.join(", ")} — the server only has flight and hotel data for these cities.`);
       if (!d.title.trim()) e.push("Give the trip a title.");
       if (d.origin === d.destination) e.push("Origin and destination must differ.");
       if (!d.departDate) e.push("Choose a departure date.");
@@ -668,8 +665,10 @@ export default function PlanningPage() {
 
           <Card className="py-4">
             <CardContent className="space-y-3 px-5">
-              <p className="text-sm font-semibold">Live feasibility check</p>
-              {!preview ? (
+              <p className="text-sm font-semibold">{apiMode ? "Real fares" : "Feasibility check (demo data)"}</p>
+              {apiMode ? (
+                <p className="text-sm text-muted-foreground">Real flight fares and hotel rates are searched when you run the optimizer on this trip.</p>
+              ) : !preview ? (
                 <p className="text-sm text-muted-foreground">Select travelers and a route to preview matching options.</p>
               ) : (
                 <>

@@ -135,22 +135,27 @@ export default function SignupPage() {
         </Button>
       </form>
 
-      <div className="flex items-center gap-3">
-        <span className="h-px flex-1 bg-border" />
-        <span className="text-xs text-muted-foreground">or</span>
-        <span className="h-px flex-1 bg-border" />
-      </div>
+      {/* Opens the demo workspace (generated data), so it only shows when demo mode is enabled. */}
+      {api.DEMO_ENABLED && (
+        <>
+          <div className="flex items-center gap-3">
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">or</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
 
-      <Button
-        type="button"
-        variant="outline"
-        size="lg"
-        className="w-full transition-transform active:scale-[0.98]"
-        onClick={continueWithGoogle}
-      >
-        <GoogleIcon className="size-4" />
-        Continue with Google
-      </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="w-full transition-transform active:scale-[0.98]"
+            onClick={continueWithGoogle}
+          >
+            <GoogleIcon className="size-4" />
+            Continue with Google
+          </Button>
+        </>
+      )}
 
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}

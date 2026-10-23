@@ -42,7 +42,7 @@ class TravelerResponse(BaseModel):
 
 class TripCreate(BaseModel):
     traveler_id: uuid.UUID
-    # 3-letter airport codes, the same format the mock flight/hotel data uses.
+    # 3-letter IATA airport codes, the format the flight and hotel APIs take.
     origin: str = Field(pattern=r"^[A-Za-z]{3}$")
     destination: str = Field(pattern=r"^[A-Za-z]{3}$")
     dates: tuple[date, date]  # [start, end], matches 07_API_Specification.md

@@ -87,7 +87,8 @@ export default function TripDetailPage() {
   const t = trip;
   const it = t.itinerary;
   const decided = t.status === "DECIDED";
-  const editable = !decided && !!it && t.status !== "OPTIMIZING";
+  // Live itineraries are priced on the server, so options can't be swapped or re-run in the browser.
+  const editable = !decided && !!it && !it.live && t.status !== "OPTIMIZING";
   const blocking = it?.issues.filter((i) => i.severity === "error") ?? [];
   const events = s.audit.filter((a) => a.tripId === t.id);
   const names = travelerNames(t, s.travelers);
@@ -100,7 +101,7 @@ export default function TripDetailPage() {
     if (after?.status === "OPTIMIZED" && after.itinerary) {
       toast("Itinerary ready", { description: `${formatInr(after.itinerary.totalCost)} · ${after.itinerary.issues.length} flag${after.itinerary.issues.length === 1 ? "" : "s"} to review.` });
     } else if (after?.status === "OPTIMIZATION_FAILED") {
-      toast("Optimization failed", { description: "No feasible combination — adjust the filters.", variant: "error" });
+      toast("Optimization failed", { description: after.failureReason ?? "No feasible combination — adjust the filters.", variant: "error" });
     }
   }
 
@@ -130,7 +131,7 @@ export default function TripDetailPage() {
     { value: "itinerary", label: "Itinerary" },
     { value: "ledger", label: "Trade-off Ledger", disabled: !it, count: it?.ledger.length },
     { value: "ask", label: "Ask this itinerary", disabled: !it },
-    { value: "whatif", label: "What-if", disabled: !it },
+    { value: "whatif", label: "What-if", disabled: !it || !!it.live },
     { value: "activity", label: "Activity", count: events.length },
     { value: "request", label: "Request details" },
   ];

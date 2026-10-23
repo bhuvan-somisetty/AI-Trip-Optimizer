@@ -85,7 +85,14 @@ function roleFromToken(token: string): Session["role"] {
   }
 }
 
-// Auth calls give up quickly so an offline backend drops straight into demo mode.
+/**
+ * Demo mode runs the whole app in the browser on generated flights and hotels. It is off unless
+ * NEXT_PUBLIC_DEMO_MODE=true, so a real deployment never falls back to made-up data when the
+ * backend is down; the login form shows "Can't reach the server" instead.
+ */
+export const DEMO_ENABLED = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
+// Auth calls give up quickly so an offline backend drops straight into demo mode (when enabled).
 const AUTH_TIMEOUT_MS = 2500;
 
 export async function login(email: string, password: string, name?: string): Promise<Session> {
@@ -102,7 +109,7 @@ export async function login(email: string, password: string, name?: string): Pro
       token: access_token,
     };
   } catch (e) {
-    if (e instanceof ApiUnavailable) return { name: name || nameFromEmail(email), email, role: "admin", mode: "demo" };
+    if (e instanceof ApiUnavailable && DEMO_ENABLED) return { name: name || nameFromEmail(email), email, role: "admin", mode: "demo" };
     throw e;
   }
 }
@@ -112,7 +119,7 @@ export async function register(name: string, email: string, password: string): P
     await call("POST", "/auth/register", { body: { email, password }, timeoutMs: AUTH_TIMEOUT_MS });
     return await login(email, password, name);
   } catch (e) {
-    if (e instanceof ApiUnavailable) return { name, email, role: "admin", mode: "demo" };
+    if (e instanceof ApiUnavailable && DEMO_ENABLED) return { name, email, role: "admin", mode: "demo" };
     throw e;
   }
 }
@@ -131,7 +138,7 @@ export type TripBody = {
   budget: number;
   preferences: Record<string, unknown>;
 };
-export type TripResponse = TripBody & { id: string; status: TripStatus; created_by: string };
+export type TripResponse = TripBody & { id: string; status: TripStatus; created_by: string; failure_reason?: string | null };
 
 const id = encodeURIComponent;
 
@@ -151,3 +158,61 @@ export const listTrips = (token: string, status?: TripStatus) =>
 export const getTrip = (token: string, tripId: string) => call<TripResponse>("GET", `/trips/${id(tripId)}`, { token });
 
 export const createTrip = (token: string, body: TripBody) => call<TripResponse>("POST", "/trip", { token, body });
+
+// ---------------------------------------------------------------- optimizer (real provider data)
+
+/** A flight as backend/app/travel_data.py returns it; fields the provider didn't send are null. */
+export type BackendFlight = {
+  id: string;
+  origin: string;
+  destination: string;
+  departure_time: string;
+  arrival_time?: string | null;
+  airline: string;
+  flight_number?: string | null;
+  price: number;
+  currency?: string;
+  cabin_class: string;
+  stops: number;
+  duration_minutes?: number | null;
+  price_status?: "cached" | "live";
+  link?: string | null;
+  source?: string;
+};
+
+export type BackendHotel = {
+  id: string;
+  city: string;
+  name: string;
+  address?: string | null;
+  price_per_night: number;
+  rating?: number | null;
+  stars?: number | null;
+  amenities?: string[];
+  distance_to_center_km?: number | null;
+  price_status?: "cached" | "live";
+  source?: string;
+};
+
+export type TripResultResponse = {
+  status: TripStatus;
+  itinerary: {
+    flight: BackendFlight;
+    hotel: BackendHotel | null;
+    total_cost: number;
+    within_budget: boolean;
+    flags: string[];
+    rationale: string;
+  } | null;
+  tradeoff_ledger: { alternative: string; price: number; won: boolean; reason: string }[];
+  reason: string | null;
+};
+
+// The pipeline calls the flight and hotel providers, which can take a while.
+const OPTIMIZE_TIMEOUT_MS = 90000;
+
+export const optimizeTrip = (token: string, tripId: string) =>
+  call<TripResultResponse>("POST", `/trips/${id(tripId)}/optimize`, { token, timeoutMs: OPTIMIZE_TIMEOUT_MS });
+
+/** 404 when the trip hasn't been optimized yet. */
+export const getItinerary = (token: string, tripId: string) => call<TripResultResponse>("GET", `/trips/${id(tripId)}/itinerary`, { token });

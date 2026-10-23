@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertOctagon, AlertTriangle, Info, Plane, Hotel as HotelIcon, Star, MapPin, Luggage, RotateCcw, Sparkles, Pencil, BadgeCheck } from "lucide-react";
+import { AlertOctagon, AlertTriangle, Info, Plane, Hotel as HotelIcon, Star, MapPin, Luggage, RotateCcw, Sparkles, Pencil, BadgeCheck, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,12 @@ export function CostSummary({ trip, it }: { trip: Trip; it: Itinerary }) {
       <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
         <Metric label="Total cost" value={formatInr(it.totalCost)} sub={`${it.travelers} traveler${it.travelers > 1 ? "s" : ""} · ${it.nights} night${it.nights > 1 ? "s" : ""}`} strong />
         <Metric label="Budget" value={formatInr(trip.budget)} sub={over ? `${formatInr(it.totalCost - trip.budget)} over` : `${formatInr(trip.budget - it.totalCost)} headroom`} tone={over ? "bad" : "good"} />
-        <Metric label="Savings vs typical" value={formatInr(it.savings)} sub={`Typical market cost ${formatInr(it.baselineCost)}`} tone={it.savings > 0 ? "good" : undefined} />
-        <Metric label="Options evaluated" value={String(it.ledger.length)} sub={`Pipeline ran in ${it.runMs} ms`} />
+        {it.savings !== undefined && it.baselineCost !== undefined ? (
+          <Metric label="Savings vs typical" value={formatInr(it.savings)} sub={`Typical market cost ${formatInr(it.baselineCost)}`} tone={it.savings > 0 ? "good" : undefined} />
+        ) : (
+          <Metric label="Data source" value="Real fares" sub={it.outbound.source ?? "Live provider data"} />
+        )}
+        <Metric label="Options evaluated" value={String(it.ledger.length)} sub={it.live ? "Searched on the server" : `Pipeline ran in ${it.runMs} ms`} />
       </div>
       <div className="border-t px-5 py-4">
         <div className="mb-2 flex items-center justify-between text-xs">
@@ -78,24 +82,36 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
             <p className="text-sm text-muted-foreground">{flight.origin} · {cityByCode[flight.origin]?.name}</p>
           </div>
           <div className="flex flex-1 flex-col items-center gap-1">
-            <span className="text-xs text-muted-foreground">{formatDuration(flight.durationMin)}</span>
+            <span className="text-xs text-muted-foreground">{flight.durationMin ? formatDuration(flight.durationMin) : "Duration not given"}</span>
             <div className="relative h-px w-full bg-border">
               {flight.stops > 0 && <span className="absolute top-1/2 left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-warning" />}
             </div>
-            <span className={cn("text-xs font-medium", flight.stops === 0 ? "text-emerald-600 dark:text-success" : "text-amber-600")}>{flight.stops === 0 ? "Non-stop" : `${flight.stops} stop · ${flight.via}`}</span>
+            <span className={cn("text-xs font-medium", flight.stops === 0 ? "text-emerald-600 dark:text-success" : "text-amber-600")}>{flight.stops === 0 ? "Non-stop" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}${flight.via ? ` · ${flight.via}` : ""}`}</span>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-semibold tabular-nums">{formatTime(flight.arrival)}</p>
+            <p className="text-2xl font-semibold tabular-nums">{flight.arrival ? formatTime(flight.arrival) : "—"}</p>
             <p className="text-sm text-muted-foreground">{flight.destination} · {cityByCode[flight.destination]?.name}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs">
           <Badge variant="outline">{cabinLabel[flight.cabin]}</Badge>
-          <Badge variant="outline" className="gap-1"><Luggage className="size-3" />{flight.baggageKg} kg</Badge>
-          <Badge variant="outline" className={cn("gap-1", flight.refundable ? "text-emerald-700 dark:text-success" : "text-muted-foreground")}>
-            <RotateCcw className="size-3" />
-            {flight.refundable ? "Refundable" : "Non-refundable"}
-          </Badge>
+          {flight.baggageKg !== undefined && <Badge variant="outline" className="gap-1"><Luggage className="size-3" />{flight.baggageKg} kg</Badge>}
+          {flight.refundable !== undefined && (
+            <Badge variant="outline" className={cn("gap-1", flight.refundable ? "text-emerald-700 dark:text-success" : "text-muted-foreground")}>
+              <RotateCcw className="size-3" />
+              {flight.refundable ? "Refundable" : "Non-refundable"}
+            </Badge>
+          )}
+          {flight.priceStatus === "cached" && (
+            <Badge variant="outline" className="text-amber-700 dark:text-warning" title="A real fare found on Aviasales in the last 48 hours. It may have changed; check the live price before booking.">
+              Fare seen in last 48 h
+            </Badge>
+          )}
+          {flight.bookingLink && (
+            <a href={flight.bookingLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+              Check live price <ExternalLink className="size-3" />
+            </a>
+          )}
           <span className="ml-auto text-right">
             <span className="text-base font-semibold tabular-nums">{formatInr(flight.price)}</span>
             <span className="text-muted-foreground"> /traveler{pax > 1 ? ` · ${formatInr(flight.price * pax)} total` : ""}</span>
@@ -126,21 +142,31 @@ export function StayCard({ hotel, nights, rooms, onChange, editable }: { hotel: 
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-3 text-sm">
-          <span className="flex items-center gap-1 font-medium">
-            {Array.from({ length: hotel.stars }).map((_, i) => (
-              <Star key={i} className="size-3.5 fill-amber-400 text-amber-400" />
-            ))}
-          </span>
-          <span className="rounded-md bg-success/15 px-1.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-success">{hotel.rating} / 5</span>
-          <span className="flex items-center gap-1 text-muted-foreground"><MapPin className="size-3.5" />{hotel.area} · {hotel.distanceKm} km</span>
+          {!!hotel.stars && (
+            <span className="flex items-center gap-1 font-medium">
+              {Array.from({ length: hotel.stars }).map((_, i) => (
+                <Star key={i} className="size-3.5 fill-amber-400 text-amber-400" />
+              ))}
+            </span>
+          )}
+          {hotel.rating !== undefined && <span className="rounded-md bg-success/15 px-1.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-success">{hotel.rating} / 5</span>}
+          {(hotel.area || hotel.distanceKm !== undefined) && (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <MapPin className="size-3.5" />
+              {[hotel.area, hotel.distanceKm !== undefined ? `${hotel.distanceKm} km` : null].filter(Boolean).join(" · ")}
+            </span>
+          )}
+          {hotel.priceStatus === "live" && <Badge variant="outline">Live rate</Badge>}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {hotel.amenities.map((a) => (
             <Badge key={a} variant="secondary" className="font-normal">{amenityLabel[a] ?? a}</Badge>
           ))}
-          <Badge variant="outline" className={hotel.freeCancellation ? "text-emerald-700 dark:text-success" : "text-muted-foreground"}>
-            {hotel.freeCancellation ? "Free cancellation" : "Non-cancellable"}
-          </Badge>
+          {hotel.freeCancellation !== undefined && (
+            <Badge variant="outline" className={hotel.freeCancellation ? "text-emerald-700 dark:text-success" : "text-muted-foreground"}>
+              {hotel.freeCancellation ? "Free cancellation" : "Non-cancellable"}
+            </Badge>
+          )}
         </div>
         <div className="flex items-end justify-between border-t pt-3">
           <span className="text-xs text-muted-foreground">{formatInr(hotel.pricePerNight)} × {nights} × {rooms}</span>

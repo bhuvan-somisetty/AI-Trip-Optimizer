@@ -32,7 +32,7 @@ export default function AnalyticsPage() {
     const decided = s.trips.filter((t) => t.status === "DECIDED" && t.decidedAt && new Date(t.decidedAt).getTime() >= since);
     const approved = decided.filter((t) => t.outcome === "APPROVED" && t.itinerary);
     const spend = approved.reduce((a, t) => a + t.itinerary!.totalCost, 0);
-    const savings = approved.reduce((a, t) => a + t.itinerary!.savings, 0);
+    const savings = approved.reduce((a, t) => a + (t.itinerary!.savings ?? 0), 0);
     const turnaround = decided.map((t) => (new Date(t.decidedAt!).getTime() - new Date(t.createdAt).getTime()) / 3600000);
     const avgTurn = turnaround.length ? turnaround.reduce((a, b) => a + b, 0) / turnaround.length : 0;
     const pax = approved.reduce((a, t) => a + t.travelerIds.length, 0);
@@ -227,7 +227,7 @@ export default function AnalyticsPage() {
                       </TableCell>
                       <TableCell className={t.outcome === "APPROVED" ? "text-emerald-600 dark:text-success" : "text-destructive"}>{t.outcome === "APPROVED" ? "Approved" : "Rejected"}</TableCell>
                       <TableCell className="text-right tabular-nums">{h >= 24 ? `${(h / 24).toFixed(1)} d` : `${h.toFixed(1)} h`}</TableCell>
-                      <TableCell className="pr-6 text-right tabular-nums">{t.outcome === "APPROVED" && t.itinerary ? formatInr(t.itinerary.savings) : "—"}</TableCell>
+                      <TableCell className="pr-6 text-right tabular-nums">{t.outcome === "APPROVED" && t.itinerary?.savings !== undefined ? formatInr(t.itinerary.savings) : "—"}</TableCell>
                     </TableRow>
                   );
                 })}

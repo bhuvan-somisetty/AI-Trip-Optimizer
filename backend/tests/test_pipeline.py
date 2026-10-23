@@ -93,7 +93,7 @@ def test_check_same_day_trip_needs_no_hotel():
     assert check["total_cost"] == 3900 and check["flags"] == []
 
 
-def test_pipeline_check_runs_on_real_mock_data():
+def test_pipeline_check_runs_on_searched_options():
     check = pipeline.invoke({"request": REQUEST})["check"]
     assert check["flight"]["origin"] == "BLR" and check["flight"]["destination"] == "DEL"
     assert check["hotel"]["city"] == "DEL"

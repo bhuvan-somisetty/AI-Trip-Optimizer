@@ -1,5 +1,5 @@
-import type { TravelerBody, TravelerResponse, TripBody, TripResponse } from "./api";
-import type { CabinClass, Traveler, Trip, TripFilters } from "./types";
+import type { BackendFlight, BackendHotel, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
+import type { CabinClass, ConstraintIssue, Flight, Hotel, Itinerary, LedgerEntry, Traveler, Trip, TripFilters } from "./types";
 
 /**
  * Converts between the frontend's Traveler/Trip and the backend's smaller shapes.
@@ -107,7 +107,102 @@ export function toTrip(r: TripResponse, ctx: { defaultFilters: TripFilters; crea
     filters,
     notes: str(p.notes),
     status: r.status,
+    failureReason: r.failure_reason ?? undefined,
     createdBy: ctx.createdBy,
     createdAt: str(p.createdAt, new Date(0).toISOString()),
+  };
+}
+
+// ---------------------------------------------------------------- itineraries
+
+const orUndefined = <T,>(v: T | null | undefined) => (v === null ? undefined : v);
+
+function toFlight(f: BackendFlight): Flight {
+  return {
+    id: f.id,
+    origin: f.origin,
+    destination: f.destination,
+    airline: f.airline,
+    flightNo: f.flight_number ?? "",
+    departure: f.departure_time,
+    arrival: orUndefined(f.arrival_time),
+    durationMin: orUndefined(f.duration_minutes),
+    price: f.price,
+    cabin: cabins.includes(f.cabin_class as CabinClass) ? (f.cabin_class as CabinClass) : "economy",
+    stops: f.stops,
+    priceStatus: f.price_status,
+    bookingLink: orUndefined(f.link),
+    source: f.source,
+  };
+}
+
+function toHotel(h: BackendHotel): Hotel {
+  return {
+    id: h.id,
+    city: h.city,
+    name: h.name,
+    area: orUndefined(h.address),
+    pricePerNight: h.price_per_night,
+    rating: orUndefined(h.rating),
+    stars: orUndefined(h.stars),
+    amenities: h.amenities ?? [],
+    distanceKm: orUndefined(h.distance_to_center_km),
+    priceStatus: h.price_status,
+    source: h.source,
+  };
+}
+
+/** Backend flags are plain sentences (backend/app/pipeline/graph.py check_node). */
+function toIssue(flag: string, i: number): ConstraintIssue {
+  if (/over the .* budget/.test(flag)) return { id: `flag-${i}`, rule: "Budget", lineItem: "Trip total", severity: "error", message: flag };
+  if (/hotel prices are unavailable/i.test(flag)) return { id: `flag-${i}`, rule: "Hotel prices", lineItem: "Stay", severity: "info", message: flag };
+  return { id: `flag-${i}`, rule: "Trip preferences", lineItem: "Search", severity: "warning", message: flag };
+}
+
+function toLedgerEntry(e: TripResultResponse["tradeoff_ledger"][number], i: number, nights: number): LedgerEntry {
+  const optionId = e.alternative.split(" ")[0];
+  const screened = e.reason.startsWith("Preference ");
+  const kind = optionId.startsWith("HT-") ? "stay" : "outbound";
+  return {
+    id: `ledger-${i}`,
+    kind,
+    optionId,
+    label: e.alternative,
+    detail: "",
+    // The backend prices a hotel row for the whole stay; the ledger shows it per night.
+    price: kind === "stay" && nights > 0 ? e.price / nights : e.price,
+    won: e.won,
+    feasible: !screened,
+    reasonCode: e.won ? "WINNER" : screened ? "CONSTRAINT" : "PRICE",
+    reason: e.reason,
+  };
+}
+
+/** Null when the trip has no itinerary (optimization failed). */
+export function toItinerary(r: TripResultResponse, trip: Trip): Itinerary | undefined {
+  const it = r.itinerary;
+  if (!it) return undefined;
+  const nights = trip.returnDate
+    ? Math.round((Date.parse(`${trip.returnDate}T00:00:00Z`) - Date.parse(`${trip.departDate}T00:00:00Z`)) / 86400000)
+    : 0;
+  const stayCost = it.hotel ? it.hotel.price_per_night * nights : 0;
+  return {
+    outbound: toFlight(it.flight),
+    // The backend pipeline prices the outbound flight only for now.
+    return: null,
+    stay: it.hotel ? toHotel(it.hotel) : null,
+    nights,
+    rooms: 1,
+    travelers: 1,
+    flightCost: it.flight.price,
+    stayCost,
+    totalCost: it.total_cost,
+    ledger: r.tradeoff_ledger.map((e, i) => toLedgerEntry(e, i, nights)),
+    issues: it.flags.map(toIssue),
+    rationale: it.rationale,
+    generatedAt: new Date().toISOString(),
+    runMs: 0,
+    edited: false,
+    live: { flags: it.flags, withinBudget: it.within_budget },
   };
 }
