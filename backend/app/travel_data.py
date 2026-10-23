@@ -27,6 +27,8 @@ TRAVELPAYOUTS_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates
 AIRLINES_URL = "https://api.travelpayouts.com/data/en/airlines.json"
 LITEAPI_RATES_URL = "https://api.liteapi.travel/v3.0/hotels/rates"
 TIMEOUT_SECONDS = 25
+# Flight search also returns fares this many days either side of the requested date.
+FLEX_DAYS = 3
 
 # LiteAPI searches hotels by city name + country, not airport code.
 CITIES: dict[str, tuple[str, str]] = {
@@ -116,21 +118,29 @@ def _airline_names() -> dict[str, str]:
 
 
 def search_flights(origin: str, destination: str, day: date, cabin_class: str | None = None) -> list[dict]:
+    """Real fares from FLEX_DAYS before to FLEX_DAYS after `day`.
+
+    The Data API keeps only the cheapest fare found per departure day, so a single-day
+    search gives at most one flight. Nearby days give the pipeline real alternatives;
+    check_node still only books a flight on `day` and lists the others in the ledger.
+    """
     if not config.TRAVELPAYOUTS_TOKEN:
         raise TravelDataError("Live flight search isn't set up: TRAVELPAYOUTS_TOKEN is missing on the server")
-    params = {
-        "origin": origin,
-        "destination": destination,
-        "departure_at": day.isoformat(),
-        "one_way": "true",
-        "direct": "false",
-        "unique": "false",
-        "sorting": "price",
-        "currency": "inr",
-        "limit": 30,
-    }
+    first, last = day - timedelta(days=FLEX_DAYS), day + timedelta(days=FLEX_DAYS)
+    months = sorted({f"{d:%Y-%m}" for d in (first, last)})
 
-    def fetch():
+    def fetch(month: str):
+        params = {
+            "origin": origin,
+            "destination": destination,
+            "departure_at": month,
+            "one_way": "true",
+            "direct": "false",
+            "unique": "false",
+            "sorting": "price",
+            "currency": "inr",
+            "limit": 100,
+        }
         body = _request(
             "Travelpayouts", "GET", TRAVELPAYOUTS_URL,
             params=params, headers={"X-Access-Token": config.TRAVELPAYOUTS_TOKEN},
@@ -139,7 +149,11 @@ def search_flights(origin: str, destination: str, day: date, cabin_class: str | 
             raise TravelDataError(f"Travelpayouts search failed: {body.get('error') or 'unknown error'}")
         return body.get("data") or []
 
-    rows = _cached(("flights", origin, destination, day.isoformat()), fetch)
+    rows = [
+        row
+        for month in months
+        for row in _cached(("flights", origin, destination, month), lambda: fetch(month))
+    ]
     names = _airline_names()
     flights, seen = [], set()
     for row in rows:
@@ -150,7 +164,7 @@ def search_flights(origin: str, destination: str, day: date, cabin_class: str | 
             stops = int(row["transfers"])
         except (KeyError, TypeError, ValueError):
             continue  # a row missing its time, price, airline or stops can't be costed or shown
-        if departure.date() != day:
+        if not first <= departure.date() <= last:
             continue
         flight_no = f"{airline}{row.get('flight_number', '')}".strip()
         flight_id = f"FL-{flight_no}-{departure:%H%M}"

@@ -5,6 +5,7 @@ Python; compose_node is the only step that calls the LLM.
 """
 import json
 import re
+from datetime import date
 
 from langgraph.graph import END, START, StateGraph
 
@@ -49,6 +50,12 @@ def flight_rule_broken(flight: dict, preferences: dict) -> tuple[str, str] | Non
     return None
 
 
+def days_off(flight: dict, day) -> int:
+    # Search also returns fares from nearby days; 0 means the flight leaves on `day`.
+    departure = flight.get("departure_time")
+    return (date.fromisoformat(departure[:10]) - day).days if departure else 0
+
+
 def hotel_rule_broken(hotel: dict, preferences: dict) -> tuple[str, str] | None:
     min_rating = preferences.get("min_hotel_rating")
     if min_rating is not None and hotel["rating"] is None:
@@ -79,12 +86,31 @@ def check_node(state: PipelineState) -> dict:
     flags: list[str] = []
     rejected: list = []
 
-    flights = screen(state["flight_options"], flight_rule_broken, preferences, rejected)
+    # The trip's dates are fixed (hotel nights hang off them), so only a flight on the start
+    # date can be booked. Fares from nearby days stay in the ledger as date trade-offs.
+    on_day = []
+    for option in state["flight_options"]:
+        moved = days_off(option, request["start_date"])
+        if moved == 0:
+            on_day.append(option)
+        else:
+            side = "before" if moved < 0 else "after"
+            rejected.append({
+                "option_id": option["id"],
+                "rule": "travel_date",
+                "detail": f"{option['id']} departs {option['departure_time'][:10]}, "
+                          f"{abs(moved)} day(s) {side} the trip starts",
+            })
+    flights = screen(on_day, flight_rule_broken, preferences, rejected)
     flight = min(flights, key=lambda f: f["price"], default=None)
     if state.get("search_error"):
         flags.append(state["search_error"])
     elif not state["flight_options"]:
         flags.append(f"No flights found from {route}")
+    elif not on_day:
+        nearest = sorted(state["flight_options"], key=lambda f: f["price"])[:3]
+        listed = ", ".join(f"{f['id']} on {f['departure_time'][:10]} for {f['price']:,}" for f in nearest)
+        flags.append(f"No flights found from {route}; nearest real fares: {listed}")
     elif flight is None:
         flags.append(f"No flight from {route} meets the trip's preferences")
 
@@ -128,7 +154,10 @@ def check_node(state: PipelineState) -> dict:
 
 
 def flight_label(flight: dict) -> str:
-    return f"{flight['id']} {flight['airline']} {flight['cabin_class']}, {flight['stops']} stop(s)"
+    label = f"{flight['id']} {flight['airline']} {flight['cabin_class']}, {flight['stops']} stop(s)"
+    if flight.get("departure_time"):
+        label += f", departs {flight['departure_time'][:10]}"
+    return label
 
 
 def hotel_label(hotel: dict) -> str:
@@ -143,6 +172,11 @@ def ledger_entries(options, chosen, price_of, label, rejected_by_id) -> list[dic
         price = float(price_of(option))
         if chosen and option["id"] == chosen["id"]:
             reason = "Cheapest option that meets every trip preference"
+        elif option["id"] in rejected_by_id and rejected_by_id[option["id"]]["rule"] == "travel_date":
+            reason = f"Different day: {rejected_by_id[option['id']]['detail']}"
+            if chosen:
+                difference = price - price_of(chosen)
+                reason += f"; {abs(difference):,.0f} {'less' if difference < 0 else 'more'} than {chosen['id']}"
         elif option["id"] in rejected_by_id:
             rejection = rejected_by_id[option["id"]]
             reason = f"Preference {rejection['rule']}: {rejection['detail']}"
@@ -211,7 +245,7 @@ def template_rationale(facts: dict) -> str:
     else:
         text += f"which is {facts['difference_from_budget']:,.0f} over budget."
     if facts["options_ruled_out"]:
-        text += f" {len(facts['options_ruled_out'])} option(s) were ruled out by trip preferences."
+        text += f" {len(facts['options_ruled_out'])} option(s) were ruled out by the trip's dates or preferences."
     return text
 
 

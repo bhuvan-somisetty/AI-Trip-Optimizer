@@ -25,9 +25,14 @@ FLIGHTS_BODY = {
             "price": 4890, "airline": "AI", "flight_number": 640,
             "departure_at": "2026-11-01T21:00:00+05:30", "transfers": 1, "duration_to": 340,
         },
-        # Missing price, and a fare for a different day: both skipped.
+        # A fare 2 days later is kept as a nearby-day alternative.
+        {
+            "origin": "BLR", "destination": "DEL", "price": 3950, "airline": "QP", "flight_number": "1301",
+            "departure_at": "2026-11-03T05:00:00+05:30", "transfers": 0, "duration_to": 175,
+        },
+        # Missing price, and a fare more than FLEX_DAYS away: both skipped.
         {"airline": "UK", "flight_number": "1", "departure_at": "2026-11-01T09:00:00+05:30", "transfers": 0},
-        {"price": 3000, "airline": "QP", "departure_at": "2026-11-02T09:00:00+05:30", "transfers": 0},
+        {"price": 3000, "airline": "QP", "departure_at": "2026-11-05T09:00:00+05:30", "transfers": 0},
     ],
 }
 AIRLINES_BODY = [{"code": "6E", "name": "IndiGo"}, {"code": "AI", "name": "Air India"}]
@@ -84,8 +89,8 @@ def api(monkeypatch):
 
 def test_flights_are_parsed_from_real_fields(api):
     flights = search_flights("BLR", "DEL", DAY)
-    assert [f["id"] for f in flights] == ["FL-6E2134-0610", "FL-AI640-2100"]
-    indigo, air_india = flights
+    assert [f["id"] for f in flights] == ["FL-6E2134-0610", "FL-AI640-2100", "FL-QP1301-0500"]
+    indigo, air_india, _ = flights
     assert indigo["airline"] == "IndiGo" and indigo["flight_number"] == "6E2134"
     assert indigo["departure_time"] == "2026-11-01T06:10:00+05:30"
     assert indigo["arrival_time"] == "2026-11-01T08:55:00+05:30"
@@ -95,7 +100,22 @@ def test_flights_are_parsed_from_real_fields(api):
     assert air_india["stops"] == 1 and air_india["link"] is None
     method, url, kwargs = api.calls[0]
     assert kwargs["headers"] == {"X-Access-Token": "tp-token"}
-    assert kwargs["params"]["departure_at"] == "2026-11-01" and kwargs["params"]["currency"] == "inr"
+    assert kwargs["params"]["currency"] == "inr"
+
+
+def test_flight_search_fetches_each_month_the_window_touches(api):
+    # 1 Nov +/- 3 days runs back into October, so both months are fetched (and a fare
+    # returned by both is listed once).
+    flights = search_flights("BLR", "DEL", DAY)
+    months = [kwargs["params"]["departure_at"] for _, url, kwargs in api.calls if url == travel_data.TRAVELPAYOUTS_URL]
+    assert months == ["2026-10", "2026-11"]
+    assert len({f["id"] for f in flights}) == len(flights)
+
+
+def test_mid_month_flight_search_is_one_call(api):
+    search_flights("BLR", "DEL", date(2026, 11, 15))
+    months = [kwargs["params"]["departure_at"] for _, url, kwargs in api.calls if url == travel_data.TRAVELPAYOUTS_URL]
+    assert months == ["2026-11"]
 
 
 def test_flight_without_duration_has_no_arrival_time(api):
@@ -120,7 +140,7 @@ def test_empty_flight_search_returns_no_options(api):
 def test_repeat_flight_search_is_served_from_cache(api):
     search_flights("BLR", "DEL", DAY)
     search_flights("BLR", "DEL", DAY)
-    assert [url for _, url, _ in api.calls].count(travel_data.TRAVELPAYOUTS_URL) == 1
+    assert [url for _, url, _ in api.calls].count(travel_data.TRAVELPAYOUTS_URL) == 2  # Oct + Nov, once each
 
 
 def test_missing_flight_token_is_a_clear_error(api, monkeypatch):

@@ -87,6 +87,45 @@ def test_check_flags_when_no_flights_exist():
     assert check["flags"] == ["No flights found from BLR to DEL on 2026-11-01"]
 
 
+NEARBY = [
+    {"id": "FL-ON", "price": 6000, "airline": "IndiGo", "cabin_class": "economy", "stops": 0, "departure_time": "2026-11-01T06:00:00+05:30"},
+    {"id": "FL-EARLY", "price": 4500, "airline": "IndiGo", "cabin_class": "economy", "stops": 0, "departure_time": "2026-10-30T06:00:00+05:30"},
+    {"id": "FL-LATE", "price": 7000, "airline": "IndiGo", "cabin_class": "economy", "stops": 0, "departure_time": "2026-11-03T06:00:00+05:30"},
+]
+
+
+def test_check_books_only_a_flight_on_the_start_date():
+    check = run_check(flights=NEARBY)
+    assert check["flight"]["id"] == "FL-ON"  # FL-EARLY is cheaper but leaves 2 days early
+    details = {r["option_id"]: r["detail"] for r in check["rejected"] if r["rule"] == "travel_date"}
+    assert details == {
+        "FL-EARLY": "FL-EARLY departs 2026-10-30, 2 day(s) before the trip starts",
+        "FL-LATE": "FL-LATE departs 2026-11-03, 2 day(s) after the trip starts",
+    }
+
+
+def test_check_names_nearest_fares_when_start_date_has_none():
+    check = run_check(flights=NEARBY[1:])
+    assert check["flight"] is None
+    assert check["flags"] == [
+        "No flights found from BLR to DEL on 2026-11-01; nearest real fares: "
+        "FL-EARLY on 2026-10-30 for 4,500, FL-LATE on 2026-11-03 for 7,000"
+    ]
+
+
+def test_ledger_shows_nearby_day_fares_as_date_tradeoffs():
+    same_day = {**REQUEST, "end_date": REQUEST["start_date"]}
+    state = {"request": same_day, "flight_options": NEARBY, "hotel_options": []}
+    state["check"] = check_node(state)["check"]
+    rows = {e["alternative"].split()[0]: e for e in graph.build_ledger(state)}
+    assert rows["FL-ON"]["won"] is True
+    assert rows["FL-EARLY"]["reason"] == (
+        "Different day: FL-EARLY departs 2026-10-30, 2 day(s) before the trip starts; 1,500 less than FL-ON"
+    )
+    assert rows["FL-LATE"]["reason"].endswith("1,000 more than FL-ON")
+    assert rows["FL-ON"]["alternative"].endswith("departs 2026-11-01")
+
+
 def test_check_same_day_trip_needs_no_hotel():
     check = run_check(end=date(2026, 11, 1), hotels=[])
     assert check["nights"] == 0 and check["hotel"] is None
