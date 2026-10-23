@@ -9,7 +9,7 @@ import re
 
 from langgraph.graph import END, START, StateGraph
 
-from app import config
+from app import config, live_data
 from app.mock_data import flights_for_route, hotels_for_city
 from app.pipeline.state import PipelineState
 
@@ -17,8 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 def search_node(state: PipelineState) -> dict:
-    # Pure lookup, no LLM: every option the later nodes see comes straight from mock data.
+    # Pure lookup, no LLM: every option the later nodes see comes straight from the data source.
     request = state["request"]
+    if config.DATA_SOURCE == "live":
+        return live_search(request)
     departure_day = request["start_date"].isoformat()
     flights = [
         f
@@ -26,6 +28,24 @@ def search_node(state: PipelineState) -> dict:
         if f["departure_time"].startswith(departure_day)
     ]
     hotels = hotels_for_city(request["destination"])
+    return {"flight_options": flights, "hotel_options": hotels}
+
+
+def live_search(request) -> dict:
+    # Live prices come from Google Flights / Google Hotels via SerpApi's MCP server. A failed
+    # search fails the run with the reason, rather than quietly using sample data instead.
+    try:
+        flights = live_data.flights_for_trip(
+            request["origin"],
+            request["destination"],
+            request["start_date"],
+            request["preferences"].get("cabin_class"),
+        )
+        hotels = []
+        if request["end_date"] > request["start_date"]:  # a same-day trip needs no hotel
+            hotels = live_data.hotels_for_trip(request["destination"], request["start_date"], request["end_date"])
+    except live_data.LiveSearchError as e:
+        return {"flight_options": [], "hotel_options": [], "search_error": f"Live search failed: {e}"}
     return {"flight_options": flights, "hotel_options": hotels}
 
 
@@ -64,7 +84,7 @@ def check_node(state: PipelineState) -> dict:
     preferences = request["preferences"]
     nights = (request["end_date"] - request["start_date"]).days
     route = f"{request['origin']} to {request['destination']} on {request['start_date'].isoformat()}"
-    flags: list[str] = []
+    flags: list[str] = [state["search_error"]] if state.get("search_error") else []
     rejected: list = []
 
     flights = screen(state["flight_options"], flight_rule_broken, preferences, rejected)
