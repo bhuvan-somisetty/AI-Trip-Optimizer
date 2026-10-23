@@ -16,3 +16,8 @@ JWT_EXPIRE_MINUTES = 60 * 24
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL") or None
 OPENAI_MODEL = os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+
+# Where search_node gets flights and hotels: "mock" reads data/*.json, "live" searches
+# Google Flights and Google Hotels through SerpApi's MCP server (needs SERPAPI_API_KEY).
+DATA_SOURCE = (os.getenv("DATA_SOURCE") or "mock").strip().lower()
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
