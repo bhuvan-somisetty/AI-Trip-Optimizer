@@ -52,6 +52,7 @@ class PipelineState(TypedDict, total=False):
     request: TripRequest  # set by the caller before the graph runs
     flight_options: list[dict]  # written by search_node
     hotel_options: list[dict]  # written by search_node
+    search_error: str  # written by search_node when a live search fails
     check: CheckResult  # written by check_node
     itinerary: Itinerary  # written by compose_node
     failure_reason: str  # written by compose_node instead of `itinerary` when none can be built
