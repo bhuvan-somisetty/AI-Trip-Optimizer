@@ -115,6 +115,8 @@ class ItineraryResponse(BaseModel):
 
 
 class LedgerEntryResponse(BaseModel):
+    # "flight" or "stay"; None for itineraries saved before the pipeline recorded it.
+    kind: str | None = None
     alternative: str
     price: float
     won: bool

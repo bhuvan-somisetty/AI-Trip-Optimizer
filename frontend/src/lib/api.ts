@@ -1,4 +1,4 @@
-import type { Session, TripStatus } from "./types";
+import type { Outcome, Session, TripStatus } from "./types";
 
 /**
  * Thin client for the FastAPI backend (docs/07_API_Specification.md). When the API
@@ -138,7 +138,7 @@ export type TripBody = {
   budget: number;
   preferences: Record<string, unknown>;
 };
-export type TripResponse = TripBody & { id: string; status: TripStatus; created_by: string; failure_reason?: string | null };
+export type TripResponse = TripBody & { id: string; status: TripStatus; failure_reason: string | null; created_by: string };
 
 const id = encodeURIComponent;
 
@@ -159,10 +159,20 @@ export const getTrip = (token: string, tripId: string) => call<TripResponse>("GE
 
 export const createTrip = (token: string, body: TripBody) => call<TripResponse>("POST", "/trip", { token, body });
 
-// ---------------------------------------------------------------- optimizer (real provider data)
+// ---------------------------------------------------------------- optimize, review, decide
+
+/** One row of the backend's Trade-off Ledger. Stay prices are the total for the whole stay. */
+export type LedgerEntryResponse = {
+  /** "flight" | "stay"; null for itineraries saved before the backend recorded it */
+  kind: "flight" | "stay" | null;
+  alternative: string;
+  price: number;
+  won: boolean;
+  reason: string;
+};
 
 /** A flight as backend/app/travel_data.py returns it; fields the provider didn't send are null. */
-export type BackendFlight = {
+export type FlightResponse = {
   id: string;
   origin: string;
   destination: string;
@@ -180,7 +190,7 @@ export type BackendFlight = {
   source?: string;
 };
 
-export type BackendHotel = {
+export type HotelResponse = {
   id: string;
   city: string;
   name: string;
@@ -194,25 +204,48 @@ export type BackendHotel = {
   source?: string;
 };
 
+export type ItineraryResponse = {
+  flight: FlightResponse;
+  hotel: HotelResponse | null;
+  total_cost: number;
+  within_budget: boolean;
+  flags: string[];
+  rationale: string;
+};
+
+/** What optimize and GET itinerary return; `itinerary` is null and `reason` set when optimization failed. */
 export type TripResultResponse = {
   status: TripStatus;
-  itinerary: {
-    flight: BackendFlight;
-    hotel: BackendHotel | null;
-    total_cost: number;
-    within_budget: boolean;
-    flags: string[];
-    rationale: string;
-  } | null;
-  tradeoff_ledger: { alternative: string; price: number; won: boolean; reason: string }[];
+  itinerary: ItineraryResponse | null;
+  tradeoff_ledger: LedgerEntryResponse[];
   reason: string | null;
 };
 
-// The pipeline calls the flight and hotel providers, which can take a while.
+export type DecisionResponse = {
+  id: string;
+  trip_id: string;
+  outcome: Outcome;
+  reason: string | null;
+  decided_by: string;
+  decided_at: string;
+};
+
+// The pipeline calls the flight and hotel providers and then the LLM (~20 s), which can take a while.
 const OPTIMIZE_TIMEOUT_MS = 90000;
 
+/** 409 when the trip is under review, decided, or already optimizing. */
 export const optimizeTrip = (token: string, tripId: string) =>
   call<TripResultResponse>("POST", `/trips/${id(tripId)}/optimize`, { token, timeoutMs: OPTIMIZE_TIMEOUT_MS });
 
 /** 404 when the trip hasn't been optimized yet. */
 export const getItinerary = (token: string, tripId: string) => call<TripResultResponse>("GET", `/trips/${id(tripId)}/itinerary`, { token });
+
+/** OPTIMIZED → UNDER_REVIEW; 409 from any other status. */
+export const startReview = (token: string, tripId: string) => call<TripResponse>("POST", `/trips/${id(tripId)}/review`, { token });
+
+/** 400 when rejecting without a reason; 409 unless the trip is OPTIMIZED or UNDER_REVIEW. */
+export const decideTrip = (token: string, tripId: string, outcome: Outcome, reason: string | null) =>
+  call<DecisionResponse>("POST", `/trips/${id(tripId)}/decision`, { token, body: { outcome, reason } });
+
+/** 404 when the trip hasn't been decided yet. */
+export const getDecision = (token: string, tripId: string) => call<DecisionResponse>("GET", `/trips/${id(tripId)}/decision`, { token });

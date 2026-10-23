@@ -27,4 +27,4 @@ Before returning the response, the backend validates that every dollar figure in
 - Explicit "I don't know" instruction is not needed here since the pipeline never asks the model open-ended questions — every generation call is grounded in code-computed candidates and totals (see the guardrail in §2).
 
 ## 4. Stretch: Multi-Agent Expansion
-If pursued (only after the single pipeline works end-to-end — see `00_Investigation_Report.md` A19), the `compose_node` above splits into a `FlightAgent`, `StayAgent`, `BudgetConstraintsAgent`, and `ComposerAgent`, coordinated by an `Orchestrator` node with conditional routing (e.g., looping back to a specialist when a constraint check fails). This is additive to, not a replacement of, the guardrail described in §2.
+If pursued (only after the single pipeline works end-to-end), the `compose_node` above splits into a `FlightAgent`, `StayAgent`, `BudgetConstraintsAgent`, and `ComposerAgent`, coordinated by an `Orchestrator` node with conditional routing (e.g., looping back to a specialist when a constraint check fails). This is additive to, not a replacement of, the guardrail described in §2.

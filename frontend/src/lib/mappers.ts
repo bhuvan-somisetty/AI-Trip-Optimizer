@@ -1,4 +1,5 @@
-import type { BackendFlight, BackendHotel, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
+import type { LedgerEntryResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
+import { formatInr } from "./format";
 import type { CabinClass, ConstraintIssue, Flight, Hotel, Itinerary, LedgerEntry, Traveler, Trip, TripFilters } from "./types";
 
 /**
@@ -115,15 +116,64 @@ export function toTrip(r: TripResponse, ctx: { defaultFilters: TripFilters; crea
 
 // ---------------------------------------------------------------- itineraries
 
+const nightsBetween = (start: string, end: string | null) =>
+  end ? Math.max(0, Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000)) : 0;
+
+/** "FL-1001 IndiGo economy, 0 stop(s)" → "FL-1001" */
+const optionIdOf = (alternative: string) => alternative.split(" ")[0];
+
+function toLedgerEntry(e: LedgerEntryResponse, i: number, nights: number): LedgerEntry {
+  const optionId = optionIdOf(e.alternative);
+  const isStay = e.kind ? e.kind === "stay" : optionId.startsWith("HT-");
+  const screened = e.reason.startsWith("Preference");
+  return {
+    id: `led_${i}_${optionId}`,
+    kind: isStay ? "stay" : "outbound",
+    optionId,
+    label: e.alternative,
+    // The UI shows stays per night; the backend prices them for the whole stay.
+    detail: isStay ? `${formatInr(e.price)} for ${nights} night${nights === 1 ? "" : "s"}` : "One-way fare per traveler",
+    price: isStay && nights > 0 ? e.price / nights : e.price,
+    won: e.won,
+    feasible: !screened,
+    reasonCode: e.won ? "WINNER" : screened ? "CONSTRAINT" : "PRICE",
+    reason: e.reason,
+  };
+}
+
+function toIssue(flag: string, i: number): ConstraintIssue {
+  const overBudget = /^Total .* over/.test(flag);
+  // Without a live hotel provider the trip is still valid, just flight-only.
+  if (/hotel prices are unavailable/i.test(flag)) return { id: `iss_${i}`, rule: "Hotel prices", lineItem: "Stay", severity: "info", message: flag };
+  return {
+    id: `iss_${i}`,
+    rule: overBudget ? "Budget" : "Availability",
+    lineItem: overBudget ? "Total cost" : "Search results",
+    severity: overBudget ? "error" : "warning",
+    message: flag,
+  };
+}
+
+/** Providers leave fields out as null; the frontend types use undefined for "not known". */
 const orUndefined = <T,>(v: T | null | undefined) => (v === null ? undefined : v);
 
-function toFlight(f: BackendFlight): Flight {
-  return {
+/**
+ * Converts the backend optimizer's result into the frontend Itinerary. Only data the backend
+ * returns is shown: it books one outbound flight (no return) for one traveler and one room,
+ * has no market baseline (savings 0) and no option scores.
+ */
+export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: number; generatedAt?: string } = {}): Itinerary | undefined {
+  const it = r.itinerary;
+  if (!it) return undefined;
+  const nights = nightsBetween(trip.departDate, trip.returnDate);
+  const f = it.flight;
+  const h = it.hotel;
+  const outbound: Flight = {
     id: f.id,
     origin: f.origin,
     destination: f.destination,
     airline: f.airline,
-    flightNo: f.flight_number ?? "",
+    flightNo: f.flight_number ?? f.id,
     departure: f.departure_time,
     arrival: orUndefined(f.arrival_time),
     durationMin: orUndefined(f.duration_minutes),
@@ -134,75 +184,38 @@ function toFlight(f: BackendFlight): Flight {
     bookingLink: orUndefined(f.link),
     source: f.source,
   };
-}
-
-function toHotel(h: BackendHotel): Hotel {
+  const stay: Hotel | null = h
+    ? {
+        id: h.id,
+        city: h.city,
+        name: h.name,
+        area: orUndefined(h.address),
+        pricePerNight: h.price_per_night,
+        rating: orUndefined(h.rating),
+        stars: orUndefined(h.stars),
+        amenities: h.amenities ?? [],
+        distanceKm: orUndefined(h.distance_to_center_km),
+        priceStatus: h.price_status,
+        source: h.source,
+      }
+    : null;
   return {
-    id: h.id,
-    city: h.city,
-    name: h.name,
-    area: orUndefined(h.address),
-    pricePerNight: h.price_per_night,
-    rating: orUndefined(h.rating),
-    stars: orUndefined(h.stars),
-    amenities: h.amenities ?? [],
-    distanceKm: orUndefined(h.distance_to_center_km),
-    priceStatus: h.price_status,
-    source: h.source,
-  };
-}
-
-/** Backend flags are plain sentences (backend/app/pipeline/graph.py check_node). */
-function toIssue(flag: string, i: number): ConstraintIssue {
-  if (/over the .* budget/.test(flag)) return { id: `flag-${i}`, rule: "Budget", lineItem: "Trip total", severity: "error", message: flag };
-  if (/hotel prices are unavailable/i.test(flag)) return { id: `flag-${i}`, rule: "Hotel prices", lineItem: "Stay", severity: "info", message: flag };
-  return { id: `flag-${i}`, rule: "Trip preferences", lineItem: "Search", severity: "warning", message: flag };
-}
-
-function toLedgerEntry(e: TripResultResponse["tradeoff_ledger"][number], i: number, nights: number): LedgerEntry {
-  const optionId = e.alternative.split(" ")[0];
-  const screened = e.reason.startsWith("Preference ");
-  const kind = optionId.startsWith("HT-") ? "stay" : "outbound";
-  return {
-    id: `ledger-${i}`,
-    kind,
-    optionId,
-    label: e.alternative,
-    detail: "",
-    // The backend prices a hotel row for the whole stay; the ledger shows it per night.
-    price: kind === "stay" && nights > 0 ? e.price / nights : e.price,
-    won: e.won,
-    feasible: !screened,
-    reasonCode: e.won ? "WINNER" : screened ? "CONSTRAINT" : "PRICE",
-    reason: e.reason,
-  };
-}
-
-/** Null when the trip has no itinerary (optimization failed). */
-export function toItinerary(r: TripResultResponse, trip: Trip): Itinerary | undefined {
-  const it = r.itinerary;
-  if (!it) return undefined;
-  const nights = trip.returnDate
-    ? Math.round((Date.parse(`${trip.returnDate}T00:00:00Z`) - Date.parse(`${trip.departDate}T00:00:00Z`)) / 86400000)
-    : 0;
-  const stayCost = it.hotel ? it.hotel.price_per_night * nights : 0;
-  return {
-    outbound: toFlight(it.flight),
-    // The backend pipeline prices the outbound flight only for now.
+    outbound,
     return: null,
-    stay: it.hotel ? toHotel(it.hotel) : null,
+    stay,
     nights,
     rooms: 1,
     travelers: 1,
-    flightCost: it.flight.price,
-    stayCost,
+    flightCost: f.price,
+    stayCost: h ? h.price_per_night * nights : 0,
     totalCost: it.total_cost,
+    baselineCost: 0,
+    savings: 0,
     ledger: r.tradeoff_ledger.map((e, i) => toLedgerEntry(e, i, nights)),
     issues: it.flags.map(toIssue),
     rationale: it.rationale,
-    generatedAt: new Date().toISOString(),
-    runMs: 0,
+    generatedAt: opts.generatedAt ?? "",
+    runMs: opts.runMs ?? 0,
     edited: false,
-    live: { flags: it.flags, withinBudget: it.within_budget },
   };
 }

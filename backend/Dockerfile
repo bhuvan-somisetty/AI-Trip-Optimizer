@@ -5,9 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY alembic.ini .
-COPY alembic ./alembic
 COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini .
 
-# Bring the database schema up to date, then serve. Render sets PORT; locally it's 8000.
+# Create or update the tables, then start the API. PORT is set by hosts that need it; locally 8000.
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

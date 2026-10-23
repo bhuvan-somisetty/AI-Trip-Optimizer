@@ -26,6 +26,8 @@ export function TradeoffLedger({
   const [kind, setKind] = useState<Kind>(initialKind);
   const [codes, setCodes] = useState<string[]>([]);
   const [sort, setSort] = useState<"price" | "score">("price");
+  // Server-optimized itineraries pick the cheapest feasible option and carry no scores.
+  const scored = it.ledger.some((l) => l.score !== undefined);
 
   const kinds: { value: Kind; label: React.ReactNode }[] = [
     { value: "outbound", label: <span className="flex items-center gap-1.5"><Plane className="size-3.5" />Outbound</span> },
@@ -35,8 +37,8 @@ export function TradeoffLedger({
 
   const rows = useMemo(() => {
     const list = it.ledger.filter((l) => l.kind === kind && (!codes.length || codes.includes(l.reasonCode)));
-    return [...list].sort((a, b) => (sort === "price" ? a.price - b.price : (b.score ?? 0) - (a.score ?? 0)));
-  }, [it.ledger, kind, codes, sort]);
+    return [...list].sort((a, b) => (sort === "price" || !scored ? a.price - b.price : (b.score ?? 0) - (a.score ?? 0)));
+  }, [it.ledger, kind, codes, sort, scored]);
 
   const counts = it.ledger
     .filter((l) => l.kind === kind)
@@ -63,7 +65,7 @@ export function TradeoffLedger({
                 .filter((c) => counts[c])
                 .map((c) => ({ value: c, label: `${reasonMeta[c].label} · ${counts[c]}` }))}
             />
-            {!it.live && (
+            {scored && (
               <NativeSelect value={sort} onChange={(e) => setSort(e.target.value as "price" | "score")} className="w-36" aria-label="Sort ledger">
                 <option value="price">Sort: price</option>
                 <option value="score">Sort: score</option>

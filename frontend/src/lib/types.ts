@@ -59,6 +59,8 @@ export type Trip = {
   status: TripStatus;
   outcome?: Outcome;
   failureReason?: string;
+  /** reason stored with the decision (required for rejections) */
+  decisionReason?: string;
   itinerary?: Itinerary;
   createdBy: string;
   createdAt: string;
@@ -82,6 +84,7 @@ export type Flight = {
   cabin: CabinClass;
   stops: number;
   via?: string;
+  /** not in the backend's flight data, so undefined for server-optimized itineraries */
   refundable?: boolean;
   baggageKg?: number;
   /** "cached": a real fare found in the last 48 hours, not re-checked; "live": quoted now */
@@ -114,7 +117,7 @@ export type LedgerEntry = {
   label: string;
   detail: string;
   price: number;
-  /** Demo optimizer only; the backend picks the cheapest option that passes every rule. */
+  /** 0-100 weighted score from the browser optimizer; the backend picks by price and has none */
   score?: number;
   won: boolean;
   /** false when a hard filter or policy rule screened this option out */
@@ -141,11 +144,9 @@ export type Itinerary = {
   flightCost: number;
   stayCost: number;
   totalCost: number;
-  /** Only the local demo optimizer has a market baseline to compare against. */
-  baselineCost?: number;
-  savings?: number;
-  /** Set when the backend built this from real provider data. */
-  live?: { flags: string[]; withinBudget: boolean };
+  /** 0 for server itineraries: only the local demo optimizer has a market baseline. */
+  baselineCost: number;
+  savings: number;
   ledger: LedgerEntry[];
   issues: ConstraintIssue[];
   rationale: string;

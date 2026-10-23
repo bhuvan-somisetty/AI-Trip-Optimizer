@@ -10,6 +10,14 @@ import app.models  # noqa: F401  (registers models on SQLModel.metadata)
 from app import travel_data
 from app.database import get_session
 from app.main import app
+from app.pipeline import graph
+
+
+@pytest.fixture(autouse=True)
+def no_real_llm(monkeypatch):
+    # A real key in .env must never make tests call the LLM: that costs quota and
+    # makes results depend on the network. Tests that need an LLM patch in a fake.
+    monkeypatch.setattr(graph, "get_llm", lambda: None)
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -17,8 +25,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.fixture(autouse=True)
 def offline_search(monkeypatch):
-    # Tests never call SerpApi: search returns a fixed set of flights and hotels instead,
-    # so results are repeatable and no free-tier searches are spent.
+    # Tests never call the real providers: search returns a fixed set of flights and hotels
+    # instead, so results are repeatable and no API quota is spent.
     flights = json.loads((FIXTURES / "flights.json").read_text(encoding="utf-8"))
     hotels = json.loads((FIXTURES / "hotels.json").read_text(encoding="utf-8"))
 

@@ -27,4 +27,4 @@ The project brief names two evaluation metrics directly: **Accuracy** and **UX**
 Accuracy metrics tied to code guardrails become automated tests (`12_Testing_Strategy.md`); UX metrics are tracked via the dashboard itself and informal review, since they're inherently less automatable for a 2-person team in 12 weeks.
 
 ## 4. Reporting
-Final self-assessment against these metrics goes in `25_Project_Score.md`, filled in once the MVP is functional — not estimated in advance.
+The final self-assessment against these metrics is done once the MVP is functional — not estimated in advance.

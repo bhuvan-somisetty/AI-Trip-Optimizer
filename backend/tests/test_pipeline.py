@@ -182,6 +182,18 @@ def test_compose_ledger_lists_every_option_with_one_winner_each(no_llm):
     assert hotel_row["price"] == result["check"]["hotel"]["price_per_night"] * nights
 
 
+def test_compose_ledger_rows_say_whether_they_are_a_flight_or_a_stay(no_llm):
+    result = run_pipeline()
+    ledger = result["itinerary"]["tradeoff_ledger"]
+    flights = [e for e in ledger if e["kind"] == "flight"]
+    stays = [e for e in ledger if e["kind"] == "stay"]
+    assert len(flights) == len(result["flight_options"])
+    assert len(stays) == len(result["hotel_options"])
+    assert len(flights) + len(stays) == len(ledger)
+    assert all(e["alternative"].startswith("FL-") for e in flights)
+    assert all(e["alternative"].startswith("HT-") for e in stays)
+
+
 def test_compose_same_day_trip_has_no_hotel(no_llm):
     result = run_pipeline(end_date=REQUEST["start_date"])
     assert result["itinerary"]["hotel"] is None
@@ -200,6 +212,24 @@ def test_compose_uses_llm_rationale_when_numbers_match(monkeypatch):
     result = run_pipeline()
     assert result["itinerary"]["rationale"] == fake.text
     assert '"total_cost"' in fake.prompt
+
+
+class FailingLLM:
+    def invoke(self, prompt):
+        raise RuntimeError("503 model overloaded")
+
+
+def test_compose_uses_template_rationale_when_llm_call_fails(monkeypatch):
+    monkeypatch.setattr(graph, "get_llm", lambda: FailingLLM())
+    result = run_pipeline()
+    facts = graph.rationale_facts({**result, "request": REQUEST})
+    assert result["itinerary"]["rationale"] == graph.template_rationale(facts)
+
+
+def test_compose_uses_template_rationale_when_llm_reply_is_empty(monkeypatch):
+    monkeypatch.setattr(graph, "get_llm", lambda: FakeLLM("   "))
+    result = run_pipeline()
+    assert result["itinerary"]["rationale"].startswith("Chose flight ")
 
 
 def test_compose_fails_when_llm_invents_a_number(monkeypatch):

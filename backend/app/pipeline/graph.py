@@ -4,6 +4,7 @@ Described in docs/08_GenAI_Architecture.md. search_node and check_node are plain
 Python; compose_node is the only step that calls the LLM.
 """
 import json
+import logging
 import re
 from datetime import date
 
@@ -12,6 +13,8 @@ from langgraph.graph import END, START, StateGraph
 from app import config
 from app import travel_data
 from app.pipeline.state import PipelineState
+
+logger = logging.getLogger(__name__)
 
 
 def search_node(state: PipelineState) -> dict:
@@ -165,8 +168,9 @@ def hotel_label(hotel: dict) -> str:
     return f"{hotel['id']} {hotel['name']}, {rating}"
 
 
-def ledger_entries(options, chosen, price_of, label, rejected_by_id) -> list[dict]:
+def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id) -> list[dict]:
     # Every option search_node found gets one row: the winner, or why it lost.
+    # `kind` ("flight" or "stay") lets clients group rows without parsing option ids.
     entries = []
     for option in sorted(options, key=price_of):
         price = float(price_of(option))
@@ -182,7 +186,7 @@ def ledger_entries(options, chosen, price_of, label, rejected_by_id) -> list[dic
             reason = f"Preference {rejection['rule']}: {rejection['detail']}"
         else:
             reason = f"Price: {price - price_of(chosen):,.0f} more than {chosen['id']}"
-        entries.append({"alternative": label(option), "price": price, "won": option is chosen, "reason": reason})
+        entries.append({"kind": kind, "alternative": label(option), "price": price, "won": option is chosen, "reason": reason})
     return entries
 
 
@@ -191,10 +195,12 @@ def build_ledger(state: PipelineState) -> list[dict]:
     nights = check["nights"]
     rejected_by_id = {r["option_id"]: r for r in check["rejected"]}
     ledger = ledger_entries(
+        "flight",
         state["flight_options"], check["flight"], lambda f: f["price"], flight_label, rejected_by_id
     )
     if nights > 0:
         ledger += ledger_entries(
+            "stay",
             state["hotel_options"],
             check["hotel"],
             lambda h: h["price_per_night"] * nights,
@@ -202,6 +208,10 @@ def build_ledger(state: PipelineState) -> list[dict]:
             rejected_by_id,
         )
     return ledger
+
+
+# check_node's selection rule, stated once so the rationale can explain the choice.
+WHY_CHOSEN = "cheapest option that meets every trip preference"
 
 
 def rationale_facts(state: PipelineState) -> dict:
@@ -213,7 +223,12 @@ def rationale_facts(state: PipelineState) -> dict:
         "route": f"{request['origin']} to {request['destination']}",
         "dates": f"{request['start_date'].isoformat()} to {request['end_date'].isoformat()}",
         "budget": request["budget"],
-        "flight": {"option": flight_label(check["flight"]), "price": check["flight"]["price"]},
+        "flight": {
+            "option": flight_label(check["flight"]),
+            "price": check["flight"]["price"],
+            "why_chosen": WHY_CHOSEN,
+            "options_compared": len(state["flight_options"]),
+        },
         "hotel": None
         if hotel is None
         else {
@@ -221,6 +236,8 @@ def rationale_facts(state: PipelineState) -> dict:
             "price_per_night": hotel["price_per_night"],
             "nights": check["nights"],
             "stay_cost": hotel["price_per_night"] * check["nights"],
+            "why_chosen": WHY_CHOSEN,
+            "options_compared": len(state["hotel_options"]),
         },
         "total_cost": check["total_cost"],
         "within_budget": check["within_budget"],
@@ -249,10 +266,14 @@ def template_rationale(facts: dict) -> str:
     return text
 
 
-RATIONALE_PROMPT = """You explain a business trip itinerary to the person who will approve it.
-Write 3 to 5 plain sentences: which flight and hotel were chosen and why, the total against the
-budget, and any flags. Use ONLY the facts below. Never introduce, round, convert or calculate a
-number that is not written in the facts. No currency symbols, no markdown.
+RATIONALE_PROMPT = """You explain a business trip itinerary to the manager who will approve it.
+Write 3 to 5 short sentences in plain, natural English: which flight and hotel were chosen and why
+(use why_chosen and options_compared), the total cost against the budget, and any flags or options
+ruled out. Write like a helpful colleague, not a report: never mention field names such as
+price_per_night or within_budget, never say true or false, and skip anything that is empty.
+
+Use ONLY the facts below. Never introduce, round, convert or calculate a number that is not written
+in the facts. No currency symbols, no markdown.
 
 Facts:
 {facts}"""
@@ -267,7 +288,15 @@ def get_llm():
         return None
     from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(model=config.OPENAI_MODEL, api_key=config.OPENAI_API_KEY, temperature=0, timeout=20)
+    return ChatOpenAI(
+        model=config.OPENAI_MODEL,
+        api_key=config.OPENAI_API_KEY,
+        base_url=config.OPENAI_BASE_URL,
+        temperature=0,
+        timeout=20,
+        # One retry rides out a brief 503; more would burn the free tier's small daily quota.
+        max_retries=1,
+    )
 
 
 def compose_node(state: PipelineState) -> dict:
@@ -280,17 +309,23 @@ def compose_node(state: PipelineState) -> dict:
 
     facts = rationale_facts(state)
     llm = get_llm()
-    if llm is None:
-        rationale = template_rationale(facts)
-    else:
+    rationale = None
+    if llm is not None:
         facts_text = json.dumps(facts, indent=2)
-        rationale = llm.invoke(RATIONALE_PROMPT.format(facts=facts_text)).content.strip()
-        # Guardrail (docs/08_GenAI_Architecture.md): every number in the prose must
-        # already be in the facts, otherwise the run fails instead of showing it.
-        invented = numbers_in(rationale) - numbers_in(facts_text)
-        if invented:
-            listed = ", ".join(f"{n:g}" for n in sorted(invented))
-            return {"failure_reason": f"Rationale used numbers not in the itinerary: {listed}"}
+        try:
+            rationale = llm.invoke(RATIONALE_PROMPT.format(facts=facts_text)).content.strip() or None
+        except Exception:
+            # A busy or rate-limited LLM shouldn't fail a trip whose choices are already made.
+            logger.warning("Rationale LLM call failed, using the template rationale", exc_info=True)
+        if rationale is not None:
+            # Guardrail (docs/08_GenAI_Architecture.md): every number in the prose must
+            # already be in the facts, otherwise the run fails instead of showing it.
+            invented = numbers_in(rationale) - numbers_in(facts_text)
+            if invented:
+                listed = ", ".join(f"{n:g}" for n in sorted(invented))
+                return {"failure_reason": f"Rationale used numbers not in the itinerary: {listed}"}
+    if rationale is None:
+        rationale = template_rationale(facts)
 
     return {
         "itinerary": {

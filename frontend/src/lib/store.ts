@@ -25,9 +25,8 @@ import type {
  * Client-side workspace store. It mirrors the REST resources in docs/07_API_Specification.md
  * (travelers, trips, itineraries, decisions, audit, documents) and persists to localStorage,
  * so the whole product works end-to-end even when the FastAPI backend isn't running.
- * In API mode (session.mode === "api") travelers and trips are read from and saved to the backend,
- * and optimization runs on the server against real flight and hotel providers. The local
- * optimizer in ./optimizer is demo mode only.
+ * In API mode (session.mode === "api") travelers, trips, optimization, review and decisions all go
+ * through the backend; only demo mode runs the browser optimizer (lib/optimizer.ts).
  */
 
 export type State = {
@@ -184,30 +183,31 @@ async function remote<T>(fn: (token: string) => Promise<T>): Promise<T> {
 
 const tripContext = () => ({ defaultFilters, createdBy: actor() });
 
-/**
- * Optimization runs on the server, but review and approval still run locally until their
- * endpoints are wired, so keep that progress on top of the server's OPTIMIZED status.
- */
-function withLocalProgress(trip: Trip, local: Trip | undefined): Trip {
-  if (trip.status !== "OPTIMIZED" || !local || (local.status !== "UNDER_REVIEW" && local.status !== "DECIDED")) return trip;
-  const { status, outcome, decidedAt } = local;
-  return { ...trip, status, outcome, decidedAt };
+const HAS_RESULT = new Set<Trip["status"]>(["OPTIMIZED", "UNDER_REVIEW", "DECIDED", "OPTIMIZATION_FAILED"]);
+
+/** null when the server has nothing yet (404), so a missing itinerary or decision isn't an error. */
+async function unlessMissing<T>(p: Promise<T>): Promise<T | null> {
+  try {
+    return await p;
+  } catch (e) {
+    if (e instanceof api.ApiError && e.status === 404) return null;
+    throw e;
+  }
 }
 
-const hasItinerary = (t: Trip) => t.status === "OPTIMIZED" || t.status === "UNDER_REVIEW" || t.status === "DECIDED";
-
-/** Fetches the server's saved itinerary (real provider data) for every trip that has one. */
-async function loadItineraries() {
-  await Promise.all(
-    state.trips.filter(hasItinerary).map(async (t) => {
-      try {
-        const r = await remote((tok) => api.getItinerary(tok, t.id));
-        patchTrip(t.id, { itinerary: toItinerary(r, t) });
-      } catch {
-        // Leave the trip without an itinerary; its page offers a re-run.
-      }
-    })
-  );
+/** Adds the saved itinerary and decision to a trip loaded from GET /trips. */
+async function withServerResult(trip: Trip): Promise<Trip> {
+  if (!HAS_RESULT.has(trip.status)) return trip;
+  const [result, decision] = await Promise.all([
+    remote((tok) => unlessMissing(api.getItinerary(tok, trip.id))),
+    trip.status === "DECIDED" ? remote((tok) => unlessMissing(api.getDecision(tok, trip.id))) : null,
+  ]);
+  return {
+    ...trip,
+    itinerary: result ? toItinerary(result, trip) : undefined,
+    failureReason: trip.failureReason ?? result?.reason ?? undefined,
+    ...(decision ? { outcome: decision.outcome, decidedAt: decision.decided_at, decisionReason: decision.reason ?? undefined } : {}),
+  };
 }
 
 let syncing: Promise<void> | null = null;
@@ -238,16 +238,10 @@ export const actions = {
       const token = state.session?.token;
       set(() => ({ syncing: true }));
       try {
-        const [travelers, trips] = await Promise.all([remote(api.listTravelers), remote((tok) => api.listTrips(tok))]);
+        const [travelers, rows] = await Promise.all([remote(api.listTravelers), remote((tok) => api.listTrips(tok))]);
+        const trips = await Promise.all(rows.map((r) => withServerResult(toTrip(r, tripContext()))));
         if (state.session?.token !== token) return; // signed out or switched accounts meanwhile
-        set((s) => ({
-          travelers: travelers.map(toTraveler),
-          trips: trips.map((r) => {
-            const trip = toTrip(r, tripContext());
-            return withLocalProgress(trip, s.trips.find((x) => x.id === trip.id));
-          }),
-        }));
-        await loadItineraries();
+        set(() => ({ travelers: travelers.map(toTraveler), trips }));
       } catch (e) {
         toast("Couldn't load your data", { description: (e as Error).message, variant: "error" });
       } finally {
@@ -365,28 +359,30 @@ export const actions = {
     if (!trip) return;
     patchTrip(id, { status: "OPTIMIZING", failureReason: undefined });
     if (isApi()) {
-      let reason: string;
+      const started = performance.now();
       try {
-        const r = await remote((tok) => api.optimizeTrip(tok, id));
-        const itinerary = toItinerary(r, state.trips.find((t) => t.id === id) ?? trip);
-        if (r.status === "OPTIMIZED" && itinerary) {
-          patchTrip(id, { status: "OPTIMIZED", itinerary }, [
+        const result = await remote((tok) => api.optimizeTrip(tok, id));
+        const itinerary = toItinerary(result, trip, { runMs: Math.round(performance.now() - started), generatedAt: new Date().toISOString() });
+        if (itinerary) {
+          patchTrip(id, { status: result.status, itinerary, failureReason: undefined }, [
             log({
               tripId: id,
               type: "PIPELINE_RUN",
-              summary: `Optimizer composed itinerary from real fares: ${formatInr(itinerary.totalCost)} (${itinerary.ledger.length} options evaluated, ${itinerary.issues.length} flags)`,
-              payload: { totalCost: itinerary.totalCost, issues: itinerary.issues.length, live: true },
+              summary: `Optimizer composed itinerary: ${formatInr(itinerary.totalCost)} (${itinerary.ledger.length} options evaluated, ${itinerary.issues.length} flags)`,
+              payload: { totalCost: itinerary.totalCost, runMs: itinerary.runMs, issues: itinerary.issues.length },
             }),
           ]);
-          return;
+        } else {
+          const reason = result.reason ?? "The optimizer couldn't build an itinerary.";
+          patchTrip(id, { status: result.status, failureReason: reason, itinerary: undefined }, [
+            log({ tripId: id, type: "PIPELINE_FAILED", summary: `Optimization failed: ${reason}` }),
+          ]);
         }
-        reason = r.reason ?? "The optimizer couldn't build an itinerary.";
       } catch (e) {
-        reason = (e as Error).message;
+        // Nothing changed on the server (or we can't tell), so show the trip as it was.
+        patchTrip(id, { status: trip.status, failureReason: trip.failureReason });
+        toast("Couldn't run the optimizer", { description: (e as Error).message, variant: "error" });
       }
-      patchTrip(id, { status: "OPTIMIZATION_FAILED", failureReason: reason, itinerary: undefined }, [
-        log({ tripId: id, type: "PIPELINE_FAILED", summary: `Optimization failed: ${reason}` }),
-      ]);
       return;
     }
     await sleep(2600);
@@ -409,13 +405,14 @@ export const actions = {
       ]);
     }
   },
-  startReview(id: string) {
-    patchTrip(id, { status: "UNDER_REVIEW" }, [log({ tripId: id, type: "REVIEW_STARTED", summary: "Itinerary moved to review" })]);
+  async startReview(id: string) {
+    const status = isApi() ? (await remote((tok) => api.startReview(tok, id))).status : "UNDER_REVIEW";
+    patchTrip(id, { status }, [log({ tripId: id, type: "REVIEW_STARTED", summary: "Itinerary moved to review" })]);
   },
   editLineItem(id: string, kind: "outbound" | "return" | "stay", optionId: string) {
     const trip = state.trips.find((t) => t.id === id);
-    // Live itineraries come from the server and can't be re-priced in the browser.
-    if (!trip?.itinerary || trip.itinerary.live) return;
+    // Server itineraries can't be re-priced in the browser (the page hides this in API mode too).
+    if (!trip?.itinerary || isApi()) return;
     const before = trip.itinerary.totalCost;
     const itinerary = editItinerary(trip, state.policy, kind, optionId);
     const label = itinerary.ledger.find((l) => l.kind === kind && l.won)?.label;
@@ -429,9 +426,11 @@ export const actions = {
     ]);
   },
   /** PRD US-007: approve → DECIDED; reject requires a stored reason. */
-  decide(id: string, outcome: Outcome, reason: string) {
+  async decide(id: string, outcome: Outcome, reason: string) {
     if (outcome === "REJECTED" && !reason.trim()) throw new Error("A reason is required to reject an itinerary.");
-    patchTrip(id, { status: "DECIDED", outcome, decidedAt: new Date().toISOString() }, [
+    const note = reason.trim() || null;
+    const decidedAt = isApi() ? (await remote((tok) => api.decideTrip(tok, id, outcome, note))).decided_at : new Date().toISOString();
+    patchTrip(id, { status: "DECIDED", outcome, decidedAt, decisionReason: note ?? undefined }, [
       log({
         tripId: id,
         type: "DECISION",
@@ -442,7 +441,7 @@ export const actions = {
   },
   applyPreview(id: string, patch: Partial<Trip>) {
     const trip = state.trips.find((t) => t.id === id);
-    if (!trip || trip.itinerary?.live) return;
+    if (!trip || isApi()) return;
     const next = { ...trip, ...patch };
     const itinerary = optimize(next, state.policy);
     patchTrip(id, { ...patch, itinerary, status: "UNDER_REVIEW" }, [
