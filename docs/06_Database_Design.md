@@ -75,10 +75,14 @@ PostgreSQL. No vector extension is needed — every table below is plain relatio
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID PK | |
-| trip_id | UUID FK → trips.id, nullable | nullable to also cover non-trip events |
-| event_type | text | e.g. `PIPELINE_RUN`, `DECISION` |
-| payload | jsonb | |
+| trip_id | UUID FK → trips.id, nullable | nullable to also cover non-trip events (traveler changes) |
+| user_id | UUID FK → users.id | who did it — added when built (2026-11-11) so admins can see who acted and members only see their own events |
+| event_type | text | `TRAVELER_CREATED`, `TRAVELER_UPDATED`, `TRAVELER_DELETED`, `TRIP_CREATED`, `PIPELINE_RUN`, `PIPELINE_FAILED`, `REVIEW_STARTED`, `DECISION` |
+| summary | text | one readable line — added when built (2026-11-11), e.g. "Optimized BLR→DEL: total 11,667, within budget 25,000" |
+| payload | jsonb | the details: what was chosen and why for a pipeline run, before/after for a traveler update, etc. |
 | created_at | timestamptz | |
+
+Built 2026-11-11 (migration `20261111_100000`). Append-only: no endpoint edits or deletes these rows.
 
 ## 3. Relationships
 `users 1—N travelers`, `travelers 1—N trips`, `trips 1—1 itineraries` (MVP: one active itinerary per trip; What-If Simulator previews do not persist a row unless approved), `itineraries 1—N tradeoff_ledger_entries`, `trips 1—N decisions` (append-only decision history), `trips 1—N audit_events`.
