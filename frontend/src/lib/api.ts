@@ -74,15 +74,20 @@ function nameFromEmail(email: string) {
     .join(" ");
 }
 
-/** Reads the role claim from the JWT payload; the backend has no /me endpoint. */
-function roleFromToken(token: string): Session["role"] {
+/** Decodes a JWT's payload without checking it; only for display fields, never for trust. */
+function jwtPayload(token: string): Record<string, unknown> {
   try {
     const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), "=")));
-    return payload.role === "admin" ? "admin" : "member";
+    const bytes = Uint8Array.from(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), "=")), (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
-    return "member";
+    return {};
   }
+}
+
+/** Reads the role claim from the JWT payload; the backend has no /me endpoint. */
+function roleFromToken(token: string): Session["role"] {
+  return jwtPayload(token).role === "admin" ? "admin" : "member";
 }
 
 /**
@@ -112,6 +117,23 @@ export async function login(email: string, password: string, name?: string): Pro
     if (e instanceof ApiUnavailable && DEMO_ENABLED) return { name: name || nameFromEmail(email), email, role: "admin", mode: "demo" };
     throw e;
   }
+}
+
+/**
+ * Signs in with the ID token from Google's button. The backend checks it and returns our own JWT;
+ * the name and email shown in the app come from Google's token.
+ */
+export async function loginWithGoogle(credential: string): Promise<Session> {
+  const { access_token } = await call<{ access_token: string }>("POST", "/auth/google", { body: { credential } });
+  const google = jwtPayload(credential);
+  const email = typeof google.email === "string" ? google.email : "";
+  return {
+    name: typeof google.name === "string" && google.name ? google.name : nameFromEmail(email),
+    email,
+    role: roleFromToken(access_token),
+    mode: "api",
+    token: access_token,
+  };
 }
 
 export async function register(name: string, email: string, password: string): Promise<Session> {

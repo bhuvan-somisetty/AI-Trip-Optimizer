@@ -24,3 +24,8 @@ TRAVELPAYOUTS_TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN", "")
 # Without one, hotel prices are shown as unavailable.
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
 SEARCH_CACHE_MINUTES = int(os.getenv("SEARCH_CACHE_MINUTES") or "30")
+
+# Sign in with Google: the OAuth Web client ID from Google Cloud (Google Auth Platform -> Clients).
+# Only the ID is needed, to check that Google's ID tokens were issued for this app; without it
+# POST /auth/google answers 503 and email/password sign-in still works.
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")

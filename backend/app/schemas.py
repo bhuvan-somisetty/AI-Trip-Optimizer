@@ -17,6 +17,11 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleLoginRequest(BaseModel):
+    # The ID token (JWT) that Google's sign-in button hands the browser.
+    credential: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
