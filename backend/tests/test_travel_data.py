@@ -38,16 +38,20 @@ FLIGHTS_BODY = {
 AIRLINES_BODY = [{"code": "6E", "name": "IndiGo"}, {"code": "AI", "name": "Air India"}]
 
 HOTELS_BODY = {
-    "data": [
-        {"hotelId": "lp1", "roomTypes": [{"offerRetailRate": {"amount": 16500.0, "currency": "INR"}},
-                                         {"offerRetailRate": {"amount": 18000.0, "currency": "INR"}}]},
-        {"hotelId": "lp2", "roomTypes": [{"offerRetailRate": {"amount": 120.0, "currency": "USD"}}]},
-        {"hotelId": "lp3", "roomTypes": [{"offerRetailRate": {"amount": 9000.0, "currency": "INR"}}]},
-    ],
-    "hotels": [
-        {"id": "lp1", "name": "The Lalit New Delhi", "rating": 8.7, "stars": 5, "address": "Barakhamba Ave"},
-        {"id": "lp2", "name": "Priced in USD"},
-        {"id": "lp3", "name": "Unrated Inn"},
+    "properties": [
+        {
+            "type": "hotel", "name": "The Lalit New Delhi", "property_token": "tok-lalit",
+            "link": "https://www.thelalit.com/the-lalit-delhi",
+            "rate_per_night": {"extracted_lowest": 8250}, "total_rate": {"extracted_lowest": 16500},
+            "overall_rating": 4.4, "reviews": 9120, "extracted_hotel_class": 5,
+            "amenities": ["Free Wi-Fi", "Pool"],
+        },
+        # Vacation rentals and properties without a total price are skipped.
+        {"type": "vacation rental", "name": "Flat in Saket", "property_token": "tok-flat",
+         "total_rate": {"extracted_lowest": 6000}},
+        {"type": "hotel", "name": "No Price Hotel", "property_token": "tok-noprice"},
+        {"type": "hotel", "name": "Unrated Inn", "property_token": "tok-unrated",
+         "total_rate": {"extracted_lowest": 9000}},
     ],
 }
 
@@ -68,7 +72,7 @@ def api(monkeypatch):
         responses = {
             travel_data.TRAVELPAYOUTS_URL: FakeResponse(FLIGHTS_BODY),
             travel_data.AIRLINES_URL: FakeResponse(AIRLINES_BODY),
-            travel_data.LITEAPI_RATES_URL: FakeResponse(HOTELS_BODY),
+            travel_data.SERPAPI_URL: FakeResponse(HOTELS_BODY),
         }
 
     def fake_request(method, url, timeout, **kwargs):
@@ -79,7 +83,7 @@ def api(monkeypatch):
         return response
 
     monkeypatch.setattr(config, "TRAVELPAYOUTS_TOKEN", "tp-token")
-    monkeypatch.setattr(config, "LITEAPI_API_KEY", "prod_key")
+    monkeypatch.setattr(config, "SERPAPI_API_KEY", "serp-key")
     monkeypatch.setattr(travel_data.httpx, "request", fake_request)
     monkeypatch.setattr(travel_data, "_cache", {})
     return Api
@@ -168,24 +172,62 @@ def test_flight_provider_failures_become_readable_errors(api, response, message)
 
 # ---- hotels ---------------------------------------------------------------
 
-def test_hotels_are_parsed_from_live_rates(api):
+def test_hotels_are_parsed_from_google_hotels(api):
     hotels = search_hotels("DEL", DAY, date(2026, 11, 3))
     assert [h["name"] for h in hotels] == ["The Lalit New Delhi", "Unrated Inn"]
     lalit, unrated = hotels
-    assert lalit["id"] == "HT-lp1" and lalit["stay_total"] == 16500.0
-    assert lalit["price_per_night"] == 8250.0 and lalit["rating"] == 4.3 and lalit["review_score"] == 8.7
-    assert unrated["rating"] is None
+    assert lalit["id"].startswith("HT-") and len(lalit["id"]) == 11
+    assert lalit["id"] != unrated["id"]
+    assert lalit["stay_total"] == 16500 and lalit["price_per_night"] == 8250.0
+    assert lalit["rating"] == 4.4 and lalit["stars"] == 5 and lalit["amenities"] == ["Free Wi-Fi", "Pool"]
+    assert lalit["price_status"] == "live" and lalit["link"] == "https://www.thelalit.com/the-lalit-delhi"
+    assert unrated["rating"] is None and unrated["price_per_night"] == 4500.0
     method, url, kwargs = api.calls[0]
-    assert method == "POST" and kwargs["headers"] == {"X-API-Key": "prod_key"}
-    assert kwargs["json"]["cityName"] == "New Delhi" and kwargs["json"]["currency"] == "INR"
+    assert method == "GET" and kwargs["params"]["api_key"] == "serp-key"
+    assert kwargs["params"]["engine"] == "google_hotels" and kwargs["params"]["q"] == "hotels in New Delhi"
+    assert kwargs["params"]["check_in_date"] == "2026-11-01" and kwargs["params"]["currency"] == "INR"
 
 
-@pytest.mark.parametrize("key", ["", "sand_abc123"])
-def test_hotels_unavailable_without_a_production_key(api, monkeypatch, key):
-    monkeypatch.setattr(config, "LITEAPI_API_KEY", key)
+def test_hotel_id_is_stable_across_searches(api):
+    first = search_hotels("DEL", DAY, date(2026, 11, 3))
+    api.calls.clear()
+    travel_data._cache.clear()
+    assert [h["id"] for h in search_hotels("DEL", DAY, date(2026, 11, 3))] == [h["id"] for h in first]
+
+
+def test_repeat_hotel_search_is_served_from_cache(api):
+    search_hotels("DEL", DAY, date(2026, 11, 3))
+    search_hotels("DEL", DAY, date(2026, 11, 3))
+    assert [url for _, url, _ in api.calls].count(travel_data.SERPAPI_URL) == 1
+
+
+def test_hotels_unavailable_without_a_key(api, monkeypatch):
+    monkeypatch.setattr(config, "SERPAPI_API_KEY", "")
     with pytest.raises(HotelsUnavailable, match="covers the flight only"):
         search_hotels("DEL", DAY, date(2026, 11, 3))
     assert api.calls == []
+
+
+def test_no_hotels_found_is_an_empty_list(api):
+    api.responses[travel_data.SERPAPI_URL] = FakeResponse(
+        {"error": "Google Hotels hasn't returned any results for this query."}
+    )
+    assert search_hotels("DEL", DAY, date(2026, 11, 3)) == []
+
+
+@pytest.mark.parametrize(
+    "response, message",
+    [
+        (FakeResponse({"error": "Your account has run out of searches."}), "run out of searches"),
+        (FakeResponse({}, status_code=401), "rejected the server's API key"),
+        (FakeResponse({}, status_code=429), "rate limit"),
+        (httpx.ReadTimeout("slow"), "took too long"),
+    ],
+)
+def test_hotel_provider_failures_become_readable_errors(api, response, message):
+    api.responses[travel_data.SERPAPI_URL] = response
+    with pytest.raises(TravelDataError, match=message):
+        search_hotels("DEL", DAY, date(2026, 11, 3))
 
 
 def test_hotel_search_for_unknown_city_is_an_error(api):
@@ -220,7 +262,7 @@ def test_unavailable_hotels_still_give_a_flight_only_itinerary(monkeypatch):
     import app.pipeline.graph as graph
 
     def unavailable(*args):
-        raise HotelsUnavailable("Live hotel prices are unavailable (no LITEAPI_API_KEY is set), so this total covers the flight only")
+        raise HotelsUnavailable("Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flight only")
 
     monkeypatch.setattr(travel_data, "search_hotels", unavailable)
     monkeypatch.setattr(graph, "get_llm", lambda: None)
@@ -228,5 +270,5 @@ def test_unavailable_hotels_still_give_a_flight_only_itinerary(monkeypatch):
     itinerary, check = result["itinerary"], result["check"]
     assert itinerary["hotel"] is None
     assert itinerary["total_cost"] == check["flight"]["price"]
-    assert check["flags"] == ["Live hotel prices are unavailable (no LITEAPI_API_KEY is set), so this total covers the flight only"]
+    assert check["flags"] == ["Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flight only"]
     assert all(e["alternative"].startswith("FL-") for e in itinerary["tradeoff_ledger"])
