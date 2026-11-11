@@ -4,8 +4,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
+from app.audit import record
 from app.database import get_session
-from app.models import Decision, DecisionOutcome, Itinerary, Traveler, Trip, TripStatus, User
+from app.models import AuditEventType, Decision, DecisionOutcome, Itinerary, Traveler, Trip, TripStatus, User
 from app.pipeline.graph import pipeline
 from app.schemas import DecisionCreate, DecisionResponse, TripCreate, TripResponse, TripResultResponse
 from app.security import get_current_user
@@ -54,6 +55,13 @@ def create_trip(
         created_by=current_user.id,
     )
     session.add(trip)
+    record(
+        session, user=current_user, event_type=AuditEventType.TRIP_CREATED, trip_id=trip.id,
+        summary=f"Created trip {trip.origin}→{trip.destination} for {traveler.name}, budget {trip.budget:,.0f}",
+        payload={"traveler_id": traveler.id, "origin": trip.origin, "destination": trip.destination,
+                 "dates": [trip.start_date, trip.end_date], "budget": trip.budget,
+                 "preferences": trip.preferences},
+    )
     session.commit()
     session.refresh(trip)
     return trip
@@ -89,8 +97,20 @@ def saved_itinerary(session: Session, trip: Trip) -> Itinerary | None:
     return session.exec(select(Itinerary).where(Itinerary.trip_id == trip.id)).first()
 
 
+def option_summary(option: dict | None) -> dict | None:
+    # What the audit keeps about a chosen flight/hotel: enough to trace it back to its source.
+    if option is None:
+        return None
+    keys = ("id", "airline", "flight_number", "name", "price", "price_per_night", "rating", "price_status", "source")
+    return {k: option[k] for k in keys if k in option}
+
+
 @router.post("/trips/{trip_id}/optimize", response_model=TripResultResponse)
-def optimize_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depends(get_session)):
+def optimize_trip(
+    trip: Trip = Depends(get_owned_trip),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
     if trip.status not in OPTIMIZABLE:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -137,9 +157,32 @@ def optimize_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depen
         )
         session.add(itinerary)
         trip.status = TripStatus.OPTIMIZED
+        record(
+            session, user=current_user, event_type=AuditEventType.PIPELINE_RUN, trip_id=trip.id,
+            summary=(
+                f"Optimized {trip.origin}→{trip.destination}: total {float(itinerary.total_cost):,.0f}, "
+                f"{'within' if itinerary.within_budget else 'over'} budget {trip.budget:,.0f}"
+            ),
+            # Every pipeline run is kept here even after a re-run replaces the itinerary.
+            payload={
+                "request": request,
+                "flight": option_summary(itinerary.flight),
+                "hotel": option_summary(itinerary.hotel),
+                "total_cost": itinerary.total_cost,
+                "within_budget": itinerary.within_budget,
+                "flags": itinerary.flags,
+                "options_compared": len(itinerary.tradeoff_ledger),
+                "rationale": itinerary.rationale,
+            },
+        )
     else:
         trip.status = TripStatus.OPTIMIZATION_FAILED
         trip.failure_reason = result["failure_reason"]
+        record(
+            session, user=current_user, event_type=AuditEventType.PIPELINE_FAILED, trip_id=trip.id,
+            summary=f"Optimization failed for {trip.origin}→{trip.destination}: {trip.failure_reason}",
+            payload={"request": request, "failure_reason": trip.failure_reason},
+        )
 
     session.add(trip)
     session.commit()
@@ -157,7 +200,11 @@ def get_itinerary(trip: Trip = Depends(get_owned_trip), session: Session = Depen
 
 
 @router.post("/trips/{trip_id}/review", response_model=TripResponse)
-def start_review(trip: Trip = Depends(get_owned_trip), session: Session = Depends(get_session)):
+def start_review(
+    trip: Trip = Depends(get_owned_trip),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
     if trip.status != TripStatus.OPTIMIZED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -165,6 +212,10 @@ def start_review(trip: Trip = Depends(get_owned_trip), session: Session = Depend
         )
     trip.status = TripStatus.UNDER_REVIEW
     session.add(trip)
+    record(
+        session, user=current_user, event_type=AuditEventType.REVIEW_STARTED, trip_id=trip.id,
+        summary=f"Started review of {trip.origin}→{trip.destination}",
+    )
     session.commit()
     session.refresh(trip)
     return trip
@@ -191,6 +242,23 @@ def decide_trip(
     trip.status = TripStatus.DECIDED
     session.add(decision)
     session.add(trip)
+    itinerary = saved_itinerary(session, trip)
+    record(
+        session, user=current_user, event_type=AuditEventType.DECISION, trip_id=trip.id,
+        summary=(
+            f"{body.outcome.value.capitalize()} {trip.origin}→{trip.destination}"
+            + (f": {body.reason}" if body.reason else "")
+        ),
+        payload={
+            "decision_id": decision.id,
+            "outcome": body.outcome,
+            "reason": body.reason,
+            # The itinerary as it stood when decided, in case it's ever edited later.
+            "total_cost": itinerary.total_cost if itinerary else None,
+            "flight": option_summary(itinerary.flight) if itinerary else None,
+            "hotel": option_summary(itinerary.hotel) if itinerary else None,
+        },
+    )
     session.commit()
     session.refresh(decision)
     return decision
