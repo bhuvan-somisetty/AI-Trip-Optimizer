@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator, model_validator
 
-from app.models import DecisionOutcome, TripStatus, UserRole
+from app.models import AuditEventType, DecisionOutcome, TripStatus, UserRole
 
 
 class RegisterRequest(BaseModel):
@@ -154,3 +154,13 @@ class DecisionResponse(BaseModel):
     reason: str | None
     decided_by: uuid.UUID
     decided_at: datetime
+
+
+class AuditEventResponse(BaseModel):
+    id: uuid.UUID
+    trip_id: uuid.UUID | None
+    event_type: AuditEventType
+    actor: str  # email of the user who did it
+    summary: str
+    payload: dict
+    created_at: datetime
