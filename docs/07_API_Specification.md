@@ -613,7 +613,7 @@ Edits a line item on the itinerary; total cost is recalculated server-side, neve
 ---
 
 ## Dashboard & Audit
-*(Planned — no backend router built yet; shapes are the team's design, grounded in `06_Database_Design.md`. 401/403 reuse the real error strings from `app/security.py`.)*
+*(`GET /dashboard` is still Planned — no backend router built yet; its shape is the team's design, grounded in `06_Database_Design.md`, and 401/403 reuse the real error strings from `app/security.py`. `GET /audit` is built and Verified, see below.)*
 
 ### GET /dashboard
 Returns total spend, average savings, and average turnaround time for a period (PRD US-010 — "As an **admin**..."). Requires a valid JWT with the `admin` role.
@@ -645,29 +645,58 @@ Returns total spend, average savings, and average turnaround time for a period (
 ```
 
 ### GET /audit
-Returns audit event history. Independent of dashboard aggregation — every pipeline run and decision is recorded here regardless of what the dashboard shows. Requires a valid JWT.
+*(**Verified** — built 2026-11-11, `app/routers/audit.py`; response below captured from the running app, not invented.)*
 
-*(Client query: `GET /audit?trip_id=f7a1c9e0-...`)*
+Returns audit event history, newest first. Independent of dashboard aggregation — every pipeline run and decision is recorded here regardless of what the dashboard shows (PRD: Audit trail, US-010). Requires a valid JWT. **Admins see every user's events; members see only their own.** Events are append-only: nothing in the API edits or deletes them, and re-optimizing a trip replaces its itinerary but keeps every earlier `PIPELINE_RUN` here.
+
+**Recorded events:** `TRAVELER_CREATED`, `TRAVELER_UPDATED` (payload has `before`/`after`), `TRAVELER_DELETED`, `TRIP_CREATED`, `PIPELINE_RUN` (what was chosen, the total, the flags, the rationale and the data source of each option), `PIPELINE_FAILED` (with the reason), `REVIEW_STARTED`, `DECISION` (outcome, reason, and the itinerary as it stood when decided). An action that fails (e.g. a 409) records nothing — the event is saved in the same transaction as the action.
+
+**Query parameters (all optional):** `trip_id`, `event_type` (one of the names above), `limit` (1–500, default 100). Someone else's `trip_id` returns `[]`, the same as an unknown one.
+
+*(Client query: `GET /audit?trip_id=83980862-2f7c-445e-b833-0f7623d78af2`)*
 
 **Response (200 OK):**
 ```json
 [
   {
-    "id": "a9f2e7c1-...",
-    "trip_id": "f7a1c9e0-...",
+    "id": "b3bba4aa-2838-4196-888e-2a77ab46d704",
+    "trip_id": "83980862-2f7c-445e-b833-0f7623d78af2",
     "event_type": "PIPELINE_RUN",
-    "payload": { "status": "OPTIMIZED", "total_cost": 54200 },
-    "created_at": "2026-09-16T10:00:00Z"
+    "actor": "demo.viva@example.com",
+    "summary": "Optimized BLR→DEL: total 10,000, within budget 60,000",
+    "payload": {
+      "request": {"origin": "BLR", "destination": "DEL", "start_date": "2026-11-01", "end_date": "2026-11-05", "budget": 60000.0, "preferences": {}},
+      "flight": {"id": "FL-1004", "airline": "Vistara", "price": 3600},
+      "hotel": {"id": "HT-2002", "name": "Sample Budget Inn", "price_per_night": 1600, "rating": 3.5},
+      "total_cost": 10000.0,
+      "within_budget": true,
+      "flags": [],
+      "options_compared": 9,
+      "rationale": "Chose flight FL-1004 Vistara economy, 1 stop(s), departs 2026-11-01 at 3,600 and hotel HT-2002 Sample Budget Inn, rated 3.5 at 1,600 a night for 4 night(s) (6,400), the cheapest options that meet every trip preference. Total cost is 10,000 against a budget of 60,000, leaving 50,000 unspent."
+    },
+    "created_at": "2026-11-11T06:31:53.345757"
+  },
+  {
+    "id": "67df1ae3-4ac0-42b4-b3d3-e1d35cdac6f0",
+    "trip_id": "83980862-2f7c-445e-b833-0f7623d78af2",
+    "event_type": "TRIP_CREATED",
+    "actor": "demo.viva@example.com",
+    "summary": "Created trip BLR→DEL for Priya Nair, budget 60,000",
+    "payload": {"traveler_id": "d2b05f22-26a9-4b78-8efb-f9d33e07ed58", "origin": "BLR", "destination": "DEL", "dates": ["2026-11-01", "2026-11-05"], "budget": 60000.0, "preferences": {}},
+    "created_at": "2026-11-11T06:31:53.238817"
   }
 ]
 ```
+*(Captured against the test fixtures' sample flights/hotels, so the IDs and prices are sample data. On Postgres `created_at` also carries its timezone.)*
 
-**Response (401 Unauthorized)** — missing/invalid JWT:
+**Response (401 Unauthorized)** — no token:
 ```json
 {
-  "detail": "Could not validate credentials"
+  "detail": "Not authenticated"
 }
 ```
+
+**Response (422)** — `limit` outside 1–500, or an unknown `event_type`.
 
 ---
 
@@ -676,7 +705,7 @@ Returns audit event history. Independent of dashboard aggregation — every pipe
 - All monetary figures returned by `/trips/{id}/optimize` are computed in code — the LLM-authored `rationale` field never introduces a number not already present elsewhere in the response (product principle: no unsupported financial claims).
 
 ## Live Demo Notes
-For the viva, Auth, Travelers and Trips (create, list, get) can all be demoed for real — the optimizer, Dashboard and Audit aren't built yet.
+For the viva, Auth, Travelers and Trips (create, list, get) can all be demoed for real — the optimizer and Audit (`GET /audit`) are built too; only the Dashboard isn't built yet.
 1. Start the backend against the SQLite dev stand-in: `DATABASE_URL="sqlite:///./test.db" uvicorn app.main:app --port 8010` from `backend/`, with the venv active.
 2. Open `http://127.0.0.1:8010/docs` — FastAPI's interactive Swagger page. "Try it out" on `/auth/register`, `/auth/login`, `/traveler`, `/travelers`, `/traveler/{id}` (PUT and DELETE), `/trip`, `/trips` and `/trips/{id}` shows the real request/response live, including every error case above, without typing anything in a terminal during the demo. For the traveler endpoints, click "Authorize" first and paste in a token from `/auth/login`.
 3. Or via terminal, if a command-line demo is preferred over Swagger:
