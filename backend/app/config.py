@@ -20,7 +20,7 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
 # Real travel data (app/travel_data.py).
 # Flights: free token from https://www.travelpayouts.com (Profile -> API token).
 TRAVELPAYOUTS_TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN", "")
-# Hotels: a LiteAPI *production* key from https://dashboard.liteapi.travel (needs a card on file;
-# rate searches are free). Without one, hotel prices are shown as unavailable.
-LITEAPI_API_KEY = os.getenv("LITEAPI_API_KEY", "")
+# Hotels: a SerpApi key (Google Hotels prices) from https://serpapi.com, free plan, no card.
+# Without one, hotel prices are shown as unavailable.
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
 SEARCH_CACHE_MINUTES = int(os.getenv("SEARCH_CACHE_MINUTES") or "30")
