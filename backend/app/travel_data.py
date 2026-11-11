@@ -6,13 +6,14 @@ Flights: Travelpayouts Aviasales Data API (free token, https://www.travelpayouts
   and the API can't re-check a price, so every record carries a `link` to the live
   Aviasales search and `price_status: "cached"`.
 
-Hotels: LiteAPI (https://liteapi.travel). Only a production key returns live room
-  rates; a sandbox key returns test data, so it is refused. With no production key the
-  hotel search reports itself unavailable instead of returning anything made up.
+Hotels: SerpApi's Google Hotels engine (free plan, https://serpapi.com). The prices
+  Google Hotels shows for the stay dates, in INR. With no SERPAPI_API_KEY the hotel
+  search reports itself unavailable instead of returning anything made up.
 
 Nothing in this module invents a value: a field the provider didn't send is None.
 Results are cached in memory for SEARCH_CACHE_MINUTES to stay inside rate limits.
 """
+import hashlib
 import logging
 import time
 from datetime import date, datetime, timedelta
@@ -25,12 +26,14 @@ logger = logging.getLogger(__name__)
 
 TRAVELPAYOUTS_URL = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
 AIRLINES_URL = "https://api.travelpayouts.com/data/en/airlines.json"
-LITEAPI_RATES_URL = "https://api.liteapi.travel/v3.0/hotels/rates"
+SERPAPI_URL = "https://serpapi.com/search.json"
 TIMEOUT_SECONDS = 25
 # Flight search also returns fares this many days either side of the requested date.
 FLEX_DAYS = 3
+# SerpApi answers a search that found nothing with this error instead of an empty list.
+SERPAPI_NO_RESULTS = "hasn't returned any results"
 
-# LiteAPI searches hotels by city name + country, not airport code.
+# Google Hotels is searched by city name, not airport code.
 CITIES: dict[str, tuple[str, str]] = {
     "BLR": ("Bangalore", "IN"),
     "DEL": ("New Delhi", "IN"),
@@ -200,69 +203,67 @@ def search_flights(origin: str, destination: str, day: date, cabin_class: str | 
 # ---- hotels ---------------------------------------------------------------
 
 def hotels_configured() -> bool:
-    key = config.LITEAPI_API_KEY
-    return bool(key) and not key.startswith("sand_")
+    return bool(config.SERPAPI_API_KEY)
 
 
 def search_hotels(city: str, check_in: date, check_out: date) -> list[dict]:
     if not hotels_configured():
-        reason = "a sandbox key returns test data" if config.LITEAPI_API_KEY else "no LITEAPI_API_KEY is set"
-        raise HotelsUnavailable(f"Live hotel prices are unavailable ({reason}), so this total covers the flight only")
+        raise HotelsUnavailable(
+            "Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flight only"
+        )
     if city not in CITIES:
         raise TravelDataError(f"Hotel search doesn't know the city for airport {city} yet")
-    city_name, country = CITIES[city]
+    city_name, _country = CITIES[city]
     nights = (check_out - check_in).days
-    payload = {
-        "cityName": city_name,
-        "countryCode": country,
-        "checkin": check_in.isoformat(),
-        "checkout": check_out.isoformat(),
+    params = {
+        "engine": "google_hotels",
+        "q": f"hotels in {city_name}",
+        "check_in_date": check_in.isoformat(),
+        "check_out_date": check_out.isoformat(),
+        "adults": 1,
         "currency": "INR",
-        "guestNationality": "IN",
-        "occupancies": [{"adults": 1}],
-        "limit": 30,
-        "timeout": 10,
-        "maxRatesPerHotel": 1,
+        "gl": "in",
+        "hl": "en",
+        "api_key": config.SERPAPI_API_KEY,
     }
 
     def fetch():
-        return _request(
-            "LiteAPI", "POST", LITEAPI_RATES_URL,
-            json=payload, headers={"X-API-Key": config.LITEAPI_API_KEY},
-        )
+        body = _request("SerpApi", "GET", SERPAPI_URL, params=params)
+        error = body.get("error")
+        if error and SERPAPI_NO_RESULTS in error:
+            return {"properties": []}
+        if error:
+            raise TravelDataError(f"SerpApi hotel search failed: {error}")
+        return body
 
     body = _cached(("hotels", city, check_in.isoformat(), check_out.isoformat()), fetch)
-    details = {h.get("id"): h for h in body.get("hotels") or []}
     hotels = []
-    for row in body.get("data") or []:
-        totals = [
-            rt["offerRetailRate"]["amount"]
-            for rt in row.get("roomTypes") or []
-            if (rt.get("offerRetailRate") or {}).get("currency") == "INR"
-        ]
-        info = details.get(row.get("hotelId"))
-        if not totals or not info or not info.get("name"):
-            continue  # no INR rate or no name: nothing honest to show
-        stay = min(totals)
-        review = info.get("rating")
+    for row in body.get("properties") or []:
+        stay = (row.get("total_rate") or {}).get("extracted_lowest")
+        token = row.get("property_token")
+        if row.get("type") != "hotel" or not stay or not token or not row.get("name"):
+            continue  # vacation rentals, or no price/name: nothing honest to compare
         hotels.append(
             {
-                "id": f"HT-{row['hotelId']}",
+                # property_token is ~40 chars; a short stable hash keeps ledger lines readable.
+                "id": f"HT-{hashlib.sha1(token.encode()).hexdigest()[:8]}",
                 "city": city,
-                "name": info["name"],
-                "address": info.get("address"),
-                # LiteAPI's total is for the whole stay; the pipeline compares per-night prices.
-                "price_per_night": round(stay / nights, 2),
+                "name": row["name"],
+                "address": None,
+                # The total is for the whole stay; the pipeline compares per-night prices.
+                # Not rounded, so per-night x nights gives back the exact stay total.
+                "price_per_night": stay / nights,
                 "stay_total": stay,
                 "currency": "INR",
-                # Guest review score is out of 10; trip preferences use a 5-point scale.
-                "rating": round(review / 2, 1) if review else None,
-                "review_score": review,
-                "stars": info.get("stars"),
-                "amenities": [],
+                # Google's guest rating is already on the 5-point scale trip preferences use.
+                "rating": row.get("overall_rating"),
+                "reviews": row.get("reviews"),
+                "stars": row.get("extracted_hotel_class"),
+                "amenities": row.get("amenities") or [],
                 "distance_to_center_km": None,
                 "price_status": "live",
-                "source": "LiteAPI live rates",
+                "link": row.get("link"),
+                "source": "Google Hotels via SerpApi",
             }
         )
     return hotels
