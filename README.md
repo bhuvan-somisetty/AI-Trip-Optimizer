@@ -51,7 +51,7 @@ The core design principle is **explainability over automation**. The system neve
 |---|---|---|
 | 1 | **Traveler Management** | Add/select the travelers going on a trip |
 | 2 | **Trip Request Creation** | Capture dates, budget, and preferences; starts as `DRAFT` |
-| 3 | **Flight/Stay Search** | Searches real flight fares (Travelpayouts) and live hotel rates (LiteAPI) for the request |
+| 3 | **Flight/Stay Search** | Searches real flight fares (Travelpayouts) and live hotel prices (Google Hotels via SerpApi) for the request |
 | 4 | **Budget & Constraint Check** | Flags issues by naming the exact rule and offending line item |
 | 5 | **Itinerary Composition** | Flights + stay + total cost, composed via the LangGraph pipeline |
 | 6 | **Trade-off Ledger** | Every alternative considered, its price, and why it won or lost: full transparency |
