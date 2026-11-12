@@ -96,3 +96,35 @@ class Decision(SQLModel, table=True):
     )
     reason: str | None = None  # required when outcome is REJECTED
     decided_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class AuditEventType(str, Enum):
+    # Same names as the frontend's AuditEvent["type"], so its audit page can show these as-is.
+    TRAVELER_CREATED = "TRAVELER_CREATED"
+    TRAVELER_UPDATED = "TRAVELER_UPDATED"
+    TRAVELER_DELETED = "TRAVELER_DELETED"
+    TRIP_CREATED = "TRIP_CREATED"
+    PIPELINE_RUN = "PIPELINE_RUN"
+    PIPELINE_FAILED = "PIPELINE_FAILED"
+    REVIEW_STARTED = "REVIEW_STARTED"
+    DECISION = "DECISION"
+
+
+class AuditEvent(SQLModel, table=True):
+    """Append-only history of who did what (PRD: Audit trail). Rows are never edited or deleted.
+
+    Kept separate from itineraries on purpose: re-optimizing replaces a trip's itinerary,
+    but every earlier pipeline run stays here with what it chose and why.
+    """
+
+    __tablename__ = "audit_events"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    trip_id: uuid.UUID | None = Field(default=None, foreign_key="trips.id", index=True)  # None for traveler events
+    user_id: uuid.UUID = Field(foreign_key="users.id", index=True)  # who did it
+    event_type: AuditEventType = Field(
+        sa_column=Column(SAEnum(AuditEventType, native_enum=False, length=32), nullable=False, index=True)
+    )
+    summary: str  # one readable line, e.g. "Optimized BLR→DEL: total 11,667, within budget"
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
