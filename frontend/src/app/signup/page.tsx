@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthShell } from "@/components/auth/auth-shell";
-import { GoogleIcon } from "@/components/auth/google-icon";
+import { GoogleSignIn } from "@/components/auth/google-sign-in";
 
 export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -47,10 +47,6 @@ export default function SignupPage() {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setLoading(false);
     }
-  }
-
-  function continueWithGoogle() {
-    finish({ name: "Workspace Admin", email: "admin@acmecorp.in", role: "admin", mode: "demo" });
   }
 
   return (
@@ -135,27 +131,7 @@ export default function SignupPage() {
         </Button>
       </form>
 
-      {/* Opens the demo workspace (generated data), so it only shows when demo mode is enabled. */}
-      {api.DEMO_ENABLED && (
-        <>
-          <div className="flex items-center gap-3">
-            <span className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">or</span>
-            <span className="h-px flex-1 bg-border" />
-          </div>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            className="w-full transition-transform active:scale-[0.98]"
-            onClick={continueWithGoogle}
-          >
-            <GoogleIcon className="size-4" />
-            Continue with Google
-          </Button>
-        </>
-      )}
+      <GoogleSignIn onSession={finish} onError={setError} />
 
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}

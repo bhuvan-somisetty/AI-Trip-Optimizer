@@ -32,7 +32,8 @@ class User(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     email: str = Field(unique=True, index=True)
-    hashed_password: str
+    # None for accounts created through Google sign-in, which have no password.
+    hashed_password: str | None = None
     role: UserRole = Field(default=UserRole.member)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

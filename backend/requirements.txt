@@ -16,3 +16,5 @@ pytest
 httpx
 python-dotenv
 email-validator
+google-auth
+requests
