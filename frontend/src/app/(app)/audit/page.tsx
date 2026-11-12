@@ -18,6 +18,9 @@ import { cn } from "@/lib/utils";
 
 const PAGE = 25;
 
+// Events from the removed Knowledge Assistant; nothing records them any more.
+const retired = new Set<AuditEvent["type"]>(["DOCUMENT_UPLOAD", "DOCUMENT_DELETED", "ASSISTANT_QUERY"]);
+
 export default function AuditPage() {
   const s = useStore();
   const [q, setQ] = useState("");
@@ -67,7 +70,7 @@ export default function AuditPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
         title="Audit trail"
-        description="Append-only history of every pipeline run, edit, decision and knowledge-base change. Independent of dashboard aggregation."
+        description="Append-only history of every pipeline run, edit, decision and traveler change. Independent of dashboard aggregation."
         actions={
           <Button variant="outline" size="lg" onClick={exportCsv} disabled={!list.length}>
             <Download />
@@ -84,7 +87,7 @@ export default function AuditPage() {
           </div>
           <NativeSelect value={type} onChange={(e) => { setType(e.target.value); setPage(1); }} aria-label="Event type">
             <option value="">All events</option>
-            {(Object.keys(eventMeta) as AuditEvent["type"][]).map((t) => (
+            {(Object.keys(eventMeta) as AuditEvent["type"][]).filter((t) => !retired.has(t)).map((t) => (
               <option key={t} value={t}>{eventMeta[t].label}</option>
             ))}
           </NativeSelect>
