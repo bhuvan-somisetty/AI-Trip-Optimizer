@@ -186,30 +186,6 @@ export type AuditEvent = {
   createdAt: string;
 };
 
-export type KnowledgeDoc = {
-  id: string;
-  title: string;
-  category: string;
-  content: string;
-  sizeBytes: number;
-  uploadedBy: string;
-  uploadedAt: string;
-  builtIn: boolean;
-};
-
-export type Citation = { docId: string; docTitle: string; chunk: number; excerpt: string };
-
-export type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  mode: "knowledge" | "itinerary";
-  tripId?: string;
-  citations?: Citation[];
-  covered?: boolean;
-  createdAt: string;
-};
-
 export type Policy = {
   currency: "INR";
   managerApprovalFlightOver: number;
