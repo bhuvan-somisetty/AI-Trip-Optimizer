@@ -6,7 +6,7 @@
 
 A team enters a trip request. A LangGraph pipeline searches **real flight fares and live hotel prices**, checks
 every option against the budget and the traveler's rules, and composes an itinerary with a **Trade-off Ledger**
-that says why each alternative won or lost. A human then edits, approves or rejects it. Nothing is ever booked
+that says why each alternative won or lost. A human then edits it, tries what-ifs, and approves or rejects it. Nothing is ever booked
 automatically, and every step lands in an **append-only audit trail**.
 
 [![Live](https://img.shields.io/badge/live-ai--trip--optimizer.vercel.app-1a5cff?style=for-the-badge&logo=vercel&logoColor=white)](https://ai-trip-optimizer.vercel.app)
@@ -22,7 +22,8 @@ automatically, and every step lands in an **append-only audit trail**.
 ![Gemini](https://img.shields.io/badge/Gemini-8e75b2?style=flat-square&logo=googlegemini&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169e1?style=flat-square&logo=postgresql&logoColor=white)
 ![Neon](https://img.shields.io/badge/Neon-00e599?style=flat-square&logo=neon&logoColor=black)
-![pytest](https://img.shields.io/badge/pytest-153_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-188_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-32_passing-729b1b?style=flat-square&logo=vitest&logoColor=white)
 
 **[Open the app](https://ai-trip-optimizer.vercel.app)** · [Why](#-why-ai-trip-optimizer) · [How it works](#-how-it-works) · [Architecture](#-architecture) · [Tech stack](#-tech-stack) · [Run locally](#-run-it-locally) · [Status](#-project-status) · [Docs](docs/)
 
@@ -40,7 +41,7 @@ Most "AI travel planners" hand you an answer and ask you to trust it. A business
 has to approve the spend, and someone will later ask *why this flight and not the cheaper one?*
 
 - **Every number is computed in code.** The LLM only writes the explanation, and a guardrail fails the run if it states a figure that isn't one of the computed ones.
-- **Every alternative is accounted for.** The Trade-off Ledger lists each flight and hotel the pipeline saw, its price, and the specific reason it won or lost.
+- **Every alternative is accounted for.** The Trade-off Ledger lists each outbound flight, return flight and hotel the pipeline saw, its price, and the specific reason it won or lost.
 - **A human always decides.** The optimizer recommends; a reviewer edits, approves, or rejects with a reason.
 - **Nothing is forgotten.** Every traveler change, optimizer run, edit and decision is written to an append-only audit trail in the same transaction as the action itself.
 
@@ -48,9 +49,9 @@ has to approve the spend, and someone will later ask *why this flight and not th
 
 <div align="center">
 
-| **8 / 8** | **17** | **153** | **6** | **11** | **~2.7 s** |
+| **9 / 9** | **20** | **188 + 32** | **6** | **12** | **~2.7 s** |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| PRD Must items live | API endpoints | backend tests | database tables | migrations | full optimizer run, live |
+| PRD user stories built, stretch included | API endpoints | backend + frontend tests | database tables | migrations | full optimizer run, live |
 
 </div>
 
@@ -67,18 +68,19 @@ flowchart LR
     end
     G -- yes --> I[Itinerary + Trade-off Ledger<br/>+ Gemini rationale]
     G -- no --> F[OPTIMIZATION_FAILED<br/>with the reason]
-    I --> H[Human review<br/>swap a line item · approve · reject]
+    I --> H[Human review<br/>swap a line item · what-if · approve · reject]
     H --> A[(Audit trail)]
 ```
 
 | Step | What happens |
 | :--- | :--- |
 | **1. Request** | A traveler, IATA route (e.g. `DEL → BOM`), dates, budget and preferences such as `max_stops` or `min_hotel_rating`. The trip starts as `DRAFT`. |
-| **2. Search** | Flight fares from **Travelpayouts** and hotel prices from **Google Hotels via SerpApi**. If the chosen day has no fare, the run fails and names the nearest dates that do. |
+| **2. Search** | Flight fares both ways from **Travelpayouts** and hotel prices from **Google Hotels via SerpApi**. If the start date has no fare, the run fails and names the nearest dates that do; if only the return is missing, the trip is built and flagged. |
 | **3. Check** | Pure Python: every option is tested against each rule. Each flag names the rule and the exact line item, e.g. *"Total 41,600 is 29,600 over the 12,000 budget"*. |
-| **4. Compose** | The cheapest option meeting every rule wins. The total is computed in code. Every other option gets a ledger row: *"Price: 1,199 more than HT-c5ed804f"*, *"Different day: departs 2026-12-19, 3 day(s) before the trip starts"*. |
+| **4. Compose** | The cheapest option meeting every rule wins, for the outbound flight, the return flight and the stay. The total and the savings (against the median valid option) are computed in code. Every other option gets a ledger row: *"Price: 1,199 more than HT-c5ed804f"*, *"Different day: departs 2026-12-19, 3 day(s) before the trip starts"*. |
 | **5. Explain** | Gemini writes a short rationale from those facts only. Any number in it that isn't a computed figure fails the run; if the LLM is off or errors, a template rationale is used. |
-| **6. Review** | The reviewer can swap the flight or hotel for any other valid option; the total, flags, ledger and rationale are recomputed on the server. Approve sets the trip to `DECIDED`; reject requires a reason. |
+| **6. Review** | The reviewer can swap the outbound flight, return flight or hotel for any other valid option; the total, flags, savings, ledger and rationale are recomputed on the server. Approve sets the trip to `DECIDED`; reject requires a reason. |
+| **7. What-if** | Change the budget, cabin, stops or hotel rating and preview the result next to the saved itinerary. The preview reruns the checks on the saved search, so it is instant and saves nothing until "Save this instead". |
 
 **Trip states:** `DRAFT → OPTIMIZING → OPTIMIZED → UNDER_REVIEW → DECIDED`, with `OPTIMIZATION_FAILED` when a run can't produce an itinerary.
 
@@ -108,7 +110,9 @@ flowchart LR
 | **LLMs make up numbers** | Totals, budgets and differences are computed in code. The rationale is checked against them, and a mismatch fails the run instead of saving a wrong explanation. |
 | **"Why not the cheaper one?"** | The ledger stores a structured reason for every losing option: a broken rule, a different day, or a price difference against the winner. |
 | **Edits that break the numbers** | The client only names the option to swap in. The server re-runs the checks, refuses options that break a rule, and recomputes total, flags, ledger and rationale. |
-| **Sparse real-world data** | No fare on the day → the run fails with the nearest dates that have fares. No hotel key or no hotels → the run still succeeds, flags it, and totals the flight. |
+| **Sparse real-world data** | No fare on the start date → the run fails with the nearest dates that have fares. No return fare, no hotel key or no hotels → the run still succeeds, flags it, and totals what it has. |
+| **Savings that mean something** | Savings are measured against the median option that met every rule, not the priciest one, so one luxury hotel can't inflate the figure. |
+| **"What if" without side effects** | A preview reruns the same checks on the saved search results: no new search, no LLM call, nothing saved. Applying it is one audited action. |
 | **A trail you can trust** | Audit events are written in the same database transaction as the action, never edited, and kept even when a re-run replaces the itinerary. |
 | **Privacy between users** | Every trip and traveler is owner-checked; someone else's ID returns 404, so IDs can't be probed. Admins see everyone's audit events, members only their own. |
 
@@ -128,9 +132,10 @@ flowchart LR
 <td width="33%" valign="top">
 
 ### Decide
-- Itinerary with total, budget headroom and flags
-- Trade-off Ledger for flights and stays
+- Round-trip itinerary with total, savings, headroom and flags
+- Trade-off Ledger for outbound, return and stay
 - Swap any valid line item, totals recalculate
+- What-if simulator, side by side
 - Approve, or reject with a stored reason
 
 </td>
@@ -138,7 +143,8 @@ flowchart LR
 
 ### Track
 - Append-only audit trail with filters and CSV export
-- Analytics: spend, turnaround and approval rate per period
+- Analytics: spend, average savings, turnaround and approval rate per period
+- `GET /dashboard` for the same figures by year, quarter or month
 - Trip status timeline
 - Optional in-browser demo mode
 
@@ -148,7 +154,7 @@ flowchart LR
 
 ## ✦ Tech stack
 
-<img src="docs/assets/tech-stack.svg" alt="AI Trip Optimizer tech stack: Next.js 16, React 19, TypeScript, Tailwind CSS 4, shadcn/ui, React Query, FastAPI, SQLModel and Alembic, Pydantic, JWT, Google sign-in, Python 3.11, LangGraph, Gemini, a numbers guardrail, PostgreSQL 16, Neon, Docker, pytest, ESLint, Zod, Vercel and GitHub Actions" width="100%" />
+<img src="docs/assets/tech-stack.svg" alt="AI Trip Optimizer tech stack: Next.js 16, React 19, TypeScript, Tailwind CSS 4, shadcn/ui, React Query, FastAPI, SQLModel and Alembic, Pydantic, JWT, Google sign-in, Python 3.11, LangGraph, Gemini, a numbers guardrail, PostgreSQL 16, Neon, Docker, pytest, Vitest, ESLint, Vercel and GitHub Actions" width="100%" />
 
 | Layer | Technology |
 | :--- | :--- |
@@ -156,7 +162,7 @@ flowchart LR
 | **API** | FastAPI, SQLModel, Alembic, Pydantic, `python-jose` JWT + `passlib` bcrypt, `google-auth` |
 | **AI** | LangGraph (`search → check → compose`), `langchain-openai` against Gemini's OpenAI-compatible endpoint (`gemini-3.5-flash-lite`) |
 | **Data** | PostgreSQL 16 (Neon in production), Travelpayouts flight fares, Google Hotels via SerpApi |
-| **Quality** | pytest (153 tests, no network or keys needed), ESLint, TypeScript, GitHub Actions on every pull request |
+| **Quality** | pytest (188 tests, no network or keys needed), Vitest + Testing Library (32 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
 | **Delivery** | Frontend and API as two Vercel projects (API in `sin1`), Neon Postgres, Docker Compose for local dev |
 
 ## ✦ Architecture
@@ -168,13 +174,13 @@ flowchart LR
     FE -. "ID token" .-> GI[Google Identity]
     subgraph API["FastAPI · Vercel Python runtime"]
         direction TB
-        AU[auth · travelers · trips · audit] --> PL[LangGraph pipeline<br/>search · check · compose]
+        AU[auth · travelers · trips · what-if · dashboard · audit] --> PL[LangGraph pipeline<br/>search · check · compose]
     end
     API --> PG[(PostgreSQL · Neon<br/>6 tables)]
     PL --> TP[Travelpayouts<br/>flight fares]
     PL --> SA[SerpApi<br/>Google Hotels]
     PL --> GM[Gemini<br/>rationale only]
-    GH[GitHub Actions] -- "pytest · lint · build" --> API
+    GH[GitHub Actions] -- "pytest · vitest · lint · build" --> API
 ```
 
 ### API
@@ -185,8 +191,9 @@ flowchart LR
 | Travelers | `POST /traveler` · `GET /travelers` · `PUT /traveler/{id}` · `DELETE /traveler/{id}` |
 | Trips | `POST /trip` · `GET /trips` · `GET /trips/{id}` |
 | Optimizer | `POST /trips/{id}/optimize` · `GET /trips/{id}/itinerary` · `PATCH /trips/{id}/itinerary` |
+| What-if | `POST /trips/{id}/preview` · `POST /trips/{id}/preview/apply` |
 | Review | `POST /trips/{id}/review` · `POST /trips/{id}/decision` · `GET /trips/{id}/decision` |
-| Audit | `GET /audit` (filters: `trip_id`, `event_type`, `limit`) |
+| Dashboard & audit | `GET /dashboard` (`period`: `2026`, `2026-Q4`, `2026-11`) · `GET /audit` (filters: `trip_id`, `event_type`, `limit`) |
 
 Full request and response examples: [`docs/07_API_Specification.md`](docs/07_API_Specification.md) · live Swagger: [ai-trip-optimizer-api.vercel.app/docs](https://ai-trip-optimizer-api.vercel.app/docs)
 
@@ -219,8 +226,8 @@ Every key except `JWT_SECRET` and `DATABASE_URL` switches on one feature and can
 
 | Command | What it does |
 | :--- | :--- |
-| `cd backend && python -m pytest -q` | 153 backend tests on in-memory SQLite, with fixture fares and no LLM |
-| `cd frontend && npm run lint && npm run build` | the frontend checks CI runs |
+| `cd backend && python -m pytest -q` | 188 backend tests on in-memory SQLite, with fixture fares and no LLM |
+| `cd frontend && npm run lint && npm test && npm run build` | the frontend checks CI runs (Vitest in jsdom, no backend needed) |
 | `cd backend && alembic upgrade head` | apply migrations when running the API outside Docker |
 
 The full guide is in [`docs/23_Setup_Guide.md`](docs/23_Setup_Guide.md), and deployment in [`docs/13_CICD_and_Deployment.md`](docs/13_CICD_and_Deployment.md).
@@ -232,18 +239,18 @@ AI-Trip-Optimizer/
 ├── backend/                  # FastAPI API
 │   ├── app/
 │   │   ├── pipeline/         # LangGraph graph: search, check, compose, guardrail, edits
-│   │   ├── routers/          # auth, travelers, trips, audit
+│   │   ├── routers/          # auth, travelers, trips (+ what-if), dashboard, audit
 │   │   ├── travel_data.py    # Travelpayouts and SerpApi clients, with caching
 │   │   ├── audit.py          # writes audit events in the caller's transaction
 │   │   └── models.py         # 6 SQLModel tables
-│   ├── alembic/versions/     # 11 migrations
-│   └── tests/                # 153 tests, fixture fares in tests/fixtures
+│   ├── alembic/versions/     # 12 migrations
+│   └── tests/                # 188 tests, fixture fares in tests/fixtures
 ├── frontend/                 # Next.js 16 app
 │   └── src/
 │       ├── app/              # dashboard, planning, trips, analytics, audit, travelers, settings
 │       ├── components/
-│       └── lib/              # API client, mappers, store
-├── docs/                     # 24 planning and design documents
+│       └── lib/              # API client, mappers, store (tests sit next to the code as *.test.tsx)
+├── docs/                     # 25 planning, design and evaluation documents
 ├── scripts/brand/            # tech-stack image generator
 ├── .github/workflows/ci.yml  # tests, lint and build on every PR
 └── docker-compose.yml
@@ -257,7 +264,7 @@ AI-Trip-Optimizer/
 | [TRD](docs/04_TRD.md) · [System architecture](docs/05_System_Architecture.md) · [Database design](docs/06_Database_Design.md) | How it's built, the schema and every migration |
 | [API specification](docs/07_API_Specification.md) · [GenAI architecture](docs/08_GenAI_Architecture.md) | Every endpoint with real examples; the pipeline and its guardrail |
 | [Security](docs/11_Security_Design.md) · [Testing](docs/12_Testing_Strategy.md) · [CI/CD and deployment](docs/13_CICD_and_Deployment.md) | Auth, ownership checks, secrets; what the tests cover; how it ships |
-| [Evaluation metrics](docs/14_Evaluation_Metrics.md) | Accuracy and UX targets, with a measured self-assessment |
+| [Evaluation metrics](docs/14_Evaluation_Metrics.md) · [Usability check](docs/25_Usability_Check.md) | Accuracy and UX targets with a measured self-assessment; the user-test script and SUS form |
 | [Roadmap](docs/15_Roadmap.md) · [Risk register](docs/17_Risk_Register.md) · [ADRs](docs/18_Architecture_Decision_Records.md) | Plan vs. delivery, open risks, why each big choice was made |
 | [**Project status**](docs/24_Project_Status.md) | Every PRD item with its evidence, and what's left |
 
@@ -271,10 +278,12 @@ AI-Trip-Optimizer/
 - [x] LLM rationale behind a numbers guardrail (US-006)
 - [x] Edit a line item, approve, or reject with a reason (US-007)
 - [x] Append-only audit trail (US-010)
-- [x] Deployed on Vercel + Neon, CI on every pull request
-- [ ] Average savings on the analytics page for real accounts (US-010)
-- [ ] Return flights in the trip total
-- [ ] What-If Simulator (US-011, stretch)
+- [x] Dashboard: spend, average savings and turnaround per period (US-010)
+- [x] Round-trip totals: outbound, return and stay
+- [x] What-If Simulator (US-011, stretch)
+- [x] Deployed on Vercel + Neon, CI with backend and frontend tests on every pull request
+- [ ] Demo video (due Nov 25)
+- [ ] Usability sessions with 2–3 outside users (kit ready in `docs/25_Usability_Check.md`)
 
 Details and evidence: [`docs/24_Project_Status.md`](docs/24_Project_Status.md).
 

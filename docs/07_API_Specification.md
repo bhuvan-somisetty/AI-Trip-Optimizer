@@ -260,7 +260,7 @@ Deletes a traveler. Requires a valid JWT.
 ---
 
 ## Trips
-*(**Verified 2026-09-22** for `POST /trip`, `GET /trips` and `GET /trips/{id}` — `app/routers/trips.py` is built and every example below is real output captured from the running backend against the SQLite dev stand-in, plus 19 automated tests in `backend/tests/test_trips.py`. `optimize`, `GET /trips/{id}/itinerary`, `review` and `decision` were built 2026-10-08; `PATCH itinerary` and `preview` below are still **Planned**.)*
+*(**Verified 2026-09-22** for `POST /trip`, `GET /trips` and `GET /trips/{id}` — `app/routers/trips.py` is built and every example below is real output captured from the running backend against the SQLite dev stand-in, plus 19 automated tests in `backend/tests/test_trips.py`. `optimize`, `GET /trips/{id}/itinerary`, `review` and `decision` were built 2026-10-08, `PATCH itinerary` on 2026-11-12, and `preview` / `preview/apply` on 2026-11-13.)*
 
 **Ownership rule:** a user only ever sees trips they created. Asking for someone else's trip returns the same `404 Trip not found` as a trip that doesn't exist, so the API doesn't reveal which trip IDs exist. The check lives in one reusable dependency, `get_owned_trip`, that every future `/trips/{id}/...` route will reuse.
 
@@ -425,6 +425,8 @@ Runs the LangGraph pipeline on a saved trip: `search_node` finds real flight and
 
 **Status flow:** the trip is saved as `OPTIMIZING` before the pipeline starts, then ends as `OPTIMIZED` or `OPTIMIZATION_FAILED`. Only `DRAFT`, `OPTIMIZED` and `OPTIMIZATION_FAILED` trips can be optimized; re-running replaces the saved itinerary (one per trip, in the `itineraries` table).
 
+**Round trips (2026-11-13):** the flight back (`destination` → `origin` on the end date) is searched and picked the same way as the outbound one, and `total_cost` is outbound + return + stay. If no return fare is found, the trip is still built with `"return_flight": null` and a flag saying the total has no return flight in it; fares are cached and some dates have none. The itinerary also carries `savings` (PRD US-010): per line item, the median price of the options that met every rule minus the price chosen, summed. The example below was captured before return flights were added, so it shows neither field; a fixture run of BLR → DEL, 2026-11-01 to 2026-11-05, budget 20000 now gives outbound FL-1004 3,600, return FL-1009 3,300 and HT-2002 at 1,600 a night: `"total_cost": 13300.0, "savings": 9350.0`, and ledger rows such as `{ "kind": "return", "alternative": "FL-1008 SpiceJet economy, 0 stop(s), departs 2026-11-05", "price": 3900.0, "won": false, "reason": "Price: 600 more than FL-1009" }`.
+
 **Over budget is not a failure.** The cheapest itinerary that meets every preference is still returned, with `within_budget: false` and a flag naming the line items (PRD US-005). The run only fails when no flight (or, for an overnight trip, no hotel) is found or meets the preferences.
 
 **Rationale:** written by the LLM when `OPENAI_API_KEY` is set, otherwise by a fixed template from the same numbers. Every number in an LLM rationale must already appear in the itinerary's facts; if one doesn't, the run fails instead of showing it (product principle: no unsupported financial claims).
@@ -485,7 +487,7 @@ Hotel ledger rows show the whole stay's price (`price_per_night × nights`) so t
 **Response (404 Not Found)** — trip never optimized: `{ "detail": "Trip has not been optimized yet" }`; trip doesn't exist or isn't yours: `{ "detail": "Trip not found" }`.
 
 ### PATCH /trips/{id}/itinerary
-*(**Built 2026-11-12**, tests in `backend/tests/test_edit_itinerary.py`.)* Swaps the flight or the hotel for another option from the same search (PRD US-007). The client only names the option; the total, budget verdict and flags, Trade-off Ledger and rationale are all recomputed server-side, never client-supplied. Only options that pass every rule can be picked (not a fare on another day, not one that breaks a preference). The trip moves to `UNDER_REVIEW`. Requires a valid JWT and that the trip belongs to the requesting user.
+*(**Built 2026-11-12**, tests in `backend/tests/test_edit_itinerary.py`; return flights 2026-11-13, `test_return_and_savings.py`.)* Swaps the outbound flight, the return flight or the hotel for another option from the same search (PRD US-007). The client only names the option; the total, budget verdict and flags, Trade-off Ledger and rationale are all recomputed server-side, never client-supplied. Only options that pass every rule can be picked (not a fare on another day, not one that breaks a preference). The trip moves to `UNDER_REVIEW`. Requires a valid JWT and that the trip belongs to the requesting user.
 
 **Request:**
 ```json
@@ -494,7 +496,7 @@ Hotel ledger rows show the whole stay's price (`price_per_night × nights`) so t
   "option_id": "FL-1001"
 }
 ```
-`kind` is `flight` or `stay`; `option_id` is the id at the start of a Trade-off Ledger row.
+`kind` is `flight` (outbound), `return` or `stay`; `option_id` is the id at the start of a Trade-off Ledger row. A return flight that would leave before the outbound one lands (same-day trips) is refused. `savings` is recomputed too.
 
 **Response (200 OK)** — same shape as `POST /trips/{id}/optimize`, with `"status": "UNDER_REVIEW"`. The itinerary's `picked` lists the line items a reviewer chose by hand (`["flight"]` here), and the winning ledger row's reason reads `Picked by the reviewer; meets every trip preference`.
 
@@ -569,46 +571,70 @@ Hotel ledger rows show the whole stay's price (`price_per_night × nights`) so t
 **Response (404 Not Found)** — not decided yet: `{ "detail": "Trip has not been decided yet" }`; trip doesn't exist or isn't yours: `{ "detail": "Trip not found" }`.
 
 ### POST /trips/{id}/preview
-*(Stretch — What-If Simulator, PRD US-011.)* Re-runs the pipeline against one changed input (`budget` or a preference) with `persist:false`, and returns a diff against the current saved itinerary without saving anything. Requires a valid JWT.
+*(**Built 2026-11-13** — What-If Simulator, PRD US-011. Examples are real output from the backend on the test fixtures; tests in `backend/tests/test_what_if.py`.)*
 
-**Request:**
+Reruns the optimizer with changed inputs on the trip's **saved** search results and returns the result next to the saved itinerary, **without saving anything**. No provider is searched again, so a preview is instant, costs no API quota and compares the same fares and hotels. The rationale is the template one (no LLM call); applying the preview writes the real one. Only `OPTIMIZED` and `UNDER_REVIEW` trips can be previewed. Requires a valid JWT and that the trip belongs to the requesting user.
+
+**Request:** any of `budget`, `cabin_class` (`economy` / `premium_economy` / `business`), `max_stops` (0–2) and `min_hotel_rating` (0–5). Only the fields sent change. A preference sent as `null` is removed, so the optimizer stops screening on it; `budget` can't be `null`.
 ```json
 {
-  "budget": 70000
+  "max_stops": 0
 }
 ```
 
-**Response (200 OK):**
+**Response (200 OK)** — BLR → DEL, 2026-11-01 to 2026-11-05, budget 20000 (`preview` has the same shape as `POST /trips/{id}/optimize` and is shortened here):
 ```json
 {
-  "diff": {
-    "total_cost": { "before": 54200, "after": 52100 },
-    "flight_option": { "before": { "carrier": "IndiGo" }, "after": { "carrier": "Air India" } }
-  }
+  "inputs": [ { "field": "max_stops", "before": null, "after": 0 } ],
+  "preview": { "status": "OPTIMIZED", "itinerary": { "total_cost": 14400.0, "savings": 9800.0, "flags": [], "...": "..." }, "tradeoff_ledger": ["..."], "reason": null },
+  "diff": [
+    { "field": "flight", "before": "FL-1004", "after": "FL-1003" },
+    { "field": "return_flight", "before": "FL-1009", "after": "FL-1008" },
+    { "field": "total_cost", "before": 13300.0, "after": 14400.0 },
+    { "field": "savings", "before": 9350.0, "after": 9800.0 }
+  ]
+}
+```
+`diff` lists only what changes (`flight`, `return_flight`, `hotel`, `total_cost`, `within_budget`, `savings`, number of `flags`). Savings can rise while the total rises: they are measured against the options that meet the *new* rules.
+
+**Response (200 OK)** — the change leaves no valid itinerary; the preview says why and nothing is saved:
+```json
+{
+  "inputs": [ { "field": "min_hotel_rating", "before": null, "after": 5.0 } ],
+  "preview": { "status": "OPTIMIZATION_FAILED", "itinerary": null, "tradeoff_ledger": [], "reason": "No hotel in DEL meets the trip's preferences" },
+  "diff": ["..."]
 }
 ```
 
-**Response (401 Unauthorized)** — missing/invalid JWT:
-```json
-{
-  "detail": "Could not validate credentials"
-}
-```
+**Response (400 Bad Request)** — every input sent already has that value: `{ "detail": "Nothing to preview: every input already has that value" }`
 
-**Response (404 Not Found)** — trip doesn't exist:
+**Response (422 Unprocessable Entity)** — an empty body, `max_stops` outside 0–2, an unknown cabin, a negative or `null` budget.
+
+**Response (404 Not Found)** — trip doesn't exist, or belongs to another user: `{ "detail": "Trip not found" }`
+
+**Response (409 Conflict)** — trip isn't `OPTIMIZED` or `UNDER_REVIEW` (for example `DECIDED`), or its itinerary was saved before search results were kept.
+
+### POST /trips/{id}/preview/apply
+*(**Built 2026-11-13**.)* Saves a preview: same request body and checks as `POST /trips/{id}/preview`. The trip's `budget` and preferences change, the optimizer picks every line item again from the saved search, the LLM writes the rationale, and the trip moves to `UNDER_REVIEW`. Hand-picked edits from `PATCH /trips/{id}/itinerary` are dropped, since the line items are chosen again under the new inputs. Recorded in the audit trail as `ITINERARY_EDITED` with `"what_if": true`, the inputs and the diff, e.g. summary `Applied what-if (max_stops None -> 0); total 13,300 -> 14,400`.
+
+**Response (200 OK)** — same shape as `POST /trips/{id}/optimize`, with `"status": "UNDER_REVIEW"`.
+
+**Response (400 Bad Request)** — the change can't build an itinerary; nothing is saved:
 ```json
 {
-  "detail": "Trip not found"
+  "detail": "This change can't build an itinerary, so nothing was saved: No hotel in DEL meets the trip's preferences"
 }
 ```
 
 ---
 
 ## Dashboard & Audit
-*(`GET /audit` built 2026-11-12. `GET /dashboard` is not built: the Analytics page computes the same totals in the browser from the user's trips, which come from the API.)*
+*(`GET /audit` built 2026-11-12, `GET /dashboard` 2026-11-13.)*
 
 ### GET /dashboard
-Returns total spend, average savings, and average turnaround time for a period (PRD US-010 — "As an **admin**..."). Requires a valid JWT with the `admin` role.
+*(**Built 2026-11-13**, `app/routers/dashboard.py`, tests in `backend/tests/test_dashboard.py`; response below captured from the running app.)* Returns total spend, average savings and average turnaround time for a period (PRD US-010). Requires a valid JWT. **Admins see the whole team's trips, members only their own** (the same split as `GET /audit`; the PRD story is written for an admin, and members get the same numbers for their own trips).
+
+**Query parameter (optional):** `period` as a year (`2026`), a quarter (`2026-Q4`) or a month (`2026-11`); left out, it covers all time. A trip counts in the period it was **decided** in (`trips_created` counts by creation date). Spend and savings come from **approved** itineraries; turnaround is from the trip being created to its decision, over every decided trip. Averages are `null` when there is nothing to average.
 
 *(Client query: `GET /dashboard?period=2026-Q4`)*
 
@@ -616,25 +642,21 @@ Returns total spend, average savings, and average turnaround time for a period (
 ```json
 {
   "period": "2026-Q4",
-  "total_spend": 412000,
-  "avg_savings": 8300,
-  "avg_turnaround_hours": 2.4
+  "trips_created": 1,
+  "trips_decided": 1,
+  "approved": 1,
+  "rejected": 0,
+  "total_spend": 14400.0,
+  "avg_savings": 9800.0,
+  "avg_turnaround_hours": 0.0
 }
 ```
 
-**Response (401 Unauthorized)** — missing/invalid JWT:
-```json
-{
-  "detail": "Could not validate credentials"
-}
-```
+**Response (422 Unprocessable Entity)** — a period in another format: `{ "detail": "period must look like 2026, 2026-Q4 or 2026-11" }`
 
-**Response (403 Forbidden)** — logged in but not an admin:
-```json
-{
-  "detail": "Admin access required"
-}
-```
+**Response (401 Unauthorized)** — missing/invalid JWT: `{ "detail": "Not authenticated" }`
+
+The Analytics page computes the same figures in the browser from the user's trips (which come from the API), so it can switch periods without a round trip; `GET /dashboard` gives the same numbers to API clients and to admins across the team.
 
 ### GET /audit
 *(**Verified** — built 2026-11-11, `app/routers/audit.py`; response below captured from the running app, not invented.)*
@@ -697,7 +719,7 @@ Returns audit event history, newest first. Independent of dashboard aggregation 
 - All monetary figures returned by `/trips/{id}/optimize` are computed in code — the LLM-authored `rationale` field never introduces a number not already present elsewhere in the response (product principle: no unsupported financial claims).
 
 ## Live Demo Notes
-For the viva, every built endpoint can be demoed for real, on the live API at https://ai-trip-optimizer-api.vercel.app/docs or locally as below. Only `GET /dashboard` and `POST /trips/{id}/preview` (stretch) aren't built.
+For the viva, every built endpoint can be demoed for real, on the live API at https://ai-trip-optimizer-api.vercel.app/docs or locally as below. Every endpoint in this file is built.
 1. Start the backend against the SQLite dev stand-in: `DATABASE_URL="sqlite:///./test.db" uvicorn app.main:app --port 8010` from `backend/`, with the venv active.
 2. Open `http://127.0.0.1:8010/docs` — FastAPI's interactive Swagger page. "Try it out" on `/auth/register`, `/auth/login`, `/traveler`, `/travelers`, `/traveler/{id}` (PUT and DELETE), `/trip`, `/trips` and `/trips/{id}` shows the real request/response live, including every error case above, without typing anything in a terminal during the demo. For the traveler endpoints, click "Authorize" first and paste in a token from `/auth/login`.
 3. Or via terminal, if a command-line demo is preferred over Swagger:

@@ -49,15 +49,17 @@ PostgreSQL. No vector extension is needed — every table below is plain relatio
 |---|---|---|
 | id | UUID PK | |
 | trip_id | UUID FK → trips.id, unique | one itinerary per trip; re-optimizing replaces it (earlier runs stay in `audit_events`) |
-| flight | json | chosen flight line item |
+| flight | json | chosen outbound flight |
+| return_flight | json, nullable | chosen flight back on the end date; `NULL` when no return fare was found (a flag says so) and on itineraries saved before 2026-11-13 (migration `20261113_100000`) |
 | hotel | json, nullable | chosen stay; `NULL` for a same-day trip |
-| total_cost | numeric(12,2) | code-computed, never LLM-generated |
+| total_cost | numeric(12,2) | outbound + return + stay, code-computed, never LLM-generated |
+| savings | numeric(12,2), nullable | PRD US-010: per line item, the median price of the options that met every rule minus the chosen price, summed (`14_Evaluation_Metrics.md`); `NULL` on itineraries saved before 2026-11-13 |
 | within_budget | boolean | |
 | flags | json | budget/constraint issues, each naming the rule and the line item (US-005) |
 | rationale | text | LLM-written, checked against the computed numbers before it is saved (US-006) |
 | tradeoff_ledger | json | every option considered: `kind`, `alternative`, `price`, `won`, `reason` (US-004) |
-| search_results | json, nullable | the run's flight and hotel options, so a line item can be swapped without searching again (migration `20261112_110000`) |
-| picked | json | line items (`flight` / `stay`) a reviewer swapped in by hand |
+| search_results | json, nullable | the run's outbound, return and hotel options, so a line item can be swapped, or a What-If previewed, without searching again (migration `20261112_110000`) |
+| picked | json | line items (`flight` / `return` / `stay`) a reviewer swapped in by hand |
 | created_at | timestamptz | |
 
 ### `decisions`
@@ -102,5 +104,6 @@ Every schema change ships as an Alembic migration file — no manual/ad-hoc sche
 | `20261112_100000` | nullable `users.hashed_password`, for Sign in with Google |
 | `20261112_110000` | `itineraries.search_results` and `itineraries.picked`, for line-item edits |
 | `20261112_120000` | aligns an `audit_events` table made by an earlier draft (production only; does nothing on a fresh database) |
+| `20261113_100000` | `itineraries.return_flight` and `itineraries.savings`, for round-trip totals and the savings metric |
 
-Production (Neon) is at `20261112_120000`. Vercel doesn't run migrations, so they are applied by hand before a backend deploy (`13_CICD_and_Deployment.md`).
+Production (Neon) is at `20261112_120000` until `20261113_100000` is applied, which has to happen before the backend with return flights is deployed. Vercel doesn't run migrations, so they are applied by hand before a backend deploy (`13_CICD_and_Deployment.md`).

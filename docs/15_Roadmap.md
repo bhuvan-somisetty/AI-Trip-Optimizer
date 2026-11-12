@@ -4,16 +4,18 @@
 
 This is the high-level month/week shape. Day-to-day, per-person tasks with implementation steps live in the "AI Trip Optimizer — Week-by-Week Build Plan" Google Doc (search Drive by that title) — this file is the milestone-level summary for the docs kit.
 
-## Status (2026-11-12)
+## Status (2026-11-13)
 | Area | Status |
 |---|---|
 | Month 1 — auth, travelers, trips, UI shell | **Done** |
 | Month 2 — LangGraph pipeline, Trade-off Ledger, guardrail, review/approve, audit trail | **Done** (audit trail landed in Week 11, 2026-11-11) |
 | Week 9 — authorization on trip-scoped endpoints, hardening | **Done** (owner checks return 404; tests enforce foreign keys) |
-| Week 11 — dashboard | **Partly done:** the Analytics page shows spend, turnaround and approval rate per period, computed in the browser from the API's trips; no `GET /dashboard`, and average savings is 0 for real accounts |
+| Week 11 — dashboard | **Done (2026-11-13):** `GET /dashboard` and the Analytics page show spend, average savings and turnaround per period; round-trip totals |
 | Week 11 — eval harness | **Done** as a self-assessment with live measurements (`14_Evaluation_Metrics.md` §4) |
 | Week 11 — security review | **Done** (`11_Security_Design.md`) |
-| Week 11 — stretch: What-If Simulator, multi-agent | **Not started** (R-005) |
+| Week 11 — stretch: What-If Simulator | **Done (2026-11-13):** preview and apply on the API, What-if tab on the trip page |
+| Week 11 — stretch: multi-agent pipeline | **Not started** (R-005); deliberately left out |
+| Week 11 — frontend tests | **Done (2026-11-13):** 32 component and unit tests in CI |
 | Week 12 — deployment | **Done:** Vercel + Neon, live since 2026-11-12, with GitHub Actions CI |
 | Week 12 — demo video | **Not done** (due Nov 25) |
 | Week 12 — final documentation pass | **Done** (2026-11-12) |

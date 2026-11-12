@@ -42,9 +42,9 @@ GROUPS = [
         ("Docker", "local dev", "docker", "#2496ed"),
     ]),
     ("Quality", [
-        ("pytest", "153 tests", "pytest", "#0a9edc"),
+        ("pytest", "188 tests", "pytest", "#0a9edc"),
+        ("Vitest", "32 tests", "vitest", "#729b1b"),
         ("ESLint", "9", "eslint", "#8080f2"),
-        ("Zod", "4", "zod", "#4a7ad8"),
     ]),
     ("Platform", [
         ("Vercel", "web + API", "vercel", "#ffffff"),

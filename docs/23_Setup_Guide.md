@@ -60,13 +60,14 @@ Runs at `http://localhost:3000`. Settings go in `frontend/.env.local`:
 ## 5. Run Tests
 ```
 cd backend
-python -m pytest -q             # 153 tests, no network or keys needed
+python -m pytest -q             # 188 tests, no network or keys needed
 
 cd frontend
 npm run lint
+npm test                        # 32 component and unit tests, no backend needed
 npm run build
 ```
-CI runs the same three checks on every pull request (`.github/workflows/ci.yml`).
+CI runs the same checks on every pull request (`.github/workflows/ci.yml`).
 
 ## 6. Common Issues
 - **Migrations out of sync:** run `alembic upgrade head` again; check with `alembic current`.
