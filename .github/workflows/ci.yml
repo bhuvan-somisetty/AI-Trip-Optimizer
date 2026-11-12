@@ -30,7 +30,7 @@ jobs:
       - run: python -m pytest -q
 
   frontend:
-    name: Frontend lint and build
+    name: Frontend lint, tests and build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -44,4 +44,6 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      # Component and unit tests in jsdom; fetch and the router are mocked, so no backend is needed.
+      - run: npm test
       - run: npm run build
