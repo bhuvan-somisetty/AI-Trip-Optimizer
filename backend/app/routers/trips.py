@@ -63,6 +63,8 @@ def create_trip(
         created_by=current_user.id,
     )
     session.add(trip)
+    # Insert the trip first: the event references it, and the flush doesn't order the two.
+    session.flush()
     record(
         session, user=current_user, event_type=AuditEventType.TRIP_CREATED, trip_id=trip.id,
         summary=f"Created trip {trip.origin}→{trip.destination} for {traveler.name}, budget {trip.budget:,.0f}",
