@@ -11,7 +11,7 @@ This project has one GenAI component: the **LangGraph optimization pipeline** (s
 A `TypedDict` carrying: the trip request (dates/budget/preferences), the candidate flight/stay options found, the budget/constraint check result, and the final composed itinerary.
 
 ### Nodes
-1. **`search_node`** — pure Python; queries mock flight/hotel data, no LLM call.
+1. **`search_node`** — pure Python; queries real flight/hotel fares (Travelpayouts, Google Hotels via SerpApi; fixtures in tests), no LLM call.
 2. **`check_node`** — pure Python; deterministically checks each candidate against budget and constraint rules. No LLM call — this keeps the "why it failed budget" reasoning trustworthy and reproducible.
 3. **`compose_node`** — the only LLM call in the pipeline. Uses `.with_structured_output()` (via `langchain-openai`) so the model returns a typed object: `{rationale: str, tradeoff_ledger: [{alternative, price, won, reason}]}`. The prompt explicitly passes the code-computed totals and instructs the model never to introduce a different number.
 

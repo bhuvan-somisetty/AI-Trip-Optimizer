@@ -21,7 +21,7 @@ No AI/LLM code this month — pure plumbing, so Month 2 isn't fighting infrastru
 - **Week 9:** Authorization checks on trip-scoped endpoints, API input/output hardening and testing.
 - **Week 10:** Buffer/polish — extra hardening on the optimization pipeline, UI polish, catch-up time.
 - **Week 11:** Dashboard, eval harness (`14_Evaluation_Metrics.md`), security review, stretch goals if on schedule (What-If Simulator first, multi-agent only if time remains).
-- **Week 12:** Deployment (Vercel + Render/Railway), demo video, final documentation pass.
+- **Week 12:** Deployment (Vercel + Neon; planned as Vercel + Render/Railway), demo video, final documentation pass.
 
 ## Milestone Dates (from the instructor's brief — confirm current before acting)
 | Milestone | Date |

@@ -22,7 +22,7 @@
 | Auth | `passlib[bcrypt]` + `python-jose[cryptography]` | Team choice | Hand-rolled JWT, sufficient for 2 roles (ADR-003) |
 | Testing | `pytest` + `httpx` (backend), component tests (frontend) | Team choice | See `12_Testing_Strategy.md` |
 | Frontend hosting | Vercel | Team choice | Free-tier friendly, auto-deploy from `main` |
-| Backend + DB hosting | Render or Railway | Team choice | Free-tier friendly, Postgres support |
+| Backend + DB hosting | Vercel (Python runtime) + Neon PostgreSQL | Team choice (amended 2026-11-12, was Render or Railway) | Free tier, one host for both apps, managed Postgres |
 | Local dev | Docker Compose | Team choice | Postgres + backend together, avoids environment drift |
 
 ## Frontend — `package.json` dependencies
