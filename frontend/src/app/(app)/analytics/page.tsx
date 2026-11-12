@@ -124,7 +124,7 @@ export default function AnalyticsPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total approved spend" value={formatCompactInr(d.spend)} icon={IndianRupee} hint={`${d.approved.length} approved trips · ${formatInr(d.perTraveler)}/traveler`} />
-        <StatCard label="Average savings" value={formatInr(d.avgSavings)} icon={PiggyBank} iconClassName="bg-success/15 text-success" hint={`${formatCompactInr(d.savings)} total · ${d.savingsPct}% below typical`} />
+        <StatCard label="Average savings" value={formatInr(d.avgSavings)} icon={PiggyBank} iconClassName="bg-success/15 text-success" hint={`${formatCompactInr(d.savings)} total · ${d.savingsPct}% below ${s.session?.mode === "api" ? "typical valid options" : "typical"}`} />
         <StatCard label="Avg. turnaround" value={d.avgTurn >= 24 ? `${(d.avgTurn / 24).toFixed(1)} days` : `${d.avgTurn.toFixed(1)} h`} icon={Timer} iconClassName="bg-warning/15 text-amber-600 dark:text-warning" hint="Request created → decision" />
         <StatCard label="Approval rate" value={`${d.approvalRate}%`} icon={BadgeCheck} iconClassName="bg-sky-500/10 text-sky-600" hint={`${d.decided.length} decisions in period`} />
       </div>

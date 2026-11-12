@@ -420,9 +420,7 @@ export const actions = {
     if (!trip?.itinerary) return;
     const before = trip.itinerary.totalCost;
     if (isApi()) {
-      // The backend books one outbound flight, so "return" never reaches it.
-      if (kind === "return") return;
-      const result = await remote((tok) => api.editItinerary(tok, id, kind === "stay" ? "stay" : "flight", optionId));
+      const result = await remote((tok) => api.editItinerary(tok, id, kind === "outbound" ? "flight" : kind, optionId));
       const itinerary = toItinerary(result, trip, { generatedAt: new Date().toISOString(), runMs: trip.itinerary.runMs });
       if (!itinerary) return;
       const label = itinerary.ledger.find((l) => l.kind === kind && l.won)?.label ?? optionId;
@@ -430,7 +428,7 @@ export const actions = {
         log({
           tripId: id,
           type: "ITINERARY_EDITED",
-          summary: `Swapped ${kind === "stay" ? "hotel" : "flight"} to ${label}; total ${formatInr(before)} → ${formatInr(itinerary.totalCost)}`,
+          summary: `Swapped ${kind === "stay" ? "hotel" : kind === "return" ? "return flight" : "flight"} to ${label}; total ${formatInr(before)} → ${formatInr(itinerary.totalCost)}`,
           payload: { kind, optionId, before, after: itinerary.totalCost },
         }),
       ]);
@@ -460,6 +458,36 @@ export const actions = {
         payload: { outcome, reason: reason.trim() || null },
       }),
     ]);
+  },
+  /** PRD US-011 in API mode: the server reruns the optimizer on the saved search; nothing is saved. */
+  async previewWhatIf(id: string, body: api.WhatIfBody) {
+    const trip = state.trips.find((t) => t.id === id);
+    if (!trip) throw new Error("Trip not found.");
+    const res = await remote((tok) => api.previewTrip(tok, id, body));
+    const changed = { ...trip, budget: body.budget ?? trip.budget };
+    return { ...res, itinerary: toItinerary(res.preview, changed, { generatedAt: new Date().toISOString() }) };
+  },
+  /** Saves a What-If preview on the server: the trip's inputs change and its itinerary is rebuilt. */
+  async applyWhatIf(id: string, body: api.WhatIfBody) {
+    const trip = state.trips.find((t) => t.id === id);
+    if (!trip?.itinerary) throw new Error("Trip not found.");
+    const before = trip.itinerary.totalCost;
+    const result = await remote((tok) => api.applyPreview(tok, id, body));
+    const filters = { ...trip.filters };
+    if (body.cabin_class) filters.cabin = body.cabin_class;
+    if (body.max_stops !== undefined && body.max_stops !== null) filters.maxStops = body.max_stops;
+    if (typeof body.min_hotel_rating === "number") filters.minHotelRating = body.min_hotel_rating;
+    const next = { ...trip, budget: body.budget ?? trip.budget, filters };
+    const itinerary = toItinerary(result, next, { generatedAt: new Date().toISOString(), runMs: trip.itinerary.runMs });
+    patchTrip(id, { budget: next.budget, filters, itinerary, status: result.status }, [
+      log({
+        tripId: id,
+        type: "ITINERARY_EDITED",
+        summary: `Applied what-if; total ${formatInr(before)} → ${formatInr(itinerary?.totalCost ?? before)}`,
+        payload: { whatIf: true, ...body },
+      }),
+    ]);
+    return itinerary;
   },
   applyPreview(id: string, patch: Partial<Trip>) {
     const trip = state.trips.find((t) => t.id === id);

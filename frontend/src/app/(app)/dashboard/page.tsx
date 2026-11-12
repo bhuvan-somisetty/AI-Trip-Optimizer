@@ -88,7 +88,7 @@ export default function DashboardPage() {
           <StatCard label="Approved Spend" value={formatCompactInr(m.spend)} icon={IndianRupee} trend={{ value: `${Math.abs(m.spendTrend)}%`, direction: m.spendTrend >= 0 ? "up" : "down", positive: m.spendTrend <= 0 }} />
         </Reveal>
         <Reveal delay={0.2}>
-          <StatCard label="Optimizer Savings" value={formatCompactInr(m.savings)} icon={PiggyBank} iconClassName="bg-success/15 text-success" hint={`${m.savingsPct}% below typical market cost`} />
+          <StatCard label="Optimizer Savings" value={formatCompactInr(m.savings)} icon={PiggyBank} iconClassName="bg-success/15 text-success" hint={`${m.savingsPct}% below ${s.session?.mode === "api" ? "a typical option that met every rule" : "typical market cost"}`} />
         </Reveal>
       </div>
 

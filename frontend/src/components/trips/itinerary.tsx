@@ -17,11 +17,13 @@ export function CostSummary({ trip, it }: { trip: Trip; it: Itinerary }) {
       <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
         <Metric label="Total cost" value={formatInr(it.totalCost)} sub={`${it.travelers} traveler${it.travelers > 1 ? "s" : ""} · ${it.nights} night${it.nights > 1 ? "s" : ""}`} strong />
         <Metric label="Budget" value={formatInr(trip.budget)} sub={over ? `${formatInr(it.totalCost - trip.budget)} over` : `${formatInr(trip.budget - it.totalCost)} headroom`} tone={over ? "bad" : "good"} />
-        {/* The server optimizer has no market baseline, so its itineraries report baselineCost 0. */}
-        {it.baselineCost > 0 ? (
+        {/* Server itineraries saved before savings were worked out report baselineCost 0. */}
+        {it.baselineCost > 0 && it.savingsBasis === "valid-options" ? (
+          <Metric label="Savings" value={formatInr(it.savings)} sub={`vs ${formatInr(it.baselineCost)} for typical options that met every rule`} tone={it.savings > 0 ? "good" : undefined} />
+        ) : it.baselineCost > 0 ? (
           <Metric label="Savings vs typical" value={formatInr(it.savings)} sub={`Typical market cost ${formatInr(it.baselineCost)}`} tone={it.savings > 0 ? "good" : undefined} />
         ) : (
-          <Metric label="Savings vs typical" value="Not estimated" sub="No market baseline for this route" />
+          <Metric label="Savings" value="Not worked out" sub="Optimize the trip again to see its savings" />
         )}
         <Metric label="Options evaluated" value={String(it.ledger.length)} sub={it.runMs > 0 ? `Pipeline ran in ${it.runMs} ms` : "Listed in the Trade-off Ledger"} />
       </div>

@@ -144,9 +144,14 @@ export type Itinerary = {
   flightCost: number;
   stayCost: number;
   totalCost: number;
-  /** 0 for server itineraries: only the local demo optimizer has a market baseline. */
+  /** What savings are measured against; 0 when there is no figure (server itineraries saved before savings existed). */
   baselineCost: number;
   savings: number;
+  /**
+   * "market": the demo optimizer's typical market cost for the route and stay.
+   * "valid-options": the median price of the server's options that met every rule (docs/14_Evaluation_Metrics.md).
+   */
+  savingsBasis?: "market" | "valid-options";
   ledger: LedgerEntry[];
   issues: ConstraintIssue[];
   rationale: string;
