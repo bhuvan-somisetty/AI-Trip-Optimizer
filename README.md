@@ -84,12 +84,12 @@ The core design principle is **explainability over automation**. The system neve
 ### Backend
 - **FastAPI** (Python)
 - **SQLModel** + **Alembic** migrations
-- **PostgreSQL** + **pgvector** (relational + vector search, one database)
+- **PostgreSQL** (Neon in production)
 - **LangGraph** + `langchain-core`: AI orchestration
-- **OpenAI** (`gpt-4o-mini`): swappable behind one interface
+- Any **OpenAI-compatible** LLM for the rationale (Gemini `gemini-3.5-flash-lite` on the live site), behind a numbers guardrail
 - **passlib** + **python-jose**: auth (hand-rolled JWT)
-- **pypdf**: document ingestion
-- Hosted on **Render/Railway**
+- **google-auth**: Sign in with Google
+- Hosted on **Vercel** (Python runtime), CI on **GitHub Actions**
 
 </td>
 </tr>

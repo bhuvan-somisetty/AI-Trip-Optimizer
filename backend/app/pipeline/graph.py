@@ -79,6 +79,26 @@ def screen(options: list[dict], rule_broken, preferences: dict, rejected: list) 
     return passing
 
 
+def price_check(request: dict, flight: dict | None, hotel: dict | None, nights: int) -> tuple[float, bool, str | None]:
+    # Total cost and the budget verdict, with a flag naming each line item when it's over.
+    flight_cost = flight["price"] if flight else 0
+    hotel_cost = hotel["price_per_night"] * nights if hotel else 0
+    total_cost = float(flight_cost + hotel_cost)
+    within_budget = total_cost <= request["budget"]
+    if within_budget:
+        return total_cost, True, None
+    items = []
+    if flight:
+        items.append(f"flight {flight['id']} {flight_cost:,}")
+    if hotel:
+        items.append(f"hotel {hotel['id']} {nights} night(s) {hotel_cost:,}")
+    flag = (
+        f"Total {total_cost:,.0f} is {total_cost - request['budget']:,.0f} over the "
+        f"{request['budget']:,.0f} budget ({' + '.join(items)})"
+    )
+    return total_cost, False, flag
+
+
 def check_node(state: PipelineState) -> dict:
     # Pure Python, no LLM: picks the cheapest option that passes every rule and does
     # the money maths here, so the budget verdict is reproducible.
@@ -128,20 +148,9 @@ def check_node(state: PipelineState) -> dict:
         elif state["hotel_options"] and hotel is None:
             flags.append(f"No hotel in {request['destination']} meets the trip's preferences")
 
-    flight_cost = flight["price"] if flight else 0
-    hotel_cost = hotel["price_per_night"] * nights if hotel else 0
-    total_cost = float(flight_cost + hotel_cost)
-    within_budget = total_cost <= request["budget"]
-    if not within_budget:
-        items = []
-        if flight:
-            items.append(f"flight {flight['id']} {flight_cost:,}")
-        if hotel:
-            items.append(f"hotel {hotel['id']} {nights} night(s) {hotel_cost:,}")
-        flags.append(
-            f"Total {total_cost:,.0f} is {total_cost - request['budget']:,.0f} over the "
-            f"{request['budget']:,.0f} budget ({' + '.join(items)})"
-        )
+    total_cost, within_budget, budget_flag = price_check(request, flight, hotel, nights)
+    if budget_flag:
+        flags.append(budget_flag)
 
     return {
         "check": {
@@ -168,14 +177,15 @@ def hotel_label(hotel: dict) -> str:
     return f"{hotel['id']} {hotel['name']}, {rating}"
 
 
-def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id) -> list[dict]:
+def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id, picked=False) -> list[dict]:
     # Every option search_node found gets one row: the winner, or why it lost.
     # `kind` ("flight" or "stay") lets clients group rows without parsing option ids.
+    # `picked` means a reviewer chose this line item by hand instead of the optimizer.
     entries = []
     for option in sorted(options, key=price_of):
         price = float(price_of(option))
         if chosen and option["id"] == chosen["id"]:
-            reason = "Cheapest option that meets every trip preference"
+            reason = PICKED_REASON if picked else "Cheapest option that meets every trip preference"
         elif option["id"] in rejected_by_id and rejected_by_id[option["id"]]["rule"] == "travel_date":
             reason = f"Different day: {rejected_by_id[option['id']]['detail']}"
             if chosen:
@@ -185,18 +195,22 @@ def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id) -> li
             rejection = rejected_by_id[option["id"]]
             reason = f"Preference {rejection['rule']}: {rejection['detail']}"
         else:
-            reason = f"Price: {price - price_of(chosen):,.0f} more than {chosen['id']}"
-        entries.append({"kind": kind, "alternative": label(option), "price": price, "won": option is chosen, "reason": reason})
+            difference = price - price_of(chosen)
+            reason = f"Price: {abs(difference):,.0f} {'less' if difference < 0 else 'more'} than {chosen['id']}"
+        won = bool(chosen) and option["id"] == chosen["id"]
+        entries.append({"kind": kind, "alternative": label(option), "price": price, "won": won, "reason": reason})
     return entries
 
 
 def build_ledger(state: PipelineState) -> list[dict]:
     check = state["check"]
     nights = check["nights"]
+    picked = state.get("picked", [])
     rejected_by_id = {r["option_id"]: r for r in check["rejected"]}
     ledger = ledger_entries(
         "flight",
-        state["flight_options"], check["flight"], lambda f: f["price"], flight_label, rejected_by_id
+        state["flight_options"], check["flight"], lambda f: f["price"], flight_label, rejected_by_id,
+        picked="flight" in picked,
     )
     if nights > 0:
         ledger += ledger_entries(
@@ -206,12 +220,16 @@ def build_ledger(state: PipelineState) -> list[dict]:
             lambda h: h["price_per_night"] * nights,
             hotel_label,
             rejected_by_id,
+            picked="stay" in picked,
         )
     return ledger
 
 
 # check_node's selection rule, stated once so the rationale can explain the choice.
 WHY_CHOSEN = "cheapest option that meets every trip preference"
+# A line item a reviewer swapped in by hand (edit_itinerary).
+WHY_PICKED = "picked by the reviewer from the options that meet every trip preference"
+PICKED_REASON = "Picked by the reviewer; meets every trip preference"
 
 
 def rationale_facts(state: PipelineState) -> dict:
@@ -219,6 +237,7 @@ def rationale_facts(state: PipelineState) -> dict:
     request = state["request"]
     check = state["check"]
     hotel = check["hotel"]
+    picked = state.get("picked", [])
     return {
         "route": f"{request['origin']} to {request['destination']}",
         "dates": f"{request['start_date'].isoformat()} to {request['end_date'].isoformat()}",
@@ -226,7 +245,7 @@ def rationale_facts(state: PipelineState) -> dict:
         "flight": {
             "option": flight_label(check["flight"]),
             "price": check["flight"]["price"],
-            "why_chosen": WHY_CHOSEN,
+            "why_chosen": WHY_PICKED if "flight" in picked else WHY_CHOSEN,
             "options_compared": len(state["flight_options"]),
         },
         "hotel": None
@@ -236,7 +255,7 @@ def rationale_facts(state: PipelineState) -> dict:
             "price_per_night": hotel["price_per_night"],
             "nights": check["nights"],
             "stay_cost": hotel["price_per_night"] * check["nights"],
-            "why_chosen": WHY_CHOSEN,
+            "why_chosen": WHY_PICKED if "stay" in picked else WHY_CHOSEN,
             "options_compared": len(state["hotel_options"]),
         },
         "total_cost": check["total_cost"],
@@ -255,7 +274,12 @@ def template_rationale(facts: dict) -> str:
             f"and hotel {hotel['option']} at {hotel['price_per_night']:,.0f} a night for "
             f"{hotel['nights']} night(s) ({hotel['stay_cost']:,.0f})"
         )
-    text = " ".join(parts) + f", the cheapest options that meet every trip preference. "
+    by_hand = [item for item in (facts["flight"], facts["hotel"]) if item and item["why_chosen"] == WHY_PICKED]
+    if by_hand:
+        which = "these options" if len(by_hand) > 1 else "one of them"
+        text = " ".join(parts) + f". The reviewer picked {which} by hand from the options that meet every trip preference. "
+    else:
+        text = " ".join(parts) + ", the cheapest options that meet every trip preference. "
     text += f"Total cost is {facts['total_cost']:,.0f} against a budget of {facts['budget']:,.0f}, "
     if facts["within_budget"]:
         text += f"leaving {facts['difference_from_budget']:,.0f} unspent."
@@ -299,6 +323,30 @@ def get_llm():
     )
 
 
+def write_rationale(facts: dict) -> tuple[str, str | None]:
+    """The LLM's rationale, or the template one when no LLM is set up or the call fails.
+
+    The second value is the guardrail failure (docs/08_GenAI_Architecture.md): set when the
+    LLM's prose used a number that isn't in the facts, so the caller never shows it.
+    """
+    llm = get_llm()
+    if llm is not None:
+        facts_text = json.dumps(facts, indent=2)
+        rationale = None
+        try:
+            rationale = llm.invoke(RATIONALE_PROMPT.format(facts=facts_text)).content.strip() or None
+        except Exception:
+            # A busy or rate-limited LLM shouldn't fail a trip whose choices are already made.
+            logger.warning("Rationale LLM call failed, using the template rationale", exc_info=True)
+        if rationale is not None:
+            invented = numbers_in(rationale) - numbers_in(facts_text)
+            if invented:
+                listed = ", ".join(f"{n:g}" for n in sorted(invented))
+                return rationale, f"Rationale used numbers not in the itinerary: {listed}"
+            return rationale, None
+    return template_rationale(facts), None
+
+
 def compose_node(state: PipelineState) -> dict:
     # The only LLM call in the pipeline, and it only writes prose: the choice, the total
     # and the Trade-off Ledger all come from check_node's numbers.
@@ -307,25 +355,10 @@ def compose_node(state: PipelineState) -> dict:
     if check["flight"] is None or hotel_missing:
         return {"failure_reason": "; ".join(check["flags"]) or "No itinerary could be built"}
 
-    facts = rationale_facts(state)
-    llm = get_llm()
-    rationale = None
-    if llm is not None:
-        facts_text = json.dumps(facts, indent=2)
-        try:
-            rationale = llm.invoke(RATIONALE_PROMPT.format(facts=facts_text)).content.strip() or None
-        except Exception:
-            # A busy or rate-limited LLM shouldn't fail a trip whose choices are already made.
-            logger.warning("Rationale LLM call failed, using the template rationale", exc_info=True)
-        if rationale is not None:
-            # Guardrail (docs/08_GenAI_Architecture.md): every number in the prose must
-            # already be in the facts, otherwise the run fails instead of showing it.
-            invented = numbers_in(rationale) - numbers_in(facts_text)
-            if invented:
-                listed = ", ".join(f"{n:g}" for n in sorted(invented))
-                return {"failure_reason": f"Rationale used numbers not in the itinerary: {listed}"}
-    if rationale is None:
-        rationale = template_rationale(facts)
+    rationale, invented = write_rationale(rationale_facts(state))
+    if invented:
+        # The guardrail fails the run instead of showing a figure the code didn't compute.
+        return {"failure_reason": invented}
 
     return {
         "itinerary": {
@@ -335,6 +368,63 @@ def compose_node(state: PipelineState) -> dict:
             "rationale": rationale,
             "tradeoff_ledger": build_ledger(state),
         }
+    }
+
+
+class EditRefused(ValueError):
+    """A reviewer edit that can't be applied; the message says why."""
+
+
+def edit_itinerary(state: PipelineState, current: dict, kind: str, option_id: str, picked: list[str]) -> dict:
+    """Swaps one line item of a saved itinerary for another option from the same search (PRD US-007).
+
+    `state` holds the request and the saved search results, `current` the itinerary's flight and
+    hotel, `picked` the line items a reviewer already chose. Only options that pass every rule can
+    be picked, so an edit changes the price but never brings in a flight on another day or one
+    that breaks a preference. Total, budget verdict, ledger and rationale are recomputed in code.
+    """
+    check = check_node(state)["check"]
+    if kind == "stay" and check["nights"] == 0:
+        raise EditRefused("A same-day trip has no stay to change")
+    rejected_by_id = {r["option_id"]: r for r in check["rejected"]}
+    options = state["flight_options"] if kind == "flight" else state["hotel_options"]
+    option = next((o for o in options if o["id"] == option_id), None)
+    if option is None:
+        raise EditRefused(f"{option_id} isn't one of this trip's {'flight' if kind == 'flight' else 'hotel'} options")
+    if option_id in rejected_by_id:
+        raise EditRefused(f"{option_id} can't be picked: {rejected_by_id[option_id]['detail']}")
+
+    request = state["request"]
+    flight = option if kind == "flight" else current["flight"]
+    hotel = option if kind == "stay" else current["hotel"]
+    # check_node's flags describe its own pick: keep the availability ones, redo the budget one.
+    _, _, own_budget_flag = price_check(request, check["flight"], check["hotel"], check["nights"])
+    flags = [f for f in check["flags"] if f != own_budget_flag]
+    total_cost, within_budget, budget_flag = price_check(request, flight, hotel, check["nights"])
+    if budget_flag:
+        flags.append(budget_flag)
+
+    edited: PipelineState = {
+        **state,
+        "picked": sorted(set(picked) | {kind}),
+        "check": {**check, "flight": flight, "hotel": hotel, "total_cost": total_cost,
+                  "within_budget": within_budget, "flags": flags},
+    }
+    facts = rationale_facts(edited)
+    rationale, invented = write_rationale(facts)
+    if invented:
+        # The reviewer made this choice, so a bad LLM sentence falls back instead of failing the trip.
+        logger.warning("Edited itinerary's rationale failed the guardrail: %s", invented)
+        rationale = template_rationale(facts)
+    return {
+        "flight": flight,
+        "hotel": hotel,
+        "total_cost": total_cost,
+        "within_budget": within_budget,
+        "flags": flags,
+        "rationale": rationale,
+        "tradeoff_ledger": build_ledger(edited),
+        "picked": edited["picked"],
     }
 
 

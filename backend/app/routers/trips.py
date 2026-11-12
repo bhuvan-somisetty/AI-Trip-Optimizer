@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,8 +8,15 @@ from sqlmodel import Session, select
 from app.audit import record
 from app.database import get_session
 from app.models import AuditEventType, Decision, DecisionOutcome, Itinerary, Traveler, Trip, TripStatus, User
-from app.pipeline.graph import pipeline
-from app.schemas import DecisionCreate, DecisionResponse, TripCreate, TripResponse, TripResultResponse
+from app.pipeline.graph import EditRefused, edit_itinerary, pipeline
+from app.schemas import (
+    DecisionCreate,
+    DecisionResponse,
+    ItineraryEdit,
+    TripCreate,
+    TripResponse,
+    TripResultResponse,
+)
 from app.security import get_current_user
 
 router = APIRouter(tags=["trips"])
@@ -55,6 +63,8 @@ def create_trip(
         created_by=current_user.id,
     )
     session.add(trip)
+    # Insert the trip first: the event references it, and the flush doesn't order the two.
+    session.flush()
     record(
         session, user=current_user, event_type=AuditEventType.TRIP_CREATED, trip_id=trip.id,
         summary=f"Created trip {trip.origin}→{trip.destination} for {traveler.name}, budget {trip.budget:,.0f}",
@@ -87,7 +97,18 @@ def get_trip(trip: Trip = Depends(get_owned_trip)):
 def trip_result(trip: Trip, itinerary: Itinerary | None) -> dict:
     return {
         "status": trip.status,
-        "itinerary": itinerary,
+        "itinerary": None
+        if itinerary is None
+        else {
+            "flight": itinerary.flight,
+            "hotel": itinerary.hotel,
+            "total_cost": itinerary.total_cost,
+            "within_budget": itinerary.within_budget,
+            "flags": itinerary.flags,
+            "rationale": itinerary.rationale,
+            "picked": itinerary.picked or [],
+            "editable": itinerary.search_results is not None,
+        },
         "tradeoff_ledger": itinerary.tradeoff_ledger if itinerary else [],
         "reason": trip.failure_reason,
     }
@@ -131,11 +152,14 @@ def optimize_trip(
         "budget": float(trip.budget),
         "preferences": trip.preferences,
     }
+    started = time.monotonic()
     try:
         result = pipeline.invoke({"request": request})
     except Exception:
         logger.exception("Pipeline crashed for trip %s", trip.id)
         result = {"failure_reason": "The optimizer hit an unexpected error, please try again"}
+
+    run_ms = round((time.monotonic() - started) * 1000)
 
     old = saved_itinerary(session, trip)
     if old is not None:
@@ -154,6 +178,11 @@ def optimize_trip(
             flags=check["flags"],
             rationale=composed["rationale"],
             tradeoff_ledger=composed["tradeoff_ledger"],
+            search_results={
+                "flight_options": result.get("flight_options", []),
+                "hotel_options": result.get("hotel_options", []),
+                "hotels_unavailable": result.get("hotels_unavailable"),
+            },
         )
         session.add(itinerary)
         trip.status = TripStatus.OPTIMIZED
@@ -173,6 +202,7 @@ def optimize_trip(
                 "flags": itinerary.flags,
                 "options_compared": len(itinerary.tradeoff_ledger),
                 "rationale": itinerary.rationale,
+                "run_ms": run_ms,
             },
         )
     else:
@@ -181,7 +211,7 @@ def optimize_trip(
         record(
             session, user=current_user, event_type=AuditEventType.PIPELINE_FAILED, trip_id=trip.id,
             summary=f"Optimization failed for {trip.origin}→{trip.destination}: {trip.failure_reason}",
-            payload={"request": request, "failure_reason": trip.failure_reason},
+            payload={"request": request, "failure_reason": trip.failure_reason, "run_ms": run_ms},
         )
 
     session.add(trip)
@@ -219,6 +249,72 @@ def start_review(
     session.commit()
     session.refresh(trip)
     return trip
+
+
+@router.patch("/trips/{trip_id}/itinerary", response_model=TripResultResponse)
+def edit_trip_itinerary(
+    body: ItineraryEdit,
+    trip: Trip = Depends(get_owned_trip),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """PRD US-007: swap one line item for another option; totals and flags are recalculated."""
+    if trip.status not in {TripStatus.OPTIMIZED, TripStatus.UNDER_REVIEW}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Trip is {trip.status.value}; only OPTIMIZED or UNDER_REVIEW itineraries can be edited",
+        )
+    itinerary = saved_itinerary(session, trip)
+    if itinerary is None or itinerary.search_results is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This itinerary was saved before editing existed; optimize the trip again to edit it",
+        )
+
+    found = itinerary.search_results
+    state = {
+        "request": {
+            "origin": trip.origin,
+            "destination": trip.destination,
+            "start_date": trip.start_date,
+            "end_date": trip.end_date,
+            "budget": float(trip.budget),
+            "preferences": trip.preferences,
+        },
+        "flight_options": found["flight_options"],
+        "hotel_options": found["hotel_options"],
+    }
+    if found.get("hotels_unavailable"):
+        state["hotels_unavailable"] = found["hotels_unavailable"]
+    before = float(itinerary.total_cost)
+    try:
+        edited = edit_itinerary(
+            state, {"flight": itinerary.flight, "hotel": itinerary.hotel}, body.kind, body.option_id,
+            itinerary.picked or [],
+        )
+    except EditRefused as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    itinerary.flight = edited["flight"]
+    itinerary.hotel = edited["hotel"]
+    itinerary.total_cost = edited["total_cost"]
+    itinerary.within_budget = edited["within_budget"]
+    itinerary.flags = edited["flags"]
+    itinerary.rationale = edited["rationale"]
+    itinerary.tradeoff_ledger = edited["tradeoff_ledger"]
+    itinerary.picked = edited["picked"]
+    trip.status = TripStatus.UNDER_REVIEW
+    session.add(itinerary)
+    session.add(trip)
+    item = "hotel" if body.kind == "stay" else "flight"
+    record(
+        session, user=current_user, event_type=AuditEventType.ITINERARY_EDITED, trip_id=trip.id,
+        summary=f"Swapped {item} to {body.option_id}; total {before:,.0f} -> {edited['total_cost']:,.0f}",
+        payload={"kind": body.kind, "option_id": body.option_id, "before": before, "after": edited["total_cost"]},
+    )
+    session.commit()
+    session.refresh(itinerary)
+    return trip_result(trip, itinerary)
 
 
 @router.post("/trips/{trip_id}/decision", response_model=DecisionResponse)

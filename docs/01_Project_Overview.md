@@ -13,28 +13,30 @@
 - **Team:** 2 students (Bhuvan Somisetty, Swetalin Rout — per PRD)
 - **Primary/end users (brief):** Businesses
 - **Skill level:** Not an official field on the brief sheet — noted here only because this is the team's first substantial GenAI project (their own context, not an instructor-assigned label)
-- **Operating constraint (engineering judgment, not sourced from the brief):** No live GDS/supplier API access assumed — mock/sample flight and hotel data only, consistent with "no autonomous booking" in the PRD's product principles
+- **Operating constraint (engineering judgment, not sourced from the brief):** No GDS booking access — the app only *reads* fares. Originally mock/sample data; since 2026-11-12 it reads real fares from free read-only APIs (Travelpayouts for flights, Google Hotels via SerpApi for hotels). Nothing is ever booked, consistent with "no autonomous booking" in the PRD's product principles
 
 ## Delivery Format: Web Application, Not a Native Mobile App
 This is a **website (web application)**, accessed through a browser — not a native iOS/Android app. This follows directly from the officially mandated stack: `Next.js` is a web framework, not `React Native` (which builds native mobile apps). The brief's `expected_output` field says "Working app," but that's generic terminology for "application," not a literal instruction to build a mobile app. Nothing in the brief or PRD requires a native app, app-store distribution, or offline mobile support.
 
 ## Executive Summary
+*(Amended 2026-11-12: the optimizer now searches real fares instead of mock data: flights from Travelpayouts (Aviasales data) and hotels from Google Hotels via SerpApi, both read-only. Nothing is booked or paid for, so the "no autonomous booking" principle is unchanged.)*
+
 *(Amended 2026-09-09 — CO2-aware optimization removed per instructor instruction; see `17_Risk_Register.md` R-009.)*
 
 *(Amended 2026-09-16 — Trip Knowledge Assistant and Ask This Itinerary removed entirely; the instructor said RAG is not needed. See `03_PRD.md` amendment and `17_Risk_Register.md` R-011.)*
 
-AI Trip Optimizer is a B2B decision-support workspace a business uses to plan and optimize trips for its own people. It ingests a trip request, searches mock flight and hotel data, checks the options against budget and constraints, and produces an optimized, explainable itinerary — with a structured trade-off breakdown — for a human to review, edit, and approve.
+AI Trip Optimizer is a B2B decision-support workspace a business uses to plan and optimize trips for its own people. It ingests a trip request, searches real flight and hotel fares, checks the options against budget and constraints, and produces an optimized, explainable itinerary — with a structured trade-off breakdown — for a human to review, edit, and approve.
 
 The platform is intentionally a **decision-support system, not an autonomous booking agent** — a human always reviews and approves the final itinerary; the system never finalizes a decision on its own.
 
 ## Core Product Flow
-Trip request → traveler & trip details captured → LangGraph pipeline searches mock flight/hotel data → budget & constraint check → itinerary composition with Trade-off Ledger → human review/edit → approve or reject (with reason) → decision/audit record.
+Trip request → traveler & trip details captured → LangGraph pipeline searches flight/hotel fares → budget & constraint check → itinerary composition with Trade-off Ledger → human review/edit → approve or reject (with reason) → decision/audit record.
 
 ## MVP
 *(Renumbered 2026-09-09 after removing CO2-aware optimization and Knowledge document upload as scored items — see amendment note above. Renumbered again 2026-09-16 after removing the Trip Knowledge Assistant.)*
 1. Traveler management (add/select travelers per trip).
 2. Trip request creation (dates, budget, preferences; starts in DRAFT status).
-3. Flight/Stay search against mock supplier data.
+3. Flight/Stay search (real read-only fares; mock data in tests).
 4. Budget & constraint check, with each issue naming the specific rule and offending line item.
 5. Itinerary composition (flights, stay, total cost).
 6. Trade-off Ledger — every alternative considered, with its price and the specific reason it won or lost.
@@ -46,7 +48,7 @@ Trip request → traveler & trip details captured → LangGraph pipeline searche
 
 ## Out of Scope for MVP
 - Autonomous booking or payment — the system never finalizes a trip decision itself.
-- Real GDS/supplier integrations or live pricing APIs.
+- Real GDS/supplier *booking* integrations. (Read-only live pricing was added on 2026-11-12, see the amendment above.)
 - Real employee PII or production payment data.
 - Streaming assistant responses (Could-have, not MVP).
 - What-If Simulator (Could-have/stretch — build only after the MVP pipeline works end-to-end).

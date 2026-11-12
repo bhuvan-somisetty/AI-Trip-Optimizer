@@ -153,6 +153,8 @@ export type Itinerary = {
   generatedAt: string;
   runMs: number;
   edited: boolean;
+  /** true for server itineraries saved before edits existed; optimize again to edit them */
+  locked?: boolean;
 };
 
 export type AuditEvent = {

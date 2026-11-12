@@ -421,7 +421,7 @@ Lists the requesting user's trips, newest first, optionally filtered by status. 
 ### POST /trips/{id}/optimize
 *(**Built 2026-10-08** — examples below are real output from the backend, with tests in `backend/tests/test_optimize.py`.)*
 
-Runs the LangGraph pipeline on a saved trip: `search_node` finds mock flights and hotels, `check_node` applies the trip's preferences and budget, and `compose_node` builds the itinerary, the full Trade-off Ledger and a rationale (PRD US-003, US-004, US-005, US-006). Requires a valid JWT and that the trip belongs to the requesting user.
+Runs the LangGraph pipeline on a saved trip: `search_node` finds real flight and hotel fares (fixtures in tests), `check_node` applies the trip's preferences and budget, and `compose_node` builds the itinerary, the full Trade-off Ledger and a rationale (PRD US-003, US-004, US-005, US-006). Requires a valid JWT and that the trip belongs to the requesting user.
 
 **Status flow:** the trip is saved as `OPTIMIZING` before the pipeline starts, then ends as `OPTIMIZED` or `OPTIMIZATION_FAILED`. Only `DRAFT`, `OPTIMIZED` and `OPTIMIZATION_FAILED` trips can be optimized; re-running replaces the saved itinerary (one per trip, in the `itineraries` table).
 
@@ -485,37 +485,29 @@ Hotel ledger rows show the whole stay's price (`price_per_night × nights`) so t
 **Response (404 Not Found)** — trip never optimized: `{ "detail": "Trip has not been optimized yet" }`; trip doesn't exist or isn't yours: `{ "detail": "Trip not found" }`.
 
 ### PATCH /trips/{id}/itinerary
-Edits a line item on the itinerary; total cost is recalculated server-side, never client-supplied (PRD US-007). Requires a valid JWT.
+*(**Built 2026-11-12**, tests in `backend/tests/test_edit_itinerary.py`.)* Swaps the flight or the hotel for another option from the same search (PRD US-007). The client only names the option; the total, budget verdict and flags, Trade-off Ledger and rationale are all recomputed server-side, never client-supplied. Only options that pass every rule can be picked (not a fare on another day, not one that breaks a preference). The trip moves to `UNDER_REVIEW`. Requires a valid JWT and that the trip belongs to the requesting user.
 
 **Request:**
 ```json
 {
-  "flight_option": { "carrier": "Vistara", "price": 9800 }
+  "kind": "flight",
+  "option_id": "FL-1001"
+}
+```
+`kind` is `flight` or `stay`; `option_id` is the id at the start of a Trade-off Ledger row.
+
+**Response (200 OK)** — same shape as `POST /trips/{id}/optimize`, with `"status": "UNDER_REVIEW"`. The itinerary's `picked` lists the line items a reviewer chose by hand (`["flight"]` here), and the winning ledger row's reason reads `Picked by the reviewer; meets every trip preference`.
+
+**Response (400 Bad Request)** — option isn't one of this trip's, or breaks a rule:
+```json
+{
+  "detail": "FL-1004 can't be picked: FL-1004 has 1 stop(s), trip allows 0"
 }
 ```
 
-**Response (200 OK):**
-```json
-{
-  "id": "e2b4a1f0-...",
-  "flight_option": { "carrier": "Vistara", "price": 9800 },
-  "total_cost": 55800
-}
-```
+**Response (404 Not Found)** — trip doesn't exist, or belongs to another user: `{ "detail": "Trip not found" }`
 
-**Response (401 Unauthorized)** — missing/invalid JWT:
-```json
-{
-  "detail": "Could not validate credentials"
-}
-```
-
-**Response (404 Not Found)** — trip doesn't exist:
-```json
-{
-  "detail": "Trip not found"
-}
-```
+**Response (409 Conflict)** — trip isn't `OPTIMIZED` or `UNDER_REVIEW`, or its itinerary was saved before edits existed (the response says to optimize again; such itineraries come back with `"editable": false`).
 
 ### POST /trips/{id}/review
 *(**Built 2026-10-08**, tests in `backend/tests/test_decisions.py`.)* Moves an `OPTIMIZED` trip to `UNDER_REVIEW`. No body. Returns the trip (same shape as `GET /trips/{id}`) with `"status": "UNDER_REVIEW"`. Requires a valid JWT and that the trip belongs to the requesting user.
@@ -613,7 +605,7 @@ Edits a line item on the itinerary; total cost is recalculated server-side, neve
 ---
 
 ## Dashboard & Audit
-*(`GET /dashboard` is still Planned — no backend router built yet; its shape is the team's design, grounded in `06_Database_Design.md`, and 401/403 reuse the real error strings from `app/security.py`. `GET /audit` is built and Verified, see below.)*
+*(`GET /audit` built 2026-11-12. `GET /dashboard` is not built: the Analytics page computes the same totals in the browser from the user's trips, which come from the API.)*
 
 ### GET /dashboard
 Returns total spend, average savings, and average turnaround time for a period (PRD US-010 — "As an **admin**..."). Requires a valid JWT with the `admin` role.
@@ -649,7 +641,7 @@ Returns total spend, average savings, and average turnaround time for a period (
 
 Returns audit event history, newest first. Independent of dashboard aggregation — every pipeline run and decision is recorded here regardless of what the dashboard shows (PRD: Audit trail, US-010). Requires a valid JWT. **Admins see every user's events; members see only their own.** Events are append-only: nothing in the API edits or deletes them, and re-optimizing a trip replaces its itinerary but keeps every earlier `PIPELINE_RUN` here.
 
-**Recorded events:** `TRAVELER_CREATED`, `TRAVELER_UPDATED` (payload has `before`/`after`), `TRAVELER_DELETED`, `TRIP_CREATED`, `PIPELINE_RUN` (what was chosen, the total, the flags, the rationale and the data source of each option), `PIPELINE_FAILED` (with the reason), `REVIEW_STARTED`, `DECISION` (outcome, reason, and the itinerary as it stood when decided). An action that fails (e.g. a 409) records nothing — the event is saved in the same transaction as the action.
+**Recorded events:** `TRAVELER_CREATED`, `TRAVELER_UPDATED` (payload has `before`/`after`), `TRAVELER_DELETED`, `TRIP_CREATED`, `PIPELINE_RUN` (what was chosen, the total, the flags, the rationale and the data source of each option), `PIPELINE_FAILED` (with the reason), `REVIEW_STARTED`, `DECISION` (outcome, reason, and the itinerary as it stood when decided). `ITINERARY_EDITED` (which line item was swapped, and the total before and after). `PIPELINE_RUN` and `PIPELINE_FAILED` also carry `run_ms`, how long the optimizer took. An action that fails (e.g. a 409) records nothing — the event is saved in the same transaction as the action.
 
 **Query parameters (all optional):** `trip_id`, `event_type` (one of the names above), `limit` (1–500, default 100). Someone else's `trip_id` returns `[]`, the same as an unknown one.
 
@@ -705,7 +697,7 @@ Returns audit event history, newest first. Independent of dashboard aggregation 
 - All monetary figures returned by `/trips/{id}/optimize` are computed in code — the LLM-authored `rationale` field never introduces a number not already present elsewhere in the response (product principle: no unsupported financial claims).
 
 ## Live Demo Notes
-For the viva, Auth, Travelers and Trips (create, list, get) can all be demoed for real — the optimizer and Audit (`GET /audit`) are built too; only the Dashboard isn't built yet.
+For the viva, every built endpoint can be demoed for real, on the live API at https://ai-trip-optimizer-api.vercel.app/docs or locally as below. Only `GET /dashboard` and `POST /trips/{id}/preview` (stretch) aren't built.
 1. Start the backend against the SQLite dev stand-in: `DATABASE_URL="sqlite:///./test.db" uvicorn app.main:app --port 8010` from `backend/`, with the venv active.
 2. Open `http://127.0.0.1:8010/docs` — FastAPI's interactive Swagger page. "Try it out" on `/auth/register`, `/auth/login`, `/traveler`, `/travelers`, `/traveler/{id}` (PUT and DELETE), `/trip`, `/trips` and `/trips/{id}` shows the real request/response live, including every error case above, without typing anything in a terminal during the demo. For the traveler endpoints, click "Authorize" first and paste in a token from `/auth/login`.
 3. Or via terminal, if a command-line demo is preferred over Swagger:

@@ -10,7 +10,7 @@ A conventional 3-tier architecture with a plain PostgreSQL database and a LangGr
 ```
 ┌─────────────────┐      HTTPS/JSON       ┌──────────────────────┐
 │  Next.js Frontend │ ───────────────────▶ │   FastAPI Backend    │
-│  (Vercel)          │ ◀─────────────────── │   (Render/Railway)   │
+│  (Vercel)          │ ◀─────────────────── │   (Vercel, Python)   │
 └─────────────────┘                       └──────────┬───────────┘
                                                        │
                                     ┌──────────────────┴──────────────────┐
@@ -56,6 +56,6 @@ Full node/state design in `08_GenAI_Architecture.md`. The multi-agent stretch go
 A single, plain PostgreSQL instance handles all relational data — no vector extension is needed (see ADR-001 in `18_Architecture_Decision_Records.md`, now moot after the RAG feature cut). Full schema in `06_Database_Design.md`.
 
 ## 6. Deployment Topology
-- Frontend on Vercel, auto-deployed from `main`.
-- Backend + Postgres on Render or Railway.
+- Frontend on Vercel (project `ai-trip-optimizer`).
+- Backend on Vercel as a Python function (project `ai-trip-optimizer-api`, region `sin1`), with PostgreSQL on Neon. *(Amended 2026-11-12: the original plan was Render or Railway; Vercel + Neon gave both apps one free host and a managed Postgres.)*
 - Local dev mirrors production topology via Docker Compose (Postgres + backend containers), so environment drift is minimized.

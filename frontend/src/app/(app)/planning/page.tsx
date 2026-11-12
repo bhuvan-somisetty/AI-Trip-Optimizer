@@ -403,11 +403,7 @@ export default function PlanningPage() {
                       <div className="flex gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm">
                         <Info className="mt-0.5 size-4 shrink-0 text-primary" />
                         <p>
-                          International trip to {cityByCode[d.destination].country}. Check visa requirements in the{" "}
-                          <a className="font-medium text-primary hover:underline" href={`/assistant?q=${encodeURIComponent(`Visa requirements for ${cityByCode[d.destination].name}`)}`} target="_blank" rel="noreferrer">
-                            Knowledge Assistant
-                          </a>
-                          .
+                          International trip to {cityByCode[d.destination].country}. Check visa requirements before booking.
                         </p>
                       </div>
                     )}

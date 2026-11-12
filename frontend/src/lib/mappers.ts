@@ -1,6 +1,6 @@
-import type { LedgerEntryResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
+import type { AuditEventResponse, LedgerEntryResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
 import { formatInr } from "./format";
-import type { CabinClass, ConstraintIssue, Flight, Hotel, Itinerary, LedgerEntry, Traveler, Trip, TripFilters } from "./types";
+import type { AuditEvent, CabinClass, ConstraintIssue, Flight, Hotel, Itinerary, LedgerEntry, Traveler, Trip, TripFilters } from "./types";
 
 /**
  * Converts between the frontend's Traveler/Trip and the backend's smaller shapes.
@@ -125,7 +125,8 @@ const optionIdOf = (alternative: string) => alternative.split(" ")[0];
 function toLedgerEntry(e: LedgerEntryResponse, i: number, nights: number): LedgerEntry {
   const optionId = optionIdOf(e.alternative);
   const isStay = e.kind ? e.kind === "stay" : optionId.startsWith("HT-");
-  const screened = e.reason.startsWith("Preference");
+  // A rule ruled it out: a broken preference, or a fare on another day than the trip starts.
+  const screened = e.reason.startsWith("Preference") || e.reason.startsWith("Different day");
   return {
     id: `led_${i}_${optionId}`,
     kind: isStay ? "stay" : "outbound",
@@ -216,6 +217,22 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
     rationale: it.rationale,
     generatedAt: opts.generatedAt ?? "",
     runMs: opts.runMs ?? 0,
-    edited: false,
+    edited: (it.picked?.length ?? 0) > 0,
+    locked: it.editable === false,
+  };
+}
+
+// ---------------------------------------------------------------- audit
+
+/** A row of GET /audit as the Audit page shows it. */
+export function toAuditEvent(r: AuditEventResponse): AuditEvent {
+  return {
+    id: r.id,
+    tripId: r.trip_id,
+    type: r.event_type as AuditEvent["type"],
+    actor: r.actor,
+    summary: r.summary,
+    payload: r.payload,
+    createdAt: r.created_at,
   };
 }
