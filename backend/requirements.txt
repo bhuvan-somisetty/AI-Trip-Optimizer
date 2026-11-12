@@ -10,8 +10,6 @@ python-jose[cryptography]
 langgraph
 langchain-core
 langchain-openai
-pgvector
-pypdf
 pytest
 httpx
 python-dotenv

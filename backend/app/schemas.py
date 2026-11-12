@@ -113,12 +113,18 @@ class TripResponse(BaseModel):
 
 class ItineraryResponse(BaseModel):
     flight: dict
+    # None when no return fare was found on the end date (the flags say so), and on
+    # itineraries saved before return flights were searched.
+    return_flight: dict | None = None
     hotel: dict | None
     total_cost: float
+    # PRD US-010: the median options that met every rule minus the chosen ones, summed.
+    # None on itineraries saved before savings were worked out.
+    savings: float | None = None
     within_budget: bool
     flags: list[str]
     rationale: str
-    # "flight"/"stay" line items a reviewer swapped in by hand; empty when untouched.
+    # "flight"/"return"/"stay" line items a reviewer swapped in by hand; empty when untouched.
     picked: list[str] = []
     # False for itineraries saved before edits existed: re-optimize to make them editable.
     editable: bool = True
@@ -127,12 +133,12 @@ class ItineraryResponse(BaseModel):
 class ItineraryEdit(BaseModel):
     """PATCH /trips/{id}/itinerary: swap one line item for another option from the same search."""
 
-    kind: Literal["flight", "stay"]
+    kind: Literal["flight", "return", "stay"]
     option_id: str
 
 
 class LedgerEntryResponse(BaseModel):
-    # "flight" or "stay"; None for itineraries saved before the pipeline recorded it.
+    # "flight", "return" or "stay"; None for itineraries saved before the pipeline recorded it.
     kind: str | None = None
     alternative: str
     price: float
@@ -151,6 +157,56 @@ class TripResultResponse(BaseModel):
     itinerary: ItineraryResponse | None
     tradeoff_ledger: list[LedgerEntryResponse]
     reason: str | None
+
+
+class WhatIfRequest(BaseModel):
+    """POST /trips/{id}/preview and /preview/apply (PRD US-011): the inputs to change.
+
+    Only the fields sent are changed. Sending a preference as null removes it, so the
+    optimizer stops screening on it; leaving it out keeps the trip's current value.
+    """
+
+    budget: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    cabin_class: Literal["economy", "premium_economy", "business"] | None = None
+    max_stops: int | None = Field(default=None, ge=0, le=2)
+    min_hotel_rating: float | None = Field(default=None, ge=0, le=5)
+
+    @model_validator(mode="after")
+    def something_changes(self):
+        if not self.model_fields_set:
+            raise ValueError("Change at least one input: budget, cabin_class, max_stops or min_hotel_rating")
+        if "budget" in self.model_fields_set and self.budget is None:
+            raise ValueError("budget can't be removed, only changed")
+        return self
+
+
+class Change(BaseModel):
+    """One field that differs between the saved trip and the preview."""
+
+    field: str
+    before: str | float | int | bool | None
+    after: str | float | int | bool | None
+
+
+class WhatIfResponse(BaseModel):
+    """The preview next to what is saved. Nothing is saved by POST /trips/{id}/preview."""
+
+    inputs: list[Change]  # the inputs that were changed
+    preview: TripResultResponse  # status is what the trip would become: OPTIMIZED or OPTIMIZATION_FAILED
+    diff: list[Change]  # what that changes in the itinerary; empty if the result is the same
+
+
+class DashboardResponse(BaseModel):
+    """GET /dashboard (PRD US-010). Money is in INR."""
+
+    period: str  # e.g. "2026-Q4", "2026-11", "2026", or "all"
+    trips_created: int
+    trips_decided: int
+    approved: int
+    rejected: int
+    total_spend: float  # sum of approved itineraries' totals
+    avg_savings: float | None  # over approved itineraries that have a savings figure
+    avg_turnaround_hours: float | None  # trip created -> decided, over decided trips
 
 
 class DecisionCreate(BaseModel):

@@ -1,3 +1,4 @@
+import statistics
 import uuid
 
 import pytest
@@ -42,10 +43,25 @@ def test_optimize_returns_itinerary_and_ledger(client, auth_headers, trip_payloa
     assert body["status"] == "OPTIMIZED"
     assert body["reason"] is None
     itinerary = body["itinerary"]
-    assert itinerary["total_cost"] == itinerary["flight"]["price"] + itinerary["hotel"]["price_per_night"] * 4
+    assert itinerary["return_flight"]["origin"] == "DEL" and itinerary["return_flight"]["destination"] == "BLR"
+    assert itinerary["total_cost"] == (
+        itinerary["flight"]["price"] + itinerary["return_flight"]["price"] + itinerary["hotel"]["price_per_night"] * 4
+    )
     assert itinerary["within_budget"] is True and itinerary["flags"] == []
     assert f"{itinerary['total_cost']:,.0f}" in itinerary["rationale"]
-    assert sum(entry["won"] for entry in body["tradeoff_ledger"]) == 2
+    assert sum(entry["won"] for entry in body["tradeoff_ledger"]) == 3
+
+
+def test_optimize_savings_are_against_the_median_valid_option(client, auth_headers, trip_payload):
+    trip_id = make_trip(client, auth_headers, trip_payload)
+    body = optimize(client, auth_headers, trip_id).json()
+    expected = 0
+    for kind in ("flight", "return", "stay"):
+        rows = [e for e in body["tradeoff_ledger"] if e["kind"] == kind]
+        valid = [e["price"] for e in rows if e["won"] or e["reason"].startswith("Price:")]
+        expected += statistics.median(valid) - next(e["price"] for e in rows if e["won"])
+    assert expected > 0
+    assert body["itinerary"]["savings"] == expected
 
 
 def test_optimize_moves_trip_to_optimized(client, auth_headers, trip_payload):

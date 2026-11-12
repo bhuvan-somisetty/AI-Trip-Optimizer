@@ -77,7 +77,7 @@ export function Topbar() {
   const notifications = useMemo(
     () =>
       s.audit
-        .filter((a) => ["DECISION", "PIPELINE_RUN", "PIPELINE_FAILED", "ITINERARY_EDITED", "DOCUMENT_UPLOAD"].includes(a.type))
+        .filter((a) => ["DECISION", "PIPELINE_RUN", "PIPELINE_FAILED", "ITINERARY_EDITED"].includes(a.type))
         .filter((a) => (a.type === "DECISION" ? s.settings.notifyDecisions : a.type.startsWith("PIPELINE") ? s.settings.notifyPipeline : true))
         .slice(0, 8),
     [s.audit, s.settings]
@@ -134,7 +134,7 @@ export function Topbar() {
               inputRef.current?.blur();
             }
           }}
-          placeholder="Search trips, travelers, documents…"
+          placeholder="Search trips, travelers…"
           className="h-9 pr-14 pl-9"
           aria-label="Search"
         />

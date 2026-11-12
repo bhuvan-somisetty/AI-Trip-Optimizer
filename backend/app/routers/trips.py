@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from app.audit import record
 from app.database import get_session
 from app.models import AuditEventType, Decision, DecisionOutcome, Itinerary, Traveler, Trip, TripStatus, User
-from app.pipeline.graph import EditRefused, edit_itinerary, pipeline
+from app.pipeline.graph import EditRefused, edit_itinerary, pipeline, rerun
 from app.schemas import (
     DecisionCreate,
     DecisionResponse,
@@ -16,6 +16,8 @@ from app.schemas import (
     TripCreate,
     TripResponse,
     TripResultResponse,
+    WhatIfRequest,
+    WhatIfResponse,
 )
 from app.security import get_current_user
 
@@ -101,8 +103,10 @@ def trip_result(trip: Trip, itinerary: Itinerary | None) -> dict:
         if itinerary is None
         else {
             "flight": itinerary.flight,
+            "return_flight": itinerary.return_flight,
             "hotel": itinerary.hotel,
             "total_cost": itinerary.total_cost,
+            "savings": itinerary.savings,
             "within_budget": itinerary.within_budget,
             "flags": itinerary.flags,
             "rationale": itinerary.rationale,
@@ -116,6 +120,56 @@ def trip_result(trip: Trip, itinerary: Itinerary | None) -> dict:
 
 def saved_itinerary(session: Session, trip: Trip) -> Itinerary | None:
     return session.exec(select(Itinerary).where(Itinerary.trip_id == trip.id)).first()
+
+
+def trip_request(trip: Trip) -> dict:
+    return {
+        "origin": trip.origin,
+        "destination": trip.destination,
+        "start_date": trip.start_date,
+        "end_date": trip.end_date,
+        "budget": float(trip.budget),
+        "preferences": trip.preferences,
+    }
+
+
+def search_results(result: dict) -> dict:
+    # What an itinerary keeps of a run's search, so edits and previews never search again.
+    return {
+        "flight_options": result.get("flight_options", []),
+        "return_options": result.get("return_options", []),
+        "hotel_options": result.get("hotel_options", []),
+        "hotels_unavailable": result.get("hotels_unavailable"),
+        "return_unavailable": result.get("return_unavailable"),
+    }
+
+
+def saved_state(request: dict, found: dict) -> dict:
+    """A pipeline state rebuilt from an itinerary's saved search results."""
+    state = {"request": request, "flight_options": found["flight_options"], "hotel_options": found["hotel_options"]}
+    # Itineraries saved before return flights were searched have no return_options at all.
+    if "return_options" in found:
+        state["return_options"] = found["return_options"]
+    for key in ("hotels_unavailable", "return_unavailable"):
+        if found.get(key):
+            state[key] = found[key]
+    return state
+
+
+def changeable_itinerary(session: Session, trip: Trip, action: str) -> Itinerary:
+    """The trip's itinerary when its status and saved search results allow `action`, else 409."""
+    if trip.status not in {TripStatus.OPTIMIZED, TripStatus.UNDER_REVIEW}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Trip is {trip.status.value}; only OPTIMIZED or UNDER_REVIEW itineraries can be {action}",
+        )
+    itinerary = saved_itinerary(session, trip)
+    if itinerary is None or itinerary.search_results is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This itinerary was saved before it could be {action}; optimize the trip again first",
+        )
+    return itinerary
 
 
 def option_summary(option: dict | None) -> dict | None:
@@ -144,14 +198,7 @@ def optimize_trip(
     session.add(trip)
     session.commit()
 
-    request = {
-        "origin": trip.origin,
-        "destination": trip.destination,
-        "start_date": trip.start_date,
-        "end_date": trip.end_date,
-        "budget": float(trip.budget),
-        "preferences": trip.preferences,
-    }
+    request = trip_request(trip)
     started = time.monotonic()
     try:
         result = pipeline.invoke({"request": request})
@@ -172,17 +219,15 @@ def optimize_trip(
         itinerary = Itinerary(
             trip_id=trip.id,
             flight=composed["flight"],
+            return_flight=composed["return_flight"],
             hotel=composed["hotel"],
             total_cost=composed["total_cost"],
+            savings=composed["savings"],
             within_budget=check["within_budget"],
             flags=check["flags"],
             rationale=composed["rationale"],
             tradeoff_ledger=composed["tradeoff_ledger"],
-            search_results={
-                "flight_options": result.get("flight_options", []),
-                "hotel_options": result.get("hotel_options", []),
-                "hotels_unavailable": result.get("hotels_unavailable"),
-            },
+            search_results=search_results(result),
         )
         session.add(itinerary)
         trip.status = TripStatus.OPTIMIZED
@@ -196,8 +241,10 @@ def optimize_trip(
             payload={
                 "request": request,
                 "flight": option_summary(itinerary.flight),
+                "return_flight": option_summary(itinerary.return_flight),
                 "hotel": option_summary(itinerary.hotel),
                 "total_cost": itinerary.total_cost,
+                "savings": itinerary.savings,
                 "within_budget": itinerary.within_budget,
                 "flags": itinerary.flags,
                 "options_compared": len(itinerary.tradeoff_ledger),
@@ -259,45 +306,20 @@ def edit_trip_itinerary(
     session: Session = Depends(get_session),
 ):
     """PRD US-007: swap one line item for another option; totals and flags are recalculated."""
-    if trip.status not in {TripStatus.OPTIMIZED, TripStatus.UNDER_REVIEW}:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Trip is {trip.status.value}; only OPTIMIZED or UNDER_REVIEW itineraries can be edited",
-        )
-    itinerary = saved_itinerary(session, trip)
-    if itinerary is None or itinerary.search_results is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This itinerary was saved before editing existed; optimize the trip again to edit it",
-        )
-
-    found = itinerary.search_results
-    state = {
-        "request": {
-            "origin": trip.origin,
-            "destination": trip.destination,
-            "start_date": trip.start_date,
-            "end_date": trip.end_date,
-            "budget": float(trip.budget),
-            "preferences": trip.preferences,
-        },
-        "flight_options": found["flight_options"],
-        "hotel_options": found["hotel_options"],
-    }
-    if found.get("hotels_unavailable"):
-        state["hotels_unavailable"] = found["hotels_unavailable"]
+    itinerary = changeable_itinerary(session, trip, "edited")
+    state = saved_state(trip_request(trip), itinerary.search_results)
     before = float(itinerary.total_cost)
+    current = {"flight": itinerary.flight, "return_flight": itinerary.return_flight, "hotel": itinerary.hotel}
     try:
-        edited = edit_itinerary(
-            state, {"flight": itinerary.flight, "hotel": itinerary.hotel}, body.kind, body.option_id,
-            itinerary.picked or [],
-        )
+        edited = edit_itinerary(state, current, body.kind, body.option_id, itinerary.picked or [])
     except EditRefused as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     itinerary.flight = edited["flight"]
+    itinerary.return_flight = edited["return_flight"]
     itinerary.hotel = edited["hotel"]
     itinerary.total_cost = edited["total_cost"]
+    itinerary.savings = edited["savings"]
     itinerary.within_budget = edited["within_budget"]
     itinerary.flags = edited["flags"]
     itinerary.rationale = edited["rationale"]
@@ -306,11 +328,145 @@ def edit_trip_itinerary(
     trip.status = TripStatus.UNDER_REVIEW
     session.add(itinerary)
     session.add(trip)
-    item = "hotel" if body.kind == "stay" else "flight"
+    item = {"flight": "flight", "return": "return flight", "stay": "hotel"}[body.kind]
     record(
         session, user=current_user, event_type=AuditEventType.ITINERARY_EDITED, trip_id=trip.id,
         summary=f"Swapped {item} to {body.option_id}; total {before:,.0f} -> {edited['total_cost']:,.0f}",
         payload={"kind": body.kind, "option_id": body.option_id, "before": before, "after": edited["total_cost"]},
+    )
+    session.commit()
+    session.refresh(itinerary)
+    return trip_result(trip, itinerary)
+
+
+# ---- What-If Simulator (PRD US-011) -----------------------------------------
+
+PREFERENCES = ("cabin_class", "max_stops", "min_hotel_rating")
+
+
+def changed_request(trip: Trip, body: WhatIfRequest) -> tuple[dict, list[dict]]:
+    """The trip's request with the What-If changes applied, and the inputs that changed."""
+    request = trip_request(trip)
+    preferences = dict(trip.preferences)
+    inputs = []
+    if "budget" in body.model_fields_set and float(body.budget) != request["budget"]:
+        inputs.append({"field": "budget", "before": request["budget"], "after": float(body.budget)})
+        request["budget"] = float(body.budget)
+    for key in PREFERENCES:
+        if key not in body.model_fields_set:
+            continue
+        before, after = preferences.get(key), getattr(body, key)
+        if before == after:
+            continue
+        inputs.append({"field": key, "before": before, "after": after})
+        if after is None:
+            preferences.pop(key, None)
+        else:
+            preferences[key] = after
+    if not inputs:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to preview: every input already has that value",
+        )
+    request["preferences"] = preferences
+    return request, inputs
+
+
+def option_id(option: dict | None) -> str | None:
+    return option["id"] if option else None
+
+
+def itinerary_diff(itinerary: Itinerary, result: dict) -> list[dict]:
+    """What changes in the itinerary between the saved one and a rerun's result."""
+    after = result.get("itinerary")
+    check = result["check"]
+    rows = [
+        ("flight", option_id(itinerary.flight), option_id(after["flight"]) if after else None),
+        ("return_flight", option_id(itinerary.return_flight), option_id(after["return_flight"]) if after else None),
+        ("hotel", option_id(itinerary.hotel), option_id(after["hotel"]) if after else None),
+        ("total_cost", float(itinerary.total_cost), after["total_cost"] if after else None),
+        ("within_budget", itinerary.within_budget, check["within_budget"] if after else None),
+        ("savings", None if itinerary.savings is None else float(itinerary.savings), after["savings"] if after else None),
+        ("flags", len(itinerary.flags), len(check["flags"])),
+    ]
+    return [{"field": field, "before": before, "after": now} for field, before, now in rows if before != now]
+
+
+def preview_result(result: dict) -> dict:
+    after = result.get("itinerary")
+    return {
+        "status": TripStatus.OPTIMIZED if after else TripStatus.OPTIMIZATION_FAILED,
+        "itinerary": None if after is None else {
+            **{k: after[k] for k in ("flight", "return_flight", "hotel", "total_cost", "savings", "rationale")},
+            "within_budget": result["check"]["within_budget"],
+            "flags": result["check"]["flags"],
+            "picked": [],
+            "editable": True,
+        },
+        "tradeoff_ledger": after["tradeoff_ledger"] if after else [],
+        "reason": result.get("failure_reason"),
+    }
+
+
+@router.post("/trips/{trip_id}/preview", response_model=WhatIfResponse)
+def preview_trip(
+    body: WhatIfRequest,
+    trip: Trip = Depends(get_owned_trip),
+    session: Session = Depends(get_session),
+):
+    """PRD US-011: reruns the optimizer on the trip's saved search results with changed inputs.
+
+    Nothing is saved and nothing is searched again, so a preview is instant and compares like
+    with like. The rationale is the template one; applying the preview writes the real one.
+    """
+    itinerary = changeable_itinerary(session, trip, "previewed")
+    request, inputs = changed_request(trip, body)
+    result = rerun(saved_state(request, itinerary.search_results), use_llm=False)
+    return {"inputs": inputs, "preview": preview_result(result), "diff": itinerary_diff(itinerary, result)}
+
+
+@router.post("/trips/{trip_id}/preview/apply", response_model=TripResultResponse)
+def apply_preview(
+    body: WhatIfRequest,
+    trip: Trip = Depends(get_owned_trip),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """PRD US-011: saves a preview: the trip's inputs change and its itinerary is rebuilt.
+
+    The optimizer picks every line item again under the new inputs, so earlier hand-picked
+    edits are dropped. A change that can't build an itinerary is refused and saves nothing.
+    """
+    itinerary = changeable_itinerary(session, trip, "previewed")
+    request, inputs = changed_request(trip, body)
+    result = rerun(saved_state(request, itinerary.search_results))
+    if "itinerary" not in result:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"This change can't build an itinerary, so nothing was saved: {result['failure_reason']}",
+        )
+    before = float(itinerary.total_cost)
+    diff = itinerary_diff(itinerary, result)
+    composed = result["itinerary"]
+    trip.budget = request["budget"]
+    trip.preferences = request["preferences"]
+    itinerary.flight = composed["flight"]
+    itinerary.return_flight = composed["return_flight"]
+    itinerary.hotel = composed["hotel"]
+    itinerary.total_cost = composed["total_cost"]
+    itinerary.savings = composed["savings"]
+    itinerary.within_budget = result["check"]["within_budget"]
+    itinerary.flags = result["check"]["flags"]
+    itinerary.rationale = composed["rationale"]
+    itinerary.tradeoff_ledger = composed["tradeoff_ledger"]
+    itinerary.picked = []
+    trip.status = TripStatus.UNDER_REVIEW
+    session.add(itinerary)
+    session.add(trip)
+    changed = ", ".join(f"{i['field']} {i['before']} -> {i['after']}" for i in inputs)
+    record(
+        session, user=current_user, event_type=AuditEventType.ITINERARY_EDITED, trip_id=trip.id,
+        summary=f"Applied what-if ({changed}); total {before:,.0f} -> {composed['total_cost']:,.0f}",
+        payload={"what_if": True, "inputs": inputs, "diff": diff, "before": before, "after": composed["total_cost"]},
     )
     session.commit()
     session.refresh(itinerary)

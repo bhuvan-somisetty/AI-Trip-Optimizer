@@ -2,6 +2,8 @@
 
 > **Provenance:** LangGraph is the only officially mandated framework (brief field `framework`); the node design, guardrail implementation, and prompting details below are the team's own design. The brief field `reference_docs` also names a RAG paper (Lewis et al., arXiv:2005.11401) and a WikiQA-style evaluation approach — those grounded the Trip Knowledge Assistant / Ask This Itinerary features, which the instructor cut from scope 2026-09-16 (see `03_PRD.md` amendment, `17_Risk_Register.md` R-011). This file now covers only the surviving GenAI surface, the optimization pipeline.
 
+> **Amended 2026-11-13:** `search_node` also searches the flight back (destination → origin on the end date) and `check_node` picks it with the same rules, so the total covers the round trip; when no return fare exists the trip is still built, with a flag. `check_node` also works out the savings figure (median valid option minus the chosen one, per line item). The What-If preview (`POST /trips/{id}/preview`) reruns `check_node` and the compose step on the saved search results with the **template** rationale, so a preview never calls the LLM; applying it calls the LLM once, behind the same numbers guardrail.
+
 ## 1. The One GenAI Surface
 This project has one GenAI component: the **LangGraph optimization pipeline** (structured, deterministic-checks-plus-LLM-explanation). A RAG-grounded Trip Knowledge Assistant and its itinerary-scoped variant "Ask This Itinerary" were originally planned as a second surface but were removed from scope by the instructor 2026-09-16 ("RAG is not needed") — see `17_Risk_Register.md` R-011.
 

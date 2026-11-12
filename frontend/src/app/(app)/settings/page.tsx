@@ -140,7 +140,7 @@ export default function SettingsPage() {
         <CardContent className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Server className="size-4" />
-            {s.trips.length} trips · {s.travelers.length} travelers · {s.docs.length} documents · {s.audit.length} audit events
+            {s.trips.length} trips · {s.travelers.length} travelers · {s.audit.length} audit events
           </div>
           <Button variant="destructive" onClick={() => setResetOpen(true)}>
             <RotateCcw />
@@ -153,7 +153,7 @@ export default function SettingsPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Reset workspace?</DialogTitle>
-            <DialogDescription>All trips, travelers, documents, chats and audit events are replaced with the sample dataset. You stay signed in.</DialogDescription>
+            <DialogDescription>All trips, travelers and audit events are replaced with the sample dataset. You stay signed in.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <DialogClose className={buttonVariants({ variant: "outline", size: "lg" })}>Cancel</DialogClose>

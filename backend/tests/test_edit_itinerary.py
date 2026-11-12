@@ -13,7 +13,8 @@ def no_llm(monkeypatch):
 
 
 def optimized_trip(client, headers, payload, **changes):
-    # The fixtures' cheapest picks for BLR -> DEL, 4 nights: FL-1004 (3,600) + HT-2002 (1,600 x 4).
+    # The fixtures' cheapest picks for BLR -> DEL, 4 nights: FL-1004 (3,600), return FL-1009 (3,300)
+    # and HT-2002 (1,600 x 4), 13,300 in all.
     trip_id = client.post("/trip", json={**payload, **changes}, headers=headers).json()["id"]
     assert client.post(f"/trips/{trip_id}/optimize", headers=headers).json()["status"] == "OPTIMIZED"
     return trip_id
@@ -31,14 +32,14 @@ def winner(ledger, kind):
 
 def test_swapping_flight_recalculates_total_and_moves_to_review(client, auth_headers, trip_payload):
     trip_id = optimized_trip(client, auth_headers, trip_payload)
-    assert client.get(f"/trips/{trip_id}/itinerary", headers=auth_headers).json()["itinerary"]["total_cost"] == 10000
+    assert client.get(f"/trips/{trip_id}/itinerary", headers=auth_headers).json()["itinerary"]["total_cost"] == 13300
 
     response = edit(client, auth_headers, trip_id, "flight", "FL-1001")
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "UNDER_REVIEW"
     assert body["itinerary"]["flight"]["id"] == "FL-1001"
-    assert body["itinerary"]["total_cost"] == 5200 + 1600 * 4
+    assert body["itinerary"]["total_cost"] == 5200 + 3300 + 1600 * 4
     assert body["itinerary"]["picked"] == ["flight"]
 
     chosen = winner(body["tradeoff_ledger"], "flight")
@@ -56,15 +57,15 @@ def test_edit_is_saved(client, auth_headers, trip_payload):
     edit(client, auth_headers, trip_id, "stay", "HT-2003")
     saved = client.get(f"/trips/{trip_id}/itinerary", headers=auth_headers).json()
     assert saved["itinerary"]["hotel"]["id"] == "HT-2003"
-    assert saved["itinerary"]["total_cost"] == 3600 + 9500 * 4
+    assert saved["itinerary"]["total_cost"] == 3600 + 3300 + 9500 * 4
 
 
 def test_edit_over_budget_is_flagged_with_line_items(client, auth_headers, trip_payload):
-    trip_id = optimized_trip(client, auth_headers, trip_payload, budget=12000)
+    trip_id = optimized_trip(client, auth_headers, trip_payload, budget=15000)
     body = edit(client, auth_headers, trip_id, "stay", "HT-2003").json()
     assert body["itinerary"]["within_budget"] is False
     flag = body["itinerary"]["flags"][-1]
-    assert flag.startswith("Total 41,600 is 29,600 over the 12,000 budget")
+    assert flag.startswith("Total 44,900 is 29,900 over the 15,000 budget")
     assert "hotel HT-2003" in flag
 
     # Swapping back to a cheap hotel clears the budget flag.
@@ -126,5 +127,5 @@ def test_edit_is_in_the_audit_trail(client, auth_headers, trip_payload):
     edit(client, auth_headers, trip_id, "flight", "FL-1001")
     events = client.get(f"/audit?event_type=ITINERARY_EDITED&trip_id={trip_id}", headers=auth_headers).json()
     assert len(events) == 1
-    assert events[0]["summary"] == "Swapped flight to FL-1001; total 10,000 -> 11,600"
-    assert events[0]["payload"] == {"kind": "flight", "option_id": "FL-1001", "before": 10000, "after": 11600}
+    assert events[0]["summary"] == "Swapped flight to FL-1001; total 13,300 -> 14,900"
+    assert events[0]["payload"] == {"kind": "flight", "option_id": "FL-1001", "before": 13300, "after": 14900}

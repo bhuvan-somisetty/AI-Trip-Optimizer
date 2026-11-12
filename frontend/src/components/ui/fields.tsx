@@ -66,15 +66,17 @@ function Segmented<T extends string | number>({
   options,
   className,
   size = "default",
+  "aria-label": ariaLabel,
 }: {
   value: T
   onChange: (v: T) => void
   options: { value: T; label: React.ReactNode }[]
   className?: string
   size?: "default" | "sm"
+  "aria-label"?: string
 }) {
   return (
-    <div role="radiogroup" className={cn("inline-flex flex-wrap gap-1 rounded-lg bg-muted p-1", className)}>
+    <div role="radiogroup" aria-label={ariaLabel} className={cn("inline-flex flex-wrap gap-1 rounded-lg bg-muted p-1", className)}>
       {options.map((o) => (
         <button
           key={String(o.value)}

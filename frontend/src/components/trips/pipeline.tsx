@@ -7,10 +7,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 const stages = [
-  { icon: Plane, label: "Searching flights", sub: "Querying mock supplier inventory for outbound and return legs" },
-  { icon: Hotel, label: "Searching stays", sub: "Pulling hotel inventory for the destination city" },
+  { icon: Plane, label: "Searching flights", sub: "Fares for the outbound and return legs" },
+  { icon: Hotel, label: "Searching stays", sub: "Hotel prices for the stay dates" },
   { icon: ShieldCheck, label: "Screening constraints", sub: "Applying stops, time-window, rating and policy rules" },
-  { icon: Layers, label: "Optimizing combinations", sub: "Scoring every feasible flight + stay combination under budget" },
+  { icon: Layers, label: "Comparing options", sub: "Ranking every option that passes the rules, and why each one lost" },
   { icon: FileText, label: "Composing itinerary", sub: "Building the Trade-off Ledger and rationale" },
 ];
 

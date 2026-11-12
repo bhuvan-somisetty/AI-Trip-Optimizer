@@ -10,7 +10,7 @@
 ## 2. Continuous Integration
 `.github/workflows/ci.yml` runs on every pull request and every push to `main`:
 1. **Backend tests:** Python 3.11, `pip install -r requirements.txt`, `pytest`. The tests use in-memory SQLite, fixture flights and hotels and no LLM, so CI needs no secrets.
-2. **Frontend lint and build:** Node 24, `npm ci`, `npm run lint`, `npm run build` (the build includes the TypeScript check).
+2. **Frontend lint, tests and build:** Node 24, `npm ci`, `npm run lint`, `npm test` (Vitest component and unit tests in jsdom), `npm run build` (the build includes the TypeScript check).
 3. A PR shouldn't be merged while either job is red.
 
 ## 3. Local Development

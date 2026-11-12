@@ -1,4 +1,4 @@
-import type { AuditEventResponse, LedgerEntryResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
+import type { AuditEventResponse, FlightResponse, LedgerEntryResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
 import { formatInr } from "./format";
 import type { AuditEvent, CabinClass, ConstraintIssue, Flight, Hotel, Itinerary, LedgerEntry, Traveler, Trip, TripFilters } from "./types";
 
@@ -122,14 +122,16 @@ const nightsBetween = (start: string, end: string | null) =>
 /** "FL-1001 IndiGo economy, 0 stop(s)" → "FL-1001" */
 const optionIdOf = (alternative: string) => alternative.split(" ")[0];
 
+const ledgerKinds = { flight: "outbound", return: "return", stay: "stay" } as const;
+
 function toLedgerEntry(e: LedgerEntryResponse, i: number, nights: number): LedgerEntry {
   const optionId = optionIdOf(e.alternative);
   const isStay = e.kind ? e.kind === "stay" : optionId.startsWith("HT-");
-  // A rule ruled it out: a broken preference, or a fare on another day than the trip starts.
-  const screened = e.reason.startsWith("Preference") || e.reason.startsWith("Different day");
+  // A rule ruled it out: a broken preference, a fare on another day, or a return that leaves too early.
+  const screened = e.reason.startsWith("Preference") || e.reason.startsWith("Different day") || e.reason.startsWith("Timing");
   return {
     id: `led_${i}_${optionId}`,
-    kind: isStay ? "stay" : "outbound",
+    kind: e.kind ? ledgerKinds[e.kind] : isStay ? "stay" : "outbound",
     optionId,
     label: e.alternative,
     // The UI shows stays per night; the backend prices them for the whole stay.
@@ -146,6 +148,8 @@ function toIssue(flag: string, i: number): ConstraintIssue {
   const overBudget = /^Total .* over/.test(flag);
   // Without a live hotel provider the trip is still valid, just flight-only.
   if (/hotel prices are unavailable/i.test(flag)) return { id: `iss_${i}`, rule: "Hotel prices", lineItem: "Stay", severity: "info", message: flag };
+  // A trip with no return fare is still valid; its total just has no flight back in it.
+  if (/no return flight in it/i.test(flag)) return { id: `iss_${i}`, rule: "Return flight", lineItem: "Return", severity: "warning", message: flag };
   return {
     id: `iss_${i}`,
     rule: overBudget ? "Budget" : "Availability",
@@ -158,18 +162,8 @@ function toIssue(flag: string, i: number): ConstraintIssue {
 /** Providers leave fields out as null; the frontend types use undefined for "not known". */
 const orUndefined = <T,>(v: T | null | undefined) => (v === null ? undefined : v);
 
-/**
- * Converts the backend optimizer's result into the frontend Itinerary. Only data the backend
- * returns is shown: it books one outbound flight (no return) for one traveler and one room,
- * has no market baseline (savings 0) and no option scores.
- */
-export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: number; generatedAt?: string } = {}): Itinerary | undefined {
-  const it = r.itinerary;
-  if (!it) return undefined;
-  const nights = nightsBetween(trip.departDate, trip.returnDate);
-  const f = it.flight;
-  const h = it.hotel;
-  const outbound: Flight = {
+function toFlight(f: FlightResponse): Flight {
+  return {
     id: f.id,
     origin: f.origin,
     destination: f.destination,
@@ -185,6 +179,22 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
     bookingLink: orUndefined(f.link),
     source: f.source,
   };
+}
+
+/**
+ * Converts the backend optimizer's result into the frontend Itinerary. Only data the backend
+ * returns is shown: an outbound flight, a return flight when one was found, and a stay, for
+ * one traveler and one room, with no option scores. Savings are against the median-priced options
+ * that met every rule, so baselineCost is total + savings; 0 when the backend has no figure.
+ */
+export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: number; generatedAt?: string } = {}): Itinerary | undefined {
+  const it = r.itinerary;
+  if (!it) return undefined;
+  const nights = nightsBetween(trip.departDate, trip.returnDate);
+  const f = it.flight;
+  const back = it.return_flight ?? null;
+  const h = it.hotel;
+  const savings = typeof it.savings === "number" ? it.savings : null;
   const stay: Hotel | null = h
     ? {
         id: h.id,
@@ -201,17 +211,18 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
       }
     : null;
   return {
-    outbound,
-    return: null,
+    outbound: toFlight(f),
+    return: back ? toFlight(back) : null,
     stay,
     nights,
     rooms: 1,
     travelers: 1,
-    flightCost: f.price,
+    flightCost: f.price + (back?.price ?? 0),
     stayCost: h ? h.price_per_night * nights : 0,
     totalCost: it.total_cost,
-    baselineCost: 0,
-    savings: 0,
+    baselineCost: savings === null ? 0 : it.total_cost + savings,
+    savings: savings ?? 0,
+    savingsBasis: "valid-options",
     ledger: r.tradeoff_ledger.map((e, i) => toLedgerEntry(e, i, nights)),
     issues: it.flags.map(toIssue),
     rationale: it.rationale,

@@ -185,8 +185,8 @@ export const createTrip = (token: string, body: TripBody) => call<TripResponse>(
 
 /** One row of the backend's Trade-off Ledger. Stay prices are the total for the whole stay. */
 export type LedgerEntryResponse = {
-  /** "flight" | "stay"; null for itineraries saved before the backend recorded it */
-  kind: "flight" | "stay" | null;
+  /** "flight" (outbound) | "return" | "stay"; null for itineraries saved before the backend recorded it */
+  kind: "flight" | "return" | "stay" | null;
   alternative: string;
   price: number;
   won: boolean;
@@ -228,13 +228,17 @@ export type HotelResponse = {
 
 export type ItineraryResponse = {
   flight: FlightResponse;
+  /** null when no return fare was found on the end date (a flag says so); missing from older backends */
+  return_flight?: FlightResponse | null;
   hotel: HotelResponse | null;
   total_cost: number;
+  /** the median-priced options that met every rule minus the chosen ones; null on itineraries saved before savings existed */
+  savings?: number | null;
   within_budget: boolean;
   flags: string[];
   rationale: string;
-  /** "flight"/"stay" line items a reviewer swapped in by hand; missing from older backends */
-  picked?: ("flight" | "stay")[];
+  /** line items a reviewer swapped in by hand; missing from older backends */
+  picked?: ("flight" | "return" | "stay")[];
   /** false for itineraries saved before the backend kept search results: re-optimize to edit */
   editable?: boolean;
 };
@@ -278,8 +282,37 @@ export const decideTrip = (token: string, tripId: string, outcome: Outcome, reas
  * recomputes the total, flags, ledger and rationale. 400 for an option that breaks a rule,
  * 409 unless the trip is OPTIMIZED or UNDER_REVIEW.
  */
-export const editItinerary = (token: string, tripId: string, kind: "flight" | "stay", optionId: string) =>
+export const editItinerary = (token: string, tripId: string, kind: "flight" | "return" | "stay", optionId: string) =>
   call<TripResultResponse>("PATCH", `/trips/${id(tripId)}/itinerary`, { token, body: { kind, option_id: optionId } });
+
+/**
+ * PRD US-011 What-If inputs. Only the keys sent change; a preference sent as null is removed,
+ * so the optimizer stops screening on it.
+ */
+export type WhatIfBody = {
+  budget?: number;
+  cabin_class?: "economy" | "premium_economy" | "business" | null;
+  max_stops?: 0 | 1 | 2 | null;
+  min_hotel_rating?: number | null;
+};
+
+export type Change = { field: string; before: string | number | boolean | null; after: string | number | boolean | null };
+
+export type WhatIfResponse = {
+  inputs: Change[];
+  /** status is what the trip would become: OPTIMIZED, or OPTIMIZATION_FAILED with a reason */
+  preview: TripResultResponse;
+  /** what changes in the itinerary; empty when the result is the same */
+  diff: Change[];
+};
+
+/** Reruns the optimizer on the trip's saved search results; saves nothing. 400 when nothing changes. */
+export const previewTrip = (token: string, tripId: string, body: WhatIfBody) =>
+  call<WhatIfResponse>("POST", `/trips/${id(tripId)}/preview`, { token, body });
+
+/** Saves the inputs and the itinerary they produce; the trip moves to UNDER_REVIEW. 400 when no itinerary can be built. */
+export const applyPreview = (token: string, tripId: string, body: WhatIfBody) =>
+  call<TripResultResponse>("POST", `/trips/${id(tripId)}/preview/apply`, { token, body, timeoutMs: OPTIMIZE_TIMEOUT_MS });
 
 /** One row of the server-side audit trail (GET /audit), newest first. */
 export type AuditEventResponse = {

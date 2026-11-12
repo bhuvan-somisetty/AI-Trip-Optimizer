@@ -34,7 +34,7 @@ import { AuditTimeline } from "@/components/app/audit-timeline";
 import { PipelineProgress } from "@/components/trips/pipeline";
 import { ConstraintFlags, CostSummary, FlightCard, Rationale, StayCard } from "@/components/trips/itinerary";
 import { TradeoffLedger } from "@/components/trips/ledger";
-import { WhatIf } from "@/components/trips/whatif";
+import { ServerWhatIf, WhatIf } from "@/components/trips/whatif";
 import { actions, getState, routeLabel, travelerNames, useStore } from "@/lib/store";
 import { amenityLabel, cabinLabel } from "@/lib/catalog";
 import { priorityLabel, windowLabel } from "@/lib/optimizer";
@@ -88,7 +88,6 @@ export default function TripDetailPage() {
   const t = trip;
   const it = t.itinerary;
   const decided = t.status === "DECIDED";
-  // The backend has no endpoint for swapping an option, so server itineraries are read-only here.
   // Server itineraries saved before edits existed are locked until the trip is optimized again.
   const editable = !decided && !!it && t.status !== "OPTIMIZING" && !it.locked;
   const blocking = it?.issues.filter((i) => i.severity === "error") ?? [];
@@ -157,8 +156,8 @@ export default function TripDetailPage() {
   const tabs: { value: Tab; label: string; disabled?: boolean; count?: number }[] = [
     { value: "itinerary", label: "Itinerary" },
     { value: "ledger", label: "Trade-off Ledger", disabled: !it, count: it?.ledger.length },
-    // What-if re-runs the browser optimizer over its own catalog, so it can't be compared with a server itinerary.
-    ...(apiMode ? [] : [{ value: "whatif" as Tab, label: "What-if", disabled: !it }]),
+    // Server itineraries saved before search results were kept can't be rerun until optimized again.
+    { value: "whatif" as Tab, label: "What-if", disabled: !it || it.locked },
     { value: "activity", label: "Activity", count: events.length },
     { value: "request", label: "Request details" },
   ];
@@ -414,7 +413,7 @@ export default function TripDetailPage() {
       {tab === "ledger" && it && <TradeoffLedger key={ledgerKind} it={it} editable={editable} onUse={swapOption} initialKind={ledgerKind} />}
 
 
-      {tab === "whatif" && it && !apiMode && <WhatIf trip={t} editable={!decided} />}
+      {tab === "whatif" && it && (apiMode ? <ServerWhatIf trip={t} editable={!decided} /> : <WhatIf trip={t} editable={!decided} />)}
 
       {tab === "activity" && (
         <Card>

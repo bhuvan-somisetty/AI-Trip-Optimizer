@@ -29,6 +29,12 @@ AI Trip Optimizer is a B2B decision-support workspace a business uses to plan an
 
 The platform is intentionally a **decision-support system, not an autonomous booking agent** — a human always reviews and approves the final itinerary; the system never finalizes a decision on its own.
 
+## Live
+- App: https://ai-trip-optimizer.vercel.app
+- API (Swagger docs): https://ai-trip-optimizer-api.vercel.app/docs
+- Code: https://github.com/bhuvan-somisetty/AI-Trip-Optimizer
+- Status: every MVP item below is built and live; see `24_Project_Status.md` for the item-by-item check and what's left.
+
 ## Core Product Flow
 Trip request → traveler & trip details captured → LangGraph pipeline searches flight/hotel fares → budget & constraint check → itinerary composition with Trade-off Ledger → human review/edit → approve or reject (with reason) → decision/audit record.
 
