@@ -209,7 +209,7 @@ def hotels_configured() -> bool:
 def search_hotels(city: str, check_in: date, check_out: date) -> list[dict]:
     if not hotels_configured():
         raise HotelsUnavailable(
-            "Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flight only"
+            "Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flights only"
         )
     if city not in CITIES:
         raise TravelDataError(f"Hotel search doesn't know the city for airport {city} yet")

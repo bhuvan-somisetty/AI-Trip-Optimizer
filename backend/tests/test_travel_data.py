@@ -203,7 +203,7 @@ def test_repeat_hotel_search_is_served_from_cache(api):
 
 def test_hotels_unavailable_without_a_key(api, monkeypatch):
     monkeypatch.setattr(config, "SERPAPI_API_KEY", "")
-    with pytest.raises(HotelsUnavailable, match="covers the flight only"):
+    with pytest.raises(HotelsUnavailable, match="covers the flights only"):
         search_hotels("DEL", DAY, date(2026, 11, 3))
     assert api.calls == []
 
@@ -262,13 +262,13 @@ def test_unavailable_hotels_still_give_a_flight_only_itinerary(monkeypatch):
     import app.pipeline.graph as graph
 
     def unavailable(*args):
-        raise HotelsUnavailable("Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flight only")
+        raise HotelsUnavailable("Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flights only")
 
     monkeypatch.setattr(travel_data, "search_hotels", unavailable)
     monkeypatch.setattr(graph, "get_llm", lambda: None)
     result = graph.pipeline.invoke({"request": REQUEST})
     itinerary, check = result["itinerary"], result["check"]
     assert itinerary["hotel"] is None
-    assert itinerary["total_cost"] == check["flight"]["price"]
-    assert check["flags"] == ["Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flight only"]
+    assert itinerary["total_cost"] == check["flight"]["price"]  # REQUEST's end date has no return fare
+    assert "Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flights only" in check["flags"]
     assert all(e["alternative"].startswith("FL-") for e in itinerary["tradeoff_ledger"])

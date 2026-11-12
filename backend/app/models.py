@@ -75,8 +75,13 @@ class Itinerary(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     trip_id: uuid.UUID = Field(foreign_key="trips.id", unique=True, index=True)
     flight: dict = Field(sa_column=Column(JSON, nullable=False))
+    # None when no return fare was found, and on itineraries saved before returns were searched.
+    return_flight: dict | None = Field(default=None, sa_column=Column(JSON))
     hotel: dict | None = Field(default=None, sa_column=Column(JSON))  # None for a same-day trip
     total_cost: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+    # PRD US-010: the median options that met every rule minus the chosen ones. None on
+    # itineraries saved before savings were worked out.
+    savings: Decimal | None = Field(default=None, sa_column=Column(Numeric(12, 2)))
     within_budget: bool
     flags: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     rationale: str
@@ -84,7 +89,7 @@ class Itinerary(SQLModel, table=True):
     # The run's flight/hotel options, so a reviewer can swap a line item without searching
     # again. None for itineraries saved before edits existed; those need a re-run first.
     search_results: dict | None = Field(default=None, sa_column=Column(JSON))
-    # Line items ("flight"/"stay") a reviewer swapped in by hand; empty for the optimizer's own pick.
+    # Line items ("flight"/"return"/"stay") a reviewer swapped in by hand; empty for the optimizer's own pick.
     picked: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False, server_default="[]"))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

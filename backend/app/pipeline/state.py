@@ -18,6 +18,7 @@ class TripRequest(TypedDict):
 
 
 class Rejection(TypedDict):
+    kind: str  # the line item: "flight", "return" or "stay"
     option_id: str  # e.g. "FL-1003" or "HT-2003"
     rule: str  # the preference it broke, e.g. "max_stops"
     detail: str  # human-readable, names the offending value
@@ -25,15 +26,19 @@ class Rejection(TypedDict):
 
 class CheckResult(TypedDict):
     flight: dict | None  # cheapest flight that passes every rule, None if none does
+    return_flight: dict | None  # same for the flight back on the end date
     hotel: dict | None  # cheapest hotel that passes every rule, None if none does
     nights: int
     total_cost: float  # computed in code, never by the LLM
     within_budget: bool
     flags: list[str]  # human-readable constraint problems, empty if none
     rejected: list[Rejection]  # every option a rule ruled out, for the Trade-off Ledger
+    typical: dict  # per line item, the median price of the options that passed every rule
+    savings: float  # typical minus what was chosen, summed (PRD US-010)
 
 
 class LedgerEntry(TypedDict):
+    kind: str  # "flight", "return" or "stay"
     alternative: str
     price: float
     won: bool
@@ -42,8 +47,10 @@ class LedgerEntry(TypedDict):
 
 class Itinerary(TypedDict):
     flight: dict
+    return_flight: dict | None  # None when no return fare was found on the end date
     hotel: dict | None  # None for a same-day trip, or when live hotel prices are unavailable
     total_cost: float
+    savings: float
     rationale: str
     tradeoff_ledger: list[LedgerEntry]
 
@@ -51,10 +58,12 @@ class Itinerary(TypedDict):
 class PipelineState(TypedDict, total=False):
     request: TripRequest  # set by the caller before the graph runs
     flight_options: list[dict]  # written by search_node
+    return_options: list[dict]  # written by search_node: flights back on the end date
+    return_unavailable: str  # written by search_node when the return search couldn't run
     hotel_options: list[dict]  # written by search_node
     search_error: str  # written by search_node when a live search couldn't run
     hotels_unavailable: str  # written by search_node when no live hotel provider is configured
     check: CheckResult  # written by check_node
     itinerary: Itinerary  # written by compose_node
     failure_reason: str  # written by compose_node instead of `itinerary` when none can be built
-    picked: list[str]  # "flight"/"stay" line items a reviewer chose by hand (edit_itinerary only)
+    picked: list[str]  # "flight"/"return"/"stay" line items a reviewer chose by hand (edit_itinerary only)
