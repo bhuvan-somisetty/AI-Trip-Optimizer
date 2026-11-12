@@ -246,8 +246,7 @@ export const actions = {
         const trips = await Promise.all(rows.map((r) => withServerResult(toTrip(r, tripContext()))));
         if (state.session?.token !== token) return; // signed out or switched accounts meanwhile
         // The server's trail is the record; events logged in this tab are replaced by it.
-        const actorName = actor();
-        set(() => ({ travelers: travelers.map(toTraveler), trips, audit: events.map((e) => toAuditEvent(e, actorName)) }));
+        set(() => ({ travelers: travelers.map(toTraveler), trips, audit: events.map(toAuditEvent) }));
       } catch (e) {
         toast("Couldn't load your data", { description: (e as Error).message, variant: "error" });
       } finally {

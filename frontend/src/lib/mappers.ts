@@ -224,16 +224,13 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
 
 // ---------------------------------------------------------------- audit
 
-// The backend names pipeline runs after the trip status they lead to.
-const auditTypes: Record<string, AuditEvent["type"]> = { OPTIMIZED: "PIPELINE_RUN", OPTIMIZATION_FAILED: "PIPELINE_FAILED" };
-
-/** A row of GET /audit as the Audit page shows it; every server event was made by the signed-in user. */
-export function toAuditEvent(r: AuditEventResponse, actor: string): AuditEvent {
+/** A row of GET /audit as the Audit page shows it. */
+export function toAuditEvent(r: AuditEventResponse): AuditEvent {
   return {
     id: r.id,
     tripId: r.trip_id,
-    type: auditTypes[r.type] ?? (r.type as AuditEvent["type"]),
-    actor,
+    type: r.event_type as AuditEvent["type"],
+    actor: r.actor,
     summary: r.summary,
     payload: r.payload,
     createdAt: r.created_at,
