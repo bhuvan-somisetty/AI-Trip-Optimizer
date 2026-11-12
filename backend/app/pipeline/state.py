@@ -57,3 +57,4 @@ class PipelineState(TypedDict, total=False):
     check: CheckResult  # written by check_node
     itinerary: Itinerary  # written by compose_node
     failure_reason: str  # written by compose_node instead of `itinerary` when none can be built
+    picked: list[str]  # "flight"/"stay" line items a reviewer chose by hand (edit_itinerary only)

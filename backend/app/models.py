@@ -81,6 +81,11 @@ class Itinerary(SQLModel, table=True):
     flags: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     rationale: str
     tradeoff_ledger: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    # The run's flight/hotel options, so a reviewer can swap a line item without searching
+    # again. None for itineraries saved before edits existed; those need a re-run first.
+    search_results: dict | None = Field(default=None, sa_column=Column(JSON))
+    # Line items ("flight"/"stay") a reviewer swapped in by hand; empty for the optimizer's own pick.
+    picked: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False, server_default="[]"))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -109,6 +114,7 @@ class AuditEventType(str, Enum):
     PIPELINE_FAILED = "PIPELINE_FAILED"
     REVIEW_STARTED = "REVIEW_STARTED"
     DECISION = "DECISION"
+    ITINERARY_EDITED = "ITINERARY_EDITED"
 
 
 class AuditEvent(SQLModel, table=True):

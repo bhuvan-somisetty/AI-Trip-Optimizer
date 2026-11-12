@@ -1,6 +1,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator, model_validator
 
@@ -117,6 +118,17 @@ class ItineraryResponse(BaseModel):
     within_budget: bool
     flags: list[str]
     rationale: str
+    # "flight"/"stay" line items a reviewer swapped in by hand; empty when untouched.
+    picked: list[str] = []
+    # False for itineraries saved before edits existed: re-optimize to make them editable.
+    editable: bool = True
+
+
+class ItineraryEdit(BaseModel):
+    """PATCH /trips/{id}/itinerary: swap one line item for another option from the same search."""
+
+    kind: Literal["flight", "stay"]
+    option_id: str
 
 
 class LedgerEntryResponse(BaseModel):
