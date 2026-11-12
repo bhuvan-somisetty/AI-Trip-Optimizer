@@ -8,12 +8,12 @@
 
 ## Workstream A — Backend, Data & AI Pipeline
 **Owner: Swetalin**
-- FastAPI backend and every API endpoint (auth, travelers, trips, optimize, decision, documents, assistant, dashboard, audit) — see `07_API_Specification.md`.
+- FastAPI backend and every API endpoint (auth, travelers, trips, optimize, decision, audit) — see `07_API_Specification.md`.
 - Database schema and Alembic migrations.
 - Mock flight/hotel data (`09_Mock_Data_Spec.md`).
 - The LangGraph optimization pipeline: search node, budget/constraint check node, compose node (LLM call) — see `08_GenAI_Architecture.md`.
 - Trade-off Ledger data structure and its guardrail (cost-figure consistency check).
-- Dashboard aggregation queries, audit trail writes.
+- Audit trail writes and `GET /audit`.
 
 ## Workstream B — Frontend / UI
 **Owner: Bhuvan**
@@ -21,6 +21,15 @@
 - Every screen's UI: auth (login/register), Trip Request Form, Itinerary Result View (Trade-off Ledger panel, budget/constraint flags, rationale display), Dashboard.
 - Frontend state/data-fetching (React Query), form validation (Zod), component library setup (shadcn/ui + Tailwind).
 - Wiring every screen to Swetalin's API endpoints once they exist.
+
+## What each person delivered (as of 2026-11-12)
+Counted from `git log` on `main`, merge commits excluded: 197 commits, 101 by Swetalin and 96 by Bhuvan.
+
+| | Swetalin (Workstream A) | Bhuvan (Workstream B) |
+|---|---|---|
+| Commits | 101: 79 backend, 10 docs | 96: 80 frontend, 11 backend, 1 docs |
+| Main work | FastAPI app and every endpoint; database schema and migrations; real fares (Travelpayouts, SerpApi hotels); the LangGraph pipeline, Trade-off Ledger and numbers guardrail; review/decision flow; audit trail | Every screen of the Next.js app and its wiring to the API; demo mode; analytics page (US-010 totals) |
+| Month 3 extras | | Sign in with Google (frontend and `POST /auth/google`); line-item editing (`PATCH /trips/{id}/itinerary`); Vercel + Neon deployment; GitHub Actions CI; final docs and README pass |
 
 ## Shared / Sync Points
 Per the week-by-week plan, each week has a "Sync" item — something both people must agree on together before either builds against it (e.g., the exact `itineraries` JSON shape, before Bhuvan builds a UI against it). Don't let these drift into "figure it out separately and reconcile later."

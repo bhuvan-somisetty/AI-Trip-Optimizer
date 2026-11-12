@@ -27,6 +27,24 @@ Total spend, average savings, average turnaround time for a selected period; a l
 ### What-If Simulator (stretch)
 Side-by-side or diff view: original itinerary vs. the previewed change, with changed fields visually highlighted; an explicit "Save this instead" action, since previews don't persist until approved.
 
+### Screens as built (2026-11-12)
+| Route | Screen | Notes |
+|---|---|---|
+| `/` | Landing page | |
+| `/login`, `/signup` | Sign in | email + password, or Sign in with Google; "Try the demo" only when demo mode is on |
+| `/dashboard` | Dashboard | recent trips and what needs review |
+| `/planning` | Plan a Trip | the Trip Request Form: traveler, route (IATA codes), dates, budget, preferences |
+| `/trips` | Trips | list with status filters |
+| `/trips/[id]` | Itinerary Result View | optimize, Trade-off Ledger with a swap button on each valid option, flags, rationale, review, approve/reject |
+| `/analytics` | Analytics (the PRD's Dashboard) | spend, turnaround and approval rate for 30 days to all time; average savings only in demo mode |
+| `/audit` | Audit Trail | every event from `GET /audit`; admins see everyone's, with who did it |
+| `/users` | Travelers | add, edit, delete (blocked when a traveler has trips) |
+| `/settings` | Settings | account and theme |
+| `/privacy`, `/contact` | Static pages | the privacy policy is linked from the Google consent screen |
+| `/forgot-password` | Placeholder | password reset isn't built; it tells the user to contact an admin |
+
+The Knowledge Assistant, Documents and "Ask this itinerary" screens were removed on 2026-11-12 (RAG cut from scope, 2026-09-16). Swapping a line item is disabled once a trip is decided, while it is optimizing, and for itineraries saved before edits existed.
+
 ## 3. Component Library
 Tailwind CSS + shadcn/ui — pre-built, accessible components (forms, dialogs, tables, tabs) copied into the project and owned directly, rather than built from scratch. Keeps a beginner team from re-solving basic accessibility/interaction problems.
 
