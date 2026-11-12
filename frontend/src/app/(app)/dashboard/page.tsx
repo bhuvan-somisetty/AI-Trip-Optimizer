@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Plane, Clock, IndianRupee, Plus, PiggyBank, ArrowRight, Sparkles, AlertTriangle, MessageSquareText } from "lucide-react";
+import { Plane, Clock, IndianRupee, Plus, PiggyBank, ArrowRight, AlertTriangle } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -178,17 +178,6 @@ export default function DashboardPage() {
                   </div>
                 </Link>
               ))}
-            </CardContent>
-          </Card>
-          <Card className="overflow-hidden border-0 bg-gradient-to-br from-slate-900 to-sky-900 text-white">
-            <CardContent className="space-y-3">
-              <MessageSquareText className="size-5 text-sky-300" />
-              <p className="font-semibold">Questions about policy or visas?</p>
-              <p className="text-sm text-white/70">The Knowledge Assistant answers from your documents — with citations.</p>
-              <Link href="/assistant" className={cn(buttonVariants({ variant: "secondary" }), "bg-white text-slate-900 hover:bg-white/90")}>
-                <Sparkles />
-                Ask the assistant
-              </Link>
             </CardContent>
           </Card>
         </Reveal>

@@ -71,12 +71,8 @@ export function Topbar() {
       .filter((t) => `${t.name} ${t.email} ${t.department}`.toLowerCase().includes(q))
       .slice(0, 3)
       .map((t) => ({ id: t.id, href: `/users?focus=${t.id}`, title: t.name, sub: `${t.department} · ${t.email}`, kind: "Traveler" as const }));
-    const docs = s.docs
-      .filter((d) => `${d.title} ${d.category} ${d.content}`.toLowerCase().includes(q))
-      .slice(0, 3)
-      .map((d) => ({ id: d.id, href: `/documents?doc=${d.id}`, title: d.title, sub: d.category, kind: "Document" as const }));
-    return [...trips, ...travelers, ...docs];
-  }, [query, s.trips, s.travelers, s.docs]);
+    return [...trips, ...travelers];
+  }, [query, s.trips, s.travelers]);
 
   const notifications = useMemo(
     () =>

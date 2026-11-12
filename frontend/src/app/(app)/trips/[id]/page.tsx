@@ -35,7 +35,6 @@ import { PipelineProgress } from "@/components/trips/pipeline";
 import { ConstraintFlags, CostSummary, FlightCard, Rationale, StayCard } from "@/components/trips/itinerary";
 import { TradeoffLedger } from "@/components/trips/ledger";
 import { WhatIf } from "@/components/trips/whatif";
-import { Chat } from "@/components/assistant/chat";
 import { actions, getState, routeLabel, travelerNames, useStore } from "@/lib/store";
 import { amenityLabel, cabinLabel } from "@/lib/catalog";
 import { priorityLabel, windowLabel } from "@/lib/optimizer";
@@ -44,7 +43,7 @@ import { toast } from "@/lib/toast";
 import type { LedgerEntry, TripStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type Tab = "itinerary" | "ledger" | "ask" | "whatif" | "activity" | "request";
+type Tab = "itinerary" | "ledger" | "whatif" | "activity" | "request";
 
 const flow: TripStatus[] = ["DRAFT", "OPTIMIZING", "OPTIMIZED", "UNDER_REVIEW", "DECIDED"];
 
@@ -90,7 +89,8 @@ export default function TripDetailPage() {
   const it = t.itinerary;
   const decided = t.status === "DECIDED";
   // The backend has no endpoint for swapping an option, so server itineraries are read-only here.
-  const editable = !apiMode && !decided && !!it && t.status !== "OPTIMIZING";
+  // Server itineraries saved before edits existed are locked until the trip is optimized again.
+  const editable = !decided && !!it && t.status !== "OPTIMIZING" && !it.locked;
   const blocking = it?.issues.filter((i) => i.severity === "error") ?? [];
   const events = s.audit.filter((a) => a.tripId === t.id);
   const names = travelerNames(t, s.travelers);
@@ -107,9 +107,14 @@ export default function TripDetailPage() {
     }
   }
 
-  function swapOption(kind: LedgerEntry["kind"], optionId: string, label: string) {
+  async function swapOption(kind: LedgerEntry["kind"], optionId: string, label: string) {
     const before = it!.totalCost;
-    actions.editLineItem(t.id, kind, optionId);
+    try {
+      await actions.editLineItem(t.id, kind, optionId);
+    } catch (e) {
+      toast("Couldn't swap that option", { description: (e as Error).message, variant: "error" });
+      return;
+    }
     const after = getState().trips.find((x) => x.id === t.id)?.itinerary?.totalCost ?? before;
     toast(`Swapped to ${label}`, { description: `Total ${formatInr(before)} → ${formatInr(after)}. Logged to the audit trail.` });
   }
@@ -152,7 +157,6 @@ export default function TripDetailPage() {
   const tabs: { value: Tab; label: string; disabled?: boolean; count?: number }[] = [
     { value: "itinerary", label: "Itinerary" },
     { value: "ledger", label: "Trade-off Ledger", disabled: !it, count: it?.ledger.length },
-    { value: "ask", label: "Ask this itinerary", disabled: !it },
     // What-if re-runs the browser optimizer over its own catalog, so it can't be compared with a server itinerary.
     ...(apiMode ? [] : [{ value: "whatif" as Tab, label: "What-if", disabled: !it }]),
     { value: "activity", label: "Activity", count: events.length },
@@ -398,7 +402,6 @@ export default function TripDetailPage() {
                     </CardHeader>
                     <CardContent className="flex flex-wrap gap-2">
                       <Button variant="outline" onClick={() => setTab("ledger")}>Open Trade-off Ledger</Button>
-                      <Button variant="outline" onClick={() => setTab("ask")}>Ask this itinerary</Button>
                     </CardContent>
                   </Card>
                 </div>
@@ -410,16 +413,6 @@ export default function TripDetailPage() {
 
       {tab === "ledger" && it && <TradeoffLedger key={ledgerKind} it={it} editable={editable} onUse={swapOption} initialKind={ledgerKind} />}
 
-      {tab === "ask" && it && (
-        <Card className="h-[min(70dvh,640px)] gap-0 overflow-hidden py-0">
-          <Chat
-            mode="itinerary"
-            tripId={t.id}
-            className="h-full"
-            suggestions={["Why this outbound flight?", "Why not a cheaper flight?", "Why not an earlier flight?", "Why this hotel?", "What are the policy issues?", "How much does it cost?", "How much did we save?"]}
-          />
-        </Card>
-      )}
 
       {tab === "whatif" && it && !apiMode && <WhatIf trip={t} editable={!decided} />}
 

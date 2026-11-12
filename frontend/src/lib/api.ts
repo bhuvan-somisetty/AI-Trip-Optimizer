@@ -21,7 +21,7 @@ export class ApiUnavailable extends ApiError {
   }
 }
 
-type Method = "GET" | "POST" | "PUT" | "DELETE";
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 async function call<T>(method: Method, path: string, opts: { body?: unknown; token?: string; timeoutMs?: number } = {}): Promise<T> {
   const headers: Record<string, string> = {};
@@ -233,6 +233,10 @@ export type ItineraryResponse = {
   within_budget: boolean;
   flags: string[];
   rationale: string;
+  /** "flight"/"stay" line items a reviewer swapped in by hand; missing from older backends */
+  picked?: ("flight" | "stay")[];
+  /** false for itineraries saved before the backend kept search results: re-optimize to edit */
+  editable?: boolean;
 };
 
 /** What optimize and GET itinerary return; `itinerary` is null and `reason` set when optimization failed. */
@@ -268,6 +272,26 @@ export const startReview = (token: string, tripId: string) => call<TripResponse>
 /** 400 when rejecting without a reason; 409 unless the trip is OPTIMIZED or UNDER_REVIEW. */
 export const decideTrip = (token: string, tripId: string, outcome: Outcome, reason: string | null) =>
   call<DecisionResponse>("POST", `/trips/${id(tripId)}/decision`, { token, body: { outcome, reason } });
+
+/**
+ * PRD US-007: swaps the flight or hotel for another option from the same search; the backend
+ * recomputes the total, flags, ledger and rationale. 400 for an option that breaks a rule,
+ * 409 unless the trip is OPTIMIZED or UNDER_REVIEW.
+ */
+export const editItinerary = (token: string, tripId: string, kind: "flight" | "stay", optionId: string) =>
+  call<TripResultResponse>("PATCH", `/trips/${id(tripId)}/itinerary`, { token, body: { kind, option_id: optionId } });
+
+/** One row of the server-side audit trail (GET /audit), newest first. */
+export type AuditEventResponse = {
+  id: string;
+  trip_id: string | null;
+  type: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export const listAudit = (token: string) => call<AuditEventResponse[]>("GET", "/audit?limit=500", { token });
 
 /** 404 when the trip hasn't been decided yet. */
 export const getDecision = (token: string, tripId: string) => call<DecisionResponse>("GET", `/trips/${id(tripId)}/decision`, { token });

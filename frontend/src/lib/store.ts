@@ -5,7 +5,7 @@ import * as api from "./api";
 import { cityByCode } from "./catalog";
 import { addDays, formatInr, toIsoDate, uid } from "./format";
 import { builtInDocs } from "./knowledge";
-import { fromTraveler, fromTrip, toItinerary, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
+import { fromTraveler, fromTrip, toAuditEvent, toItinerary, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
 import { OptimizationError, editItinerary, optimize } from "./optimizer";
 import { toast } from "./toast";
 import type {
@@ -231,17 +231,23 @@ export const actions = {
     set((s) => ({ session: s.session ? { ...s.session, ...patch } : s.session }));
   },
 
-  /** Loads the signed-in user's travelers and trips from the API. No-op in demo mode. */
+  /** Loads the signed-in user's travelers, trips and audit trail from the API. No-op in demo mode. */
   syncFromApi() {
     if (!isApi()) return Promise.resolve();
     syncing ??= (async () => {
       const token = state.session?.token;
       set(() => ({ syncing: true }));
       try {
-        const [travelers, rows] = await Promise.all([remote(api.listTravelers), remote((tok) => api.listTrips(tok))]);
+        const [travelers, rows, events] = await Promise.all([
+          remote(api.listTravelers),
+          remote((tok) => api.listTrips(tok)),
+          remote(api.listAudit),
+        ]);
         const trips = await Promise.all(rows.map((r) => withServerResult(toTrip(r, tripContext()))));
         if (state.session?.token !== token) return; // signed out or switched accounts meanwhile
-        set(() => ({ travelers: travelers.map(toTraveler), trips }));
+        // The server's trail is the record; events logged in this tab are replaced by it.
+        const actorName = actor();
+        set(() => ({ travelers: travelers.map(toTraveler), trips, audit: events.map((e) => toAuditEvent(e, actorName)) }));
       } catch (e) {
         toast("Couldn't load your data", { description: (e as Error).message, variant: "error" });
       } finally {
@@ -409,11 +415,28 @@ export const actions = {
     const status = isApi() ? (await remote((tok) => api.startReview(tok, id))).status : "UNDER_REVIEW";
     patchTrip(id, { status }, [log({ tripId: id, type: "REVIEW_STARTED", summary: "Itinerary moved to review" })]);
   },
-  editLineItem(id: string, kind: "outbound" | "return" | "stay", optionId: string) {
+  /** PRD US-007: swaps one line item; the total, flags and ledger are recalculated. */
+  async editLineItem(id: string, kind: "outbound" | "return" | "stay", optionId: string) {
     const trip = state.trips.find((t) => t.id === id);
-    // Server itineraries can't be re-priced in the browser (the page hides this in API mode too).
-    if (!trip?.itinerary || isApi()) return;
+    if (!trip?.itinerary) return;
     const before = trip.itinerary.totalCost;
+    if (isApi()) {
+      // The backend books one outbound flight, so "return" never reaches it.
+      if (kind === "return") return;
+      const result = await remote((tok) => api.editItinerary(tok, id, kind === "stay" ? "stay" : "flight", optionId));
+      const itinerary = toItinerary(result, trip, { generatedAt: new Date().toISOString(), runMs: trip.itinerary.runMs });
+      if (!itinerary) return;
+      const label = itinerary.ledger.find((l) => l.kind === kind && l.won)?.label ?? optionId;
+      patchTrip(id, { itinerary, status: result.status }, [
+        log({
+          tripId: id,
+          type: "ITINERARY_EDITED",
+          summary: `Swapped ${kind === "stay" ? "hotel" : "flight"} to ${label}; total ${formatInr(before)} → ${formatInr(itinerary.totalCost)}`,
+          payload: { kind, optionId, before, after: itinerary.totalCost },
+        }),
+      ]);
+      return;
+    }
     const itinerary = editItinerary(trip, state.policy, kind, optionId);
     const label = itinerary.ledger.find((l) => l.kind === kind && l.won)?.label;
     patchTrip(id, { itinerary, status: "UNDER_REVIEW" }, [
