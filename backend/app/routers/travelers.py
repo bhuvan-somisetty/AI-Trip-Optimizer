@@ -3,8 +3,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
+from app.audit import record
 from app.database import get_session
-from app.models import Traveler, Trip, User
+from app.models import AuditEventType, Traveler, Trip, User
 from app.schemas import TravelerCreate, TravelerResponse
 from app.security import get_current_user
 
@@ -19,6 +20,11 @@ def create_traveler(
 ):
     traveler = Traveler(name=body.name, preferences=body.preferences, created_by=current_user.id)
     session.add(traveler)
+    record(
+        session, user=current_user, event_type=AuditEventType.TRAVELER_CREATED,
+        summary=f"Added traveler {traveler.name}",
+        payload={"traveler_id": traveler.id, "name": traveler.name, "preferences": traveler.preferences},
+    )
     session.commit()
     session.refresh(traveler)
     return traveler
@@ -45,9 +51,16 @@ def update_traveler(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Traveler not found")
 
     # PUT replaces the whole traveler, so the body has the same shape as create.
+    before = {"name": traveler.name, "preferences": traveler.preferences}
     traveler.name = body.name
     traveler.preferences = body.preferences
     session.add(traveler)
+    record(
+        session, user=current_user, event_type=AuditEventType.TRAVELER_UPDATED,
+        summary=f"Updated traveler {traveler.name}",
+        payload={"traveler_id": traveler.id, "before": before,
+                 "after": {"name": traveler.name, "preferences": traveler.preferences}},
+    )
     session.commit()
     session.refresh(traveler)
     return traveler
@@ -74,4 +87,9 @@ def delete_traveler(
         )
 
     session.delete(traveler)
+    record(
+        session, user=current_user, event_type=AuditEventType.TRAVELER_DELETED,
+        summary=f"Deleted traveler {traveler.name}",
+        payload={"traveler_id": traveler.id, "name": traveler.name},
+    )
     session.commit()
