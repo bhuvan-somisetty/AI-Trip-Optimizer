@@ -49,7 +49,7 @@
 | 2 | **Demo video + deployment link** (due Nov 25, `15_Roadmap.md`) | A graded milestone. Use DEL → BOM, 2026-12-02 to 12-05: it had fares both ways and 17 hotels on 2026-11-13 (re-check the day before) | team, 1 hour |
 | 3 | **Written confirmation of the scope cuts** (R-010, R-011): the RAG removal was verbal, and the submitted PRD PDF still lists two removed rows | Protects the team if asked "where is the Knowledge Assistant?" at the external viva | a message to the mentor |
 | 4 | **Run the usability sessions** with 2–3 outside users, using `25_Usability_Check.md`, and record the results | The one UX metric not yet measured (Trade-off Ledger legibility) | team, 1 hour |
-| 5 | Small gaps: password reset is a placeholder; admins can only be made in the database; ~110 merged branches could be deleted on GitHub | Polish | small |
+| 5 | Small gaps: password reset is a placeholder; ~110 merged branches could be deleted on GitHub. (Admins: sign up, then run `python -m app.make_admin <email>` from `backend/` with `DATABASE_URL` set.) | Polish | small |
 | — | Multi-agent pipeline (stretch) | Left out on purpose: the single pipeline meets every story, and a second agent would add LLM calls without adding a checked number | not planned |
 
 ## 5. Viva readiness
