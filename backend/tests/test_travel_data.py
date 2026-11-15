@@ -84,6 +84,8 @@ def api(monkeypatch):
 
     monkeypatch.setattr(config, "TRAVELPAYOUTS_TOKEN", "tp-token")
     monkeypatch.setattr(config, "SERPAPI_API_KEY", "serp-key")
+    # These tests cover Travelpayouts; the Google Flights tests below switch this back on.
+    monkeypatch.setattr(config, "FLIGHT_SOURCE", "travelpayouts")
     monkeypatch.setattr(travel_data.httpx, "request", fake_request)
     monkeypatch.setattr(travel_data, "_cache", {})
     return Api
@@ -272,3 +274,122 @@ def test_unavailable_hotels_still_give_a_flight_only_itinerary(monkeypatch):
     assert itinerary["total_cost"] == check["flight"]["price"]  # REQUEST's end date has no return fare
     assert "Live hotel prices are unavailable (no SERPAPI_API_KEY is set), so this total covers the flights only" in check["flags"]
     assert all(e["alternative"].startswith("FL-") for e in itinerary["tradeoff_ledger"])
+
+
+# ---- Google Flights (via SerpApi) -------------------------------------------
+
+GOOGLE_FLIGHTS_BODY = {
+    "search_metadata": {"google_flights_url": "https://www.google.com/travel/flights?x"},
+    "best_flights": [
+        {
+            "flights": [
+                {
+                    "departure_airport": {"id": "BLR", "time": "2026-12-04 06:10"},
+                    "arrival_airport": {"id": "BOM", "time": "2026-12-04 07:55"},
+                    "airline": "IndiGo",
+                    "flight_number": "6E 5321",
+                    "travel_class": "Economy",
+                }
+            ],
+            "total_duration": 105,
+            "price": 5120,
+        }
+    ],
+    "other_flights": [
+        {
+            "flights": [
+                {
+                    "departure_airport": {"id": "BLR", "time": "2026-12-04 21:00"},
+                    "arrival_airport": {"id": "HYD", "time": "2026-12-04 22:10"},
+                    "airline": "Air India",
+                    "flight_number": "AI 512",
+                    "travel_class": "Economy",
+                },
+                {
+                    "departure_airport": {"id": "HYD", "time": "2026-12-04 23:30"},
+                    "arrival_airport": {"id": "BOM", "time": "2026-12-05 00:55"},
+                    "airline": "Air India",
+                    "flight_number": "AI 619",
+                    "travel_class": "Economy",
+                },
+            ],
+            "total_duration": 235,
+            "price": 4300,
+        },
+        {"flights": [], "price": 1000},  # no legs: skipped
+        {  # no price: skipped
+            "flights": [
+                {
+                    "departure_airport": {"id": "BLR", "time": "2026-12-04 10:00"},
+                    "arrival_airport": {"id": "BOM", "time": "2026-12-04 11:45"},
+                    "flight_number": "QP 1101",
+                }
+            ],
+        },
+    ],
+}
+
+
+@pytest.fixture
+def google(api, monkeypatch):
+    monkeypatch.setattr(config, "FLIGHT_SOURCE", "google")
+    api.responses[travel_data.SERPAPI_URL] = FakeResponse(GOOGLE_FLIGHTS_BODY)
+    return api
+
+
+def test_google_flights_are_parsed_from_real_fields(google):
+    flights = search_flights("BLR", "BOM", date(2026, 12, 4))
+    assert [f["id"] for f in flights] == ["FL-6E5321-0610", "FL-AI512-2100"]
+    direct, one_stop = flights
+    assert direct["airline"] == "IndiGo" and direct["airline_code"] == "6E"
+    assert direct["price"] == 5120 and direct["stops"] == 0 and direct["cabin_class"] == "economy"
+    assert direct["departure_time"] == "2026-12-04T06:10:00"
+    assert direct["arrival_time"] == "2026-12-04T07:55:00"
+    assert direct["price_status"] == "live" and direct["source"] == "Google Flights via SerpApi"
+    assert one_stop["stops"] == 1 and one_stop["destination"] == "BOM"
+    assert one_stop["arrival_time"] == "2026-12-05T00:55:00"
+    # Google was enough, so Travelpayouts was never asked.
+    assert all(url == travel_data.SERPAPI_URL for _, url, _ in google.calls)
+
+
+def test_google_flights_request_asks_for_one_way_inr_in_the_trip_cabin(google):
+    search_flights("BLR", "BOM", date(2026, 12, 4), "business")
+    params = google.calls[0][2]["params"]
+    assert params["engine"] == "google_flights" and params["type"] == 2
+    assert params["outbound_date"] == "2026-12-04" and params["currency"] == "INR"
+    assert params["travel_class"] == 3
+
+
+def test_repeat_google_flight_search_is_served_from_cache(google):
+    search_flights("BLR", "BOM", date(2026, 12, 4))
+    search_flights("BLR", "BOM", date(2026, 12, 4))
+    assert [url for _, url, _ in google.calls].count(travel_data.SERPAPI_URL) == 1
+
+
+def test_no_google_flights_falls_back_to_travelpayouts(google):
+    google.responses[travel_data.SERPAPI_URL] = FakeResponse(
+        {"error": "Google Flights hasn't returned any results for this query."}
+    )
+    flights = search_flights("BLR", "DEL", date(2026, 10, 30))
+    assert flights and all(f["source"].startswith("Travelpayouts") for f in flights)
+
+
+def test_google_failure_falls_back_to_travelpayouts(google):
+    google.responses[travel_data.SERPAPI_URL] = FakeResponse({}, status_code=500)
+    flights = search_flights("BLR", "DEL", date(2026, 10, 30))
+    assert flights and all(f["source"].startswith("Travelpayouts") for f in flights)
+
+
+def test_google_failure_without_fallback_is_a_readable_error(google, monkeypatch):
+    monkeypatch.setattr(config, "TRAVELPAYOUTS_TOKEN", "")
+    google.responses[travel_data.SERPAPI_URL] = FakeResponse({}, status_code=500)
+    with pytest.raises(TravelDataError, match="SerpApi search failed"):
+        search_flights("BLR", "BOM", date(2026, 12, 4))
+
+
+def test_no_google_flights_and_no_fallback_is_an_empty_list(google, monkeypatch):
+    monkeypatch.setattr(config, "TRAVELPAYOUTS_TOKEN", "")
+    google.responses[travel_data.SERPAPI_URL] = FakeResponse(
+        {"error": "Google Flights hasn't returned any results for this query."}
+    )
+    assert search_flights("BLR", "BOM", date(2026, 12, 4)) == []
