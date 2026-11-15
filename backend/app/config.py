@@ -24,6 +24,9 @@ TRAVELPAYOUTS_TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN", "")
 # Without one, hotel prices are shown as unavailable.
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
 SEARCH_CACHE_MINUTES = int(os.getenv("SEARCH_CACHE_MINUTES") or "30")
+# Where flights come from: "google" (Google Flights via SerpApi, live, needs SERPAPI_API_KEY;
+# falls back to Travelpayouts when it fails or finds nothing) or "travelpayouts" (cached fares only).
+FLIGHT_SOURCE = (os.getenv("FLIGHT_SOURCE") or "google").strip().lower()
 
 # Sign in with Google: the OAuth Web client ID from Google Cloud (Google Auth Platform -> Clients).
 # Only the ID is needed, to check that Google's ID tokens were issued for this app; without it
