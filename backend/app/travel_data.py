@@ -1,7 +1,9 @@
 """Real flight and hotel search for the pipeline's search_node.
 
-Flights: Travelpayouts Aviasales Data API (free token, https://www.travelpayouts.com).
-  Real fares that Aviasales users found in the last 48 hours, with the real airline,
+Flights: Google Flights via SerpApi first (live schedules and prices for any date, same key
+  as hotels; FLIGHT_SOURCE=travelpayouts turns it off). Fallback, and the only source when
+  there's no SERPAPI_API_KEY: Travelpayouts Aviasales Data API (free token,
+  https://www.travelpayouts.com). Real fares that Aviasales users found in the last 48 hours, with the real airline,
   flight number and departure time. They are cached fares, not live bookable offers,
   and the API can't re-check a price, so every record carries a `link` to the live
   Aviasales search and `price_status: "cached"`.
@@ -120,7 +122,104 @@ def _airline_names() -> dict[str, str]:
     return _cached(("airlines",), fetch)
 
 
+# SerpApi's google_flights travel_class codes, keyed by the trip's cabin_class preference.
+GOOGLE_CABINS = {"economy": 1, "premium_economy": 2, "business": 3, "first": 4}
+
+
 def search_flights(origin: str, destination: str, day: date, cabin_class: str | None = None) -> list[dict]:
+    """Flights for `day`: live Google Flights first, Travelpayouts' cached fares as the fallback.
+
+    Google Flights (via SerpApi) has real schedules and prices for any future date, but only
+    for `day` itself. When it isn't set up, fails, or finds nothing, Travelpayouts is tried:
+    its cached fares also cover nearby days, so a failed trip can still name the nearest fares.
+    """
+    google_tried = config.FLIGHT_SOURCE == "google" and bool(config.SERPAPI_API_KEY)
+    google_error = None
+    if google_tried:
+        try:
+            flights = _google_flights(origin, destination, day, cabin_class)
+            if flights:
+                return flights
+        except TravelDataError as e:
+            google_error = e
+            logger.warning("Google Flights search failed: %s", e)
+    if google_tried and not config.TRAVELPAYOUTS_TOKEN:
+        # No fallback to ask: report Google's own failure, or that it found no flights.
+        if google_error is not None:
+            raise google_error
+        return []
+    return _travelpayouts_flights(origin, destination, day)
+
+
+def _google_flights(origin: str, destination: str, day: date, cabin_class: str | None) -> list[dict]:
+    """Live one-way Google Flights results for `day`, in INR."""
+    params = {
+        "engine": "google_flights",
+        "departure_id": origin,
+        "arrival_id": destination,
+        "outbound_date": day.isoformat(),
+        "type": 2,  # one way; the pipeline searches the return leg on its own
+        "travel_class": GOOGLE_CABINS.get(cabin_class or "economy", 1),
+        "currency": "INR",
+        "gl": "in",
+        "hl": "en",
+        "api_key": config.SERPAPI_API_KEY,
+    }
+
+    def fetch():
+        body = _request("SerpApi", "GET", SERPAPI_URL, params=params)
+        error = body.get("error")
+        if error and SERPAPI_NO_RESULTS in error:
+            return {}
+        if error:
+            raise TravelDataError(f"SerpApi flight search failed: {error}")
+        return body
+
+    body = _cached(("google_flights", origin, destination, day.isoformat(), params["travel_class"]), fetch)
+    link = (body.get("search_metadata") or {}).get("google_flights_url")
+    flights, seen = [], set()
+    for row in (body.get("best_flights") or []) + (body.get("other_flights") or []):
+        legs = row.get("flights") or []
+        price = row.get("price")
+        try:
+            first, last = legs[0], legs[-1]
+            departure = datetime.strptime(first["departure_airport"]["time"], "%Y-%m-%d %H:%M")
+            arrival = datetime.strptime(last["arrival_airport"]["time"], "%Y-%m-%d %H:%M")
+            flight_no = first["flight_number"].replace(" ", "")
+        except (IndexError, KeyError, TypeError, ValueError):
+            continue  # no legs, times or flight number: can't be shown or checked
+        if price is None or departure.date() != day:
+            continue  # no price to compare, or not on the requested day
+        flight_id = f"FL-{flight_no}-{departure:%H%M}"
+        if flight_id in seen:
+            continue
+        seen.add(flight_id)
+        cabin = (first.get("travel_class") or "Economy").lower().replace(" ", "_")
+        flights.append(
+            {
+                "id": flight_id,
+                "origin": first["departure_airport"].get("id") or origin,
+                "destination": last["arrival_airport"].get("id") or destination,
+                # Local airport times, as Google shows them (no UTC offset).
+                "departure_time": departure.isoformat(),
+                "arrival_time": arrival.isoformat(),
+                "airline": first.get("airline") or flight_no[:2],
+                "airline_code": flight_no[:2],
+                "flight_number": flight_no,
+                "price": price,
+                "currency": "INR",
+                "cabin_class": cabin,
+                "stops": len(legs) - 1,
+                "duration_minutes": row.get("total_duration"),
+                "price_status": "live",
+                "link": link,
+                "source": "Google Flights via SerpApi",
+            }
+        )
+    return flights
+
+
+def _travelpayouts_flights(origin: str, destination: str, day: date) -> list[dict]:
     """Real fares from FLEX_DAYS before to FLEX_DAYS after `day`.
 
     The Data API keeps only the cheapest fare found per departure day, so a single-day
