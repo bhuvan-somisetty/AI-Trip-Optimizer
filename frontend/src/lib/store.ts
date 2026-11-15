@@ -4,14 +4,11 @@ import { useSyncExternalStore } from "react";
 import * as api from "./api";
 import { cityByCode } from "./catalog";
 import { addDays, formatInr, toIsoDate, uid } from "./format";
-import { builtInDocs } from "./knowledge";
 import { fromTraveler, fromTrip, toAuditEvent, toItinerary, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
 import { OptimizationError, editItinerary, optimize } from "./optimizer";
 import { toast } from "./toast";
 import type {
   AuditEvent,
-  ChatMessage,
-  KnowledgeDoc,
   Outcome,
   Policy,
   Session,
@@ -23,7 +20,7 @@ import type {
 
 /**
  * Client-side workspace store. It mirrors the REST resources in docs/07_API_Specification.md
- * (travelers, trips, itineraries, decisions, audit, documents) and persists to localStorage,
+ * (travelers, trips, itineraries, decisions, audit) and persists to localStorage,
  * so the whole product works end-to-end even when the FastAPI backend isn't running.
  * In API mode (session.mode === "api") travelers, trips, optimization, review and decisions all go
  * through the backend; only demo mode runs the browser optimizer (lib/optimizer.ts).
@@ -38,8 +35,6 @@ export type State = {
   travelers: Traveler[];
   trips: Trip[];
   audit: AuditEvent[];
-  docs: KnowledgeDoc[];
-  chat: ChatMessage[];
   policy: Policy;
   settings: Settings;
   readNotificationsAt: string;
@@ -81,8 +76,6 @@ const empty: State = {
   travelers: [],
   trips: [],
   audit: [],
-  docs: [],
-  chat: [],
   policy: defaultPolicy,
   settings: { theme: "light", notifyDecisions: true, notifyPipeline: true, compactTables: false },
   readNotificationsAt: new Date(0).toISOString(),
@@ -504,33 +497,6 @@ export const actions = {
     ]);
   },
 
-  addDoc(doc: Pick<KnowledgeDoc, "title" | "category" | "content">) {
-    const d: KnowledgeDoc = {
-      ...doc,
-      id: uid("doc_"),
-      sizeBytes: new Blob([doc.content]).size,
-      uploadedBy: actor(),
-      uploadedAt: new Date().toISOString(),
-      builtIn: false,
-    };
-    set((s) => ({ docs: [d, ...s.docs], audit: [log({ tripId: null, type: "DOCUMENT_UPLOAD", summary: `Uploaded "${d.title}"` }), ...s.audit] }));
-    return d;
-  },
-  deleteDoc(id: string) {
-    const d = state.docs.find((x) => x.id === id);
-    set((s) => ({ docs: s.docs.filter((x) => x.id !== id), audit: [log({ tripId: null, type: "DOCUMENT_DELETED", summary: `Removed "${d?.title}"` }), ...s.audit] }));
-  },
-
-  addMessages(...msgs: ChatMessage[]) {
-    set((s) => ({ chat: [...s.chat, ...msgs] }));
-  },
-  logQuery(question: string, mode: string, tripId?: string) {
-    set((s) => ({ audit: [log({ tripId: tripId ?? null, type: "ASSISTANT_QUERY", summary: `Asked (${mode}): "${question.slice(0, 80)}"` }), ...s.audit] }));
-  },
-  clearChat(mode: "knowledge" | "itinerary", tripId?: string) {
-    set((s) => ({ chat: s.chat.filter((m) => !(m.mode === mode && (mode === "knowledge" || m.tripId === tripId))) }));
-  },
-
   updatePolicy(p: Policy) {
     set((s) => ({ policy: p, audit: [log({ tripId: null, type: "POLICY_UPDATED", summary: "Updated travel policy rules" }), ...s.audit] }));
   },
@@ -649,14 +615,6 @@ function seed(): State {
     trips.push(trip);
   });
 
-  const docs: KnowledgeDoc[] = builtInDocs.map((d, i) => ({
-    ...d,
-    sizeBytes: new Blob([d.content]).size,
-    uploadedBy: "Swetalin Rout",
-    uploadedAt: iso(addDays(now, -160 + i)),
-  }));
-  for (const d of docs) audit.push(log({ tripId: null, type: "DOCUMENT_UPLOAD", actor: d.uploadedBy, createdAt: d.uploadedAt, summary: `Uploaded "${d.title}"` }));
-
   audit.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return {
@@ -664,7 +622,6 @@ function seed(): State {
     travelers: travelers.reverse(),
     trips: trips.reverse(),
     audit,
-    docs,
     tripSeq: plan.length,
     readNotificationsAt: iso(addDays(now, -4)),
   };
