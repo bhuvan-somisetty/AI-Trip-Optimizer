@@ -32,6 +32,8 @@ class User(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     email: str = Field(unique=True, index=True)
+    # Shown on decisions and in the audit trail; None until the user sets it (Settings > Profile).
+    name: str | None = Field(default=None, max_length=100)
     # None for accounts created through Google sign-in, which have no password.
     hashed_password: str | None = None
     role: UserRole = Field(default=UserRole.member)
@@ -121,6 +123,7 @@ class AuditEventType(str, Enum):
     REVIEW_STARTED = "REVIEW_STARTED"
     DECISION = "DECISION"
     ITINERARY_EDITED = "ITINERARY_EDITED"
+    POLICY_UPDATED = "POLICY_UPDATED"
 
 
 class AuditEvent(SQLModel, table=True):
@@ -141,3 +144,22 @@ class AuditEvent(SQLModel, table=True):
     summary: str  # one readable line, e.g. "Optimized BLR→DEL: total 11,667, within budget"
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+
+
+class TravelPolicy(SQLModel, table=True):
+    """The company travel policy: one row, id 1, edited by admins (Settings > Travel policy).
+
+    No row means the defaults in app/policy.py apply. The optimizer reads it on every run.
+    """
+
+    __tablename__ = "travel_policy"
+
+    id: int = Field(default=1, primary_key=True)
+    manager_approval_flight_over: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+    max_nightly_rate: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+    max_nightly_rate_intl: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
+    business_class_min_hours: float
+    advance_booking_days: int
+    preferred_airlines: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    updated_by: uuid.UUID | None = Field(default=None, foreign_key="users.id")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
