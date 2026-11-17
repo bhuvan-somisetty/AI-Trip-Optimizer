@@ -338,3 +338,96 @@ def test_ledger_says_same_price_instead_of_zero_more(no_llm):
     ledger = graph.build_ledger({"request": request, "flight_options": tied, "hotel_options": [], **state})
     losing = [row["reason"] for row in ledger if not row["won"]]
     assert losing and all("same as" in reason and "0 more" not in reason for reason in losing)
+
+
+# ---- trip priority: cheapest / balanced / comfort / fastest -------------------
+
+PRIORITY_FLIGHTS = [
+    # cheap but slow with a stop, mid-price direct, priciest and fastest direct
+    {"id": "FL-SLOW", "price": 4000, "cabin_class": "economy", "stops": 1, "airline": "SpiceJet",
+     "departure_time": "2026-11-01T06:00:00", "arrival_time": "2026-11-01T11:00:00"},
+    {"id": "FL-MID", "price": 4600, "cabin_class": "economy", "stops": 0, "airline": "IndiGo",
+     "departure_time": "2026-11-01T09:00:00", "arrival_time": "2026-11-01T11:45:00"},
+    {"id": "FL-FAST", "price": 6500, "cabin_class": "economy", "stops": 0, "airline": "Air India",
+     "departure_time": "2026-11-01T10:00:00", "arrival_time": "2026-11-01T12:15:00"},
+]
+PRIORITY_HOTELS = [
+    {"id": "HT-BASIC", "name": "Basic", "price_per_night": 1500, "rating": 3.6},
+    {"id": "HT-GOOD", "name": "Good", "price_per_night": 2000, "rating": 4.4},
+    {"id": "HT-LUXE", "name": "Luxe", "price_per_night": 7000, "rating": 4.9},
+]
+
+
+def run_priority(priority, budget=50000.0, **prefs):
+    return run_check({"priority": priority, **prefs}, budget=budget, flights=PRIORITY_FLIGHTS, hotels=PRIORITY_HOTELS)
+
+
+def test_no_or_unknown_priority_means_cheapest():
+    for prefs in ({}, {"priority": "cheapest"}, {"priority": "luxury"}):
+        check = run_check(prefs, flights=PRIORITY_FLIGHTS, hotels=PRIORITY_HOTELS)
+        assert (check["flight"]["id"], check["hotel"]["id"]) == ("FL-SLOW", "HT-BASIC")
+
+
+def test_fastest_picks_the_shortest_flight_and_cheapest_hotel():
+    check = run_priority("fastest")
+    assert check["flight"]["id"] == "FL-FAST"
+    assert check["hotel"]["id"] == "HT-BASIC"  # no travel-time data for hotels
+
+
+def test_comfort_picks_fewest_stops_and_best_rated_hotel():
+    check = run_priority("comfort")
+    assert check["flight"]["id"] == "FL-MID"  # direct, and cheaper than the other direct one
+    assert check["hotel"]["id"] == "HT-LUXE"
+
+
+def test_balanced_weighs_price_against_time_and_rating():
+    check = run_priority("balanced")
+    assert check["flight"]["id"] == "FL-MID"
+    assert check["hotel"]["id"] == "HT-GOOD"
+
+
+def test_priority_only_spends_what_the_budget_has_room_for():
+    # Cheapest picks: 4000 + 1500*2 = 7000. A 9000 budget leaves 2000 of room.
+    check = run_priority("comfort", budget=9000.0)
+    assert check["flight"]["id"] == "FL-MID"     # +600, room left 1400
+    assert check["hotel"]["id"] == "HT-GOOD"     # +1000, LUXE would be +11000
+    assert check["within_budget"] is True
+    assert check["too_dear"]["stay"] == ["HT-LUXE"]
+
+
+def test_priority_never_overspends_when_cheapest_is_already_over():
+    check = run_priority("fastest", budget=5000.0)
+    assert check["flight"]["id"] == "FL-SLOW"
+    assert set(check["too_dear"]["flight"]) == {"FL-MID", "FL-FAST"}
+
+
+def test_priority_is_read_from_the_web_apps_filters_object():
+    check = run_check({"filters": {"priority": "fastest"}}, flights=PRIORITY_FLIGHTS, hotels=PRIORITY_HOTELS)
+    assert check["flight"]["id"] == "FL-FAST"
+
+
+def priority_ledger(priority, budget=50000.0):
+    request = {**REQUEST, "budget": budget, "preferences": {"priority": priority}}
+    state = {"request": request, "flight_options": PRIORITY_FLIGHTS, "hotel_options": PRIORITY_HOTELS}
+    state.update(check_node(state))
+    return {row["alternative"].split()[0]: row["reason"] for row in graph.build_ledger(state)}
+
+
+def test_ledger_explains_priority_choices():
+    fastest = priority_ledger("fastest")
+    assert fastest["FL-FAST"].startswith("Shortest flight")
+    assert fastest["FL-SLOW"] == "Slower: 5h 00m vs 2h 15m for FL-FAST; 2,500 less than FL-FAST"
+    comfort = priority_ledger("comfort")
+    assert comfort["FL-SLOW"].startswith("More stops: 1 vs 0 for FL-MID")
+    assert comfort["HT-BASIC"].startswith("Lower rated: 3.6 vs 4.9 for HT-LUXE")
+
+
+def test_ledger_says_when_the_budget_blocked_a_better_option():
+    ledger = priority_ledger("comfort", budget=9000.0)
+    assert ledger["HT-LUXE"].startswith("Budget: ranks higher but costs")
+
+
+def test_template_rationale_names_the_priority(no_llm):
+    request = {**REQUEST, "preferences": {"priority": "comfort"}}
+    result = pipeline.invoke({"request": request})
+    assert "fewest stops" in result["itinerary"]["rationale"]
