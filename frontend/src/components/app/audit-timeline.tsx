@@ -2,6 +2,7 @@
 
 import {
   FilePlus2,
+  FilePen,
   Sparkles,
   AlertOctagon,
   Pencil,
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 export const eventMeta: Record<AuditEvent["type"], { icon: LucideIcon; label: string; className: string }> = {
   TRIP_CREATED: { icon: FilePlus2, label: "Trip created", className: "bg-muted text-foreground" },
+  TRIP_UPDATED: { icon: FilePen, label: "Trip edited", className: "bg-muted text-foreground" },
   TRIP_DELETED: { icon: Trash2, label: "Trip deleted", className: "bg-destructive/10 text-destructive" },
   PIPELINE_RUN: { icon: Sparkles, label: "Pipeline run", className: "bg-primary/10 text-primary" },
   PIPELINE_FAILED: { icon: AlertOctagon, label: "Pipeline failed", className: "bg-destructive/10 text-destructive" },
