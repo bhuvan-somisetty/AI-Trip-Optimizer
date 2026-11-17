@@ -16,6 +16,17 @@ FastAPI auto-generates interactive OpenAPI docs at `/docs` once the backend is r
 ### POST /auth/register
 Creates a user account. The new account is always a `member`. *(Updated 2026-10-02 — a `role` sent in the request used to be accepted, so anyone could sign themselves up as `admin`. It is now ignored: sign-up never creates an admin. Covered by `backend/tests/test_auth.py`.)*
 
+*(Updated 2026-11-17: an optional `name`, up to 100 characters, is saved as the user's display name and comes back in the response. Left out, `name` is `null` until the user sets one with `PATCH /me`. Google sign-in fills it from the Google account.)* Captured response for a request that also sent `"name": "Priya Nair"`:
+```json
+{
+  "id": "fadae85f-cbab-4432-93a9-019585c5dff1",
+  "email": "demo.viva@example.com",
+  "name": "Priya Nair",
+  "role": "member"
+}
+```
+The examples below were captured before `name` existed, so they don't show it.
+
 **Request:**
 ```json
 {
@@ -107,6 +118,46 @@ Authenticates a user and returns a JWT.
   ]
 }
 ```
+
+### GET /me
+*(**Verified 2026-11-17**: `app/routers/settings.py`, tests in `backend/tests/test_settings.py`.)* Returns the signed-in user. Requires a valid JWT. The web app's Settings page and sidebar read the name from here.
+
+**Response (200 OK):**
+```json
+{
+  "id": "fadae85f-cbab-4432-93a9-019585c5dff1",
+  "email": "demo.viva@example.com",
+  "name": "Priya Nair",
+  "role": "member"
+}
+```
+
+### PATCH /me
+*(**Verified 2026-11-17.**)* Changes the signed-in user's display name. Only `name` can change: the email is the sign-in identity, and anything else in the body is ignored. Surrounding spaces are trimmed.
+
+**Request:**
+```json
+{ "name": "Priya N." }
+```
+
+**Response (200 OK)**: same shape as `GET /me`, with the new name.
+
+**Response (422 Unprocessable Entity)**: a blank name (empty or only spaces), one over 100 characters, or no `name` at all:
+```json
+{
+  "detail": [
+    {
+      "type": "value_error",
+      "loc": ["body", "name"],
+      "msg": "Value error, Name cannot be blank",
+      "input": "   ",
+      "ctx": { "error": {} }
+    }
+  ]
+}
+```
+
+**Response (401 Unauthorized)**: no token, `{ "detail": "Not authenticated" }`
 
 ---
 
@@ -418,6 +469,45 @@ Lists the requesting user's trips, newest first, optionally filtered by status. 
 }
 ```
 
+### PATCH /trips/{id}
+*(**Verified 2026-11-17**, tests in `backend/tests/test_trips.py`.)* Edits a trip request. Send only the fields that change, from `traveler_id`, `origin`, `destination`, `dates`, `budget` and `preferences`, and leave the rest out rather than sending `null`. `preferences` replaces the whole object. The same checks as `POST /trip` apply, to the trip as it will be after the edit. Requires a valid JWT and that the trip belongs to the requesting user.
+
+Before this existed, the web app's "Edit request" only changed what the browser showed, so an edited budget was lost on reload and the optimizer kept using the old one.
+
+**Only before review.** A trip can be edited while it is `DRAFT`, `OPTIMIZED` or `OPTIMIZATION_FAILED`. A saved itinerary was built for the old request, so an edit deletes it and the trip goes back to `DRAFT`, ready to optimize again; earlier pipeline runs stay in the audit trail. An edit that changes something writes a `TRIP_UPDATED` audit event with each changed field before and after. One that changes nothing writes no event.
+
+**Request:**
+```json
+{ "budget": 45000, "dates": ["2026-12-03", "2026-12-05"] }
+```
+
+**Response (200 OK)**: the trip, same shape as `GET /trips/{id}`:
+```json
+{
+  "id": "729ad274-44c1-408a-b462-dd906051f07d",
+  "traveler_id": "de593869-5593-4468-9714-7015a53d75dc",
+  "origin": "BLR",
+  "destination": "DEL",
+  "dates": ["2026-12-03", "2026-12-05"],
+  "budget": 45000.0,
+  "preferences": {},
+  "status": "DRAFT",
+  "failure_reason": null,
+  "created_by": "fadae85f-cbab-4432-93a9-019585c5dff1"
+}
+```
+
+**Response (409 Conflict)**: the trip is `OPTIMIZING`, `UNDER_REVIEW` or `DECIDED`:
+```json
+{
+  "detail": "Trip is UNDER_REVIEW; only DRAFT, OPTIMIZED or OPTIMIZATION_FAILED trips can be edited"
+}
+```
+
+**Response (422 Unprocessable Entity)**: origin and destination would be the same, `{ "detail": "Origin and destination must be different" }`. A field sent as `null`, an end date before the start date, a malformed airport code or a budget of zero or below also return 422.
+
+**Response (404 Not Found)**: the trip, or a new `traveler_id`, doesn't exist or isn't yours: `{ "detail": "Trip not found" }` or `{ "detail": "Traveler not found" }`
+
 ### POST /trips/{id}/optimize
 *(**Built 2026-10-08** — examples below are real output from the backend, with tests in `backend/tests/test_optimize.py`.)*
 
@@ -426,6 +516,17 @@ Runs the LangGraph pipeline on a saved trip: `search_node` finds real flight and
 **Status flow:** the trip is saved as `OPTIMIZING` before the pipeline starts, then ends as `OPTIMIZED` or `OPTIMIZATION_FAILED`. Only `DRAFT`, `OPTIMIZED` and `OPTIMIZATION_FAILED` trips can be optimized; re-running replaces the saved itinerary (one per trip, in the `itineraries` table).
 
 **Round trips (2026-11-13):** the flight back (`destination` → `origin` on the end date) is searched and picked the same way as the outbound one, and `total_cost` is outbound + return + stay. If no return fare is found, the trip is still built with `"return_flight": null` and a flag saying the total has no return flight in it; fares are cached and some dates have none. The itinerary also carries `savings` (PRD US-010): per line item, the median price of the options that met every rule minus the price chosen, summed. The example below was captured before return flights were added, so it shows neither field; a fixture run of BLR → DEL, 2026-11-01 to 2026-11-05, budget 20000 now gives outbound FL-1004 3,600, return FL-1009 3,300 and HT-2002 at 1,600 a night: `"total_cost": 13300.0, "savings": 9350.0`, and ledger rows such as `{ "kind": "return", "alternative": "FL-1008 SpiceJet economy, 0 stop(s), departs 2026-11-05", "price": 3900.0, "won": false, "reason": "Price: 600 more than FL-1009" }`.
+
+**What decides the pick (2026-11-17).** Every option is first screened by the trip's rules. Besides cabin class, maximum stops and minimum hotel rating, those are now the departure-time window (outbound flight only, local airport time), avoiding red-eyes (22:30 to 05:00), excluded airlines, a maximum nightly rate and required hotel amenities. They are read from top-level `preferences` keys (`departure_window`, `avoid_red_eye`, `excluded_airlines`, `max_nightly_rate`, `required_amenities`), or from the web app's `preferences.filters` object when the top-level key is missing. Each option a rule removes gets a ledger row naming the rule. Among the options left, the trip's `priority` decides:
+
+| `priority` | Flights | Hotel |
+| :--- | :--- | :--- |
+| `cheapest` (default) | cheapest | cheapest |
+| `balanced` | half price, half flight time | half price, half guest rating |
+| `comfort` | fewest stops | best rated |
+| `fastest` | shortest flight | cheapest (there is no distance data) |
+
+A priority only spends the room the budget has above the cheapest picks, so it never takes a trip over budget that the cheapest picks would have kept within it. Ledger rows say why an option lost: `Price: ...`, `Slower: ...`, `More stops: ...`, `Lower rated: ...`, or `Budget: ranks higher but ...` when a better option didn't fit. Preferred airlines, the trip's and the company policy's, only decide between options at the same price. The company travel policy is applied on every run as well (see [Travel Policy](#travel-policy)). The web app's "Max distance from centre" filter is not applied, because the hotel data has no distance.
 
 **Over budget is not a failure.** The cheapest itinerary that meets every preference is still returned, with `within_budget: false` and a flag naming the line items (PRD US-005). The run only fails when no flight (or, for an overnight trip, no hotel) is found or meets the preferences.
 
@@ -628,6 +729,68 @@ Reruns the optimizer with changed inputs on the trip's **saved** search results 
 
 ---
 
+## Travel Policy
+*(**Verified 2026-11-17**: `app/routers/settings.py` and `app/policy.py`, tests in `backend/tests/test_settings.py`, table `travel_policy` from migration `20261117_100000`.)*
+
+One policy for the whole company, behind Settings > Travel policy. Everyone signed in can read it, and only admins can change it. Until an admin saves one, built-in defaults apply: the web app's defaults, without Vistara, which merged into Air India. Amounts are INR.
+
+The optimizer reads the current policy on every run, line-item edit and What-If preview:
+- **Blocked**, with a ledger row: a hotel above the nightly cap (`max_nightly_rate` at home, `max_nightly_rate_intl` when the destination is outside India), rule `policy_hotel_cap`; and a business-class flight shorter than `business_class_min_hours`, rule `policy_business_class`.
+- **Flagged**, so the trip can still be approved: a flight fare above `manager_approval_flight_over` ("needs manager approval"), and a trip starting sooner than `advance_booking_days` from the day it is optimized. Setting `advance_booking_days` to 0 turns that check off.
+- **Tie-break only**: `preferred_airlines` win between options at the same price, never at a higher one.
+
+### GET /policy
+*(**Verified 2026-11-17.**)* Requires a valid JWT. `updated_at` and `updated_by` (the admin's email) are `null` while the defaults apply.
+
+**Response (200 OK)**: the defaults:
+```json
+{
+  "manager_approval_flight_over": 25000.0,
+  "max_nightly_rate": 8000.0,
+  "max_nightly_rate_intl": 18000.0,
+  "business_class_min_hours": 6.0,
+  "advance_booking_days": 14,
+  "preferred_airlines": ["IndiGo", "Air India", "Emirates", "Singapore Airlines"],
+  "updated_at": null,
+  "updated_by": null
+}
+```
+
+### PUT /policy
+*(**Verified 2026-11-17.**)* Replaces the whole policy, so send all six fields. **Admins only.** A change is written to the audit trail as `POLICY_UPDATED`, with each changed field before and after. Saving the same values again writes nothing.
+
+**Request:**
+```json
+{
+  "manager_approval_flight_over": 25000,
+  "max_nightly_rate": 7000,
+  "max_nightly_rate_intl": 18000,
+  "business_class_min_hours": 6,
+  "advance_booking_days": 14,
+  "preferred_airlines": ["IndiGo", "Air India"]
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "manager_approval_flight_over": 25000.0,
+  "max_nightly_rate": 7000.0,
+  "max_nightly_rate_intl": 18000.0,
+  "business_class_min_hours": 6.0,
+  "advance_booking_days": 14,
+  "preferred_airlines": ["IndiGo", "Air India"],
+  "updated_at": "2026-11-17T16:36:40.922425",
+  "updated_by": "demo.viva@example.com"
+}
+```
+
+**Response (403 Forbidden)**: a member tried to change it, `{ "detail": "Admin access required" }`
+
+**Response (422 Unprocessable Entity)**: an amount of zero or below, `business_class_min_hours` outside 0 to 24, or `advance_booking_days` outside 0 to 365.
+
+---
+
 ## Dashboard & Audit
 *(`GET /audit` built 2026-11-12, `GET /dashboard` 2026-11-13.)*
 
@@ -663,7 +826,22 @@ The Analytics page computes the same figures in the browser from the user's trip
 
 Returns audit event history, newest first. Independent of dashboard aggregation — every pipeline run and decision is recorded here regardless of what the dashboard shows (PRD: Audit trail, US-010). Requires a valid JWT. **Admins see every user's events; members see only their own.** Events are append-only: nothing in the API edits or deletes them, and re-optimizing a trip replaces its itinerary but keeps every earlier `PIPELINE_RUN` here.
 
-**Recorded events:** `TRAVELER_CREATED`, `TRAVELER_UPDATED` (payload has `before`/`after`), `TRAVELER_DELETED`, `TRIP_CREATED`, `PIPELINE_RUN` (what was chosen, the total, the flags, the rationale and the data source of each option), `PIPELINE_FAILED` (with the reason), `REVIEW_STARTED`, `DECISION` (outcome, reason, and the itinerary as it stood when decided). `ITINERARY_EDITED` (which line item was swapped, and the total before and after). `PIPELINE_RUN` and `PIPELINE_FAILED` also carry `run_ms`, how long the optimizer took. An action that fails (e.g. a 409) records nothing — the event is saved in the same transaction as the action.
+**Recorded events:** `TRAVELER_CREATED`, `TRAVELER_UPDATED` (payload has `before`/`after`), `TRAVELER_DELETED`, `TRIP_CREATED`, `PIPELINE_RUN` (what was chosen, the total, the flags, the rationale and the data source of each option), `PIPELINE_FAILED` (with the reason), `REVIEW_STARTED`, `DECISION` (outcome, reason, and the itinerary as it stood when decided). `ITINERARY_EDITED` (which line item was swapped, and the total before and after). `TRIP_UPDATED` (each changed request field before and after, and whether a saved itinerary was dropped). `POLICY_UPDATED` (each changed policy field before and after). `PIPELINE_RUN` and `PIPELINE_FAILED` also carry `run_ms`, how long the optimizer took. An action that fails (e.g. a 409) records nothing — the event is saved in the same transaction as the action.
+
+**Who did it:** `actor` is the user's email. It never changes, so use it to filter by person. `actor_name` *(added 2026-11-17)* is their display name, or `null` if they haven't set one. It is looked up when the trail is read, so a name set later shows on earlier events too. A captured event:
+```json
+{
+  "id": "14e9d74b-aa8d-4e6c-9da4-2fb99bad29cf",
+  "trip_id": "729ad274-44c1-408a-b462-dd906051f07d",
+  "event_type": "REVIEW_STARTED",
+  "actor": "demo.viva@example.com",
+  "actor_name": "Priya N.",
+  "summary": "Started review of BLR→DEL",
+  "payload": {},
+  "created_at": "2026-11-17T16:36:55.813785"
+}
+```
+The longer example below was captured before `actor_name` existed.
 
 **Query parameters (all optional):** `trip_id`, `event_type` (one of the names above), `limit` (1–500, default 100). Someone else's `trip_id` returns `[]`, the same as an unknown one.
 
