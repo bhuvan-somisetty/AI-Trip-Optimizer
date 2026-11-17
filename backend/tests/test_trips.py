@@ -155,3 +155,97 @@ def test_get_another_users_trip_is_404_not_403(client, auth_headers, other_heade
 
 def test_get_trip_malformed_id_is_422(client, auth_headers):
     assert client.get("/trips/not-a-uuid", headers=auth_headers).status_code == 422
+
+
+# ---- PATCH /trips/{id} ------------------------------------------------------
+
+def update_trip(client, headers, trip_id, changes):
+    return client.patch(f"/trips/{trip_id}", json=changes, headers=headers)
+
+
+def audit_types(client, headers):
+    return [e["event_type"] for e in client.get("/audit", headers=headers).json()]
+
+
+def test_update_trip_changes_only_sent_fields(client, auth_headers, trip_payload):
+    trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
+    response = update_trip(client, auth_headers, trip_id, {"budget": 5000, "dates": ["2026-11-02", "2026-11-04"]})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["budget"] == 5000
+    assert body["dates"] == ["2026-11-02", "2026-11-04"]
+    assert body["origin"] == "BLR" and body["destination"] == "DEL"
+    assert body["preferences"] == {"class": "economy"}
+    assert body["status"] == "DRAFT"
+    # Saved, not just echoed back.
+    assert client.get(f"/trips/{trip_id}", headers=auth_headers).json()["budget"] == 5000
+
+
+def test_update_trip_is_audited_with_before_and_after(client, auth_headers, trip_payload):
+    trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
+    update_trip(client, auth_headers, trip_id, {"budget": 5000})
+    event = client.get("/audit", headers=auth_headers).json()[0]
+    assert event["event_type"] == "TRIP_UPDATED"
+    assert event["payload"]["changes"] == {"budget": {"before": 60000.0, "after": 5000.0}}
+    assert event["payload"]["itinerary_dropped"] is False
+
+
+def test_update_trip_without_changes_writes_no_event(client, auth_headers, trip_payload):
+    trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
+    response = update_trip(client, auth_headers, trip_id, {"budget": 60000, "origin": "blr"})
+    assert response.status_code == 200
+    assert "TRIP_UPDATED" not in audit_types(client, auth_headers)
+
+
+def test_update_optimized_trip_drops_itinerary_and_returns_to_draft(client, auth_headers, trip_payload):
+    trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
+    assert client.post(f"/trips/{trip_id}/optimize", headers=auth_headers).json()["status"] == "OPTIMIZED"
+
+    response = update_trip(client, auth_headers, trip_id, {"budget": 5000})
+    assert response.status_code == 200
+    assert response.json()["status"] == "DRAFT"
+    assert client.get(f"/trips/{trip_id}/itinerary", headers=auth_headers).status_code == 404
+    assert client.get("/audit", headers=auth_headers).json()[0]["payload"]["itinerary_dropped"] is True
+
+    # The next run uses the new budget.
+    rerun = client.post(f"/trips/{trip_id}/optimize", headers=auth_headers).json()
+    assert rerun["itinerary"]["within_budget"] is False
+
+
+def test_update_trip_under_review_is_409(client, auth_headers, trip_payload):
+    trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
+    client.post(f"/trips/{trip_id}/optimize", headers=auth_headers)
+    client.post(f"/trips/{trip_id}/review", headers=auth_headers)
+    response = update_trip(client, auth_headers, trip_id, {"budget": 5000})
+    assert response.status_code == 409
+    assert client.get(f"/trips/{trip_id}", headers=auth_headers).json()["budget"] == 60000
+
+
+def test_update_trip_validates_input(client, auth_headers, trip_payload):
+    trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
+    for bad in (
+        {"budget": 0},
+        {"dates": ["2026-11-05", "2026-11-01"]},
+        {"origin": "DELHI"},
+        {"destination": "BLR"},  # same as the saved origin
+        {"budget": None},
+    ):
+        assert update_trip(client, auth_headers, trip_id, bad).status_code == 422, bad
+
+
+def test_update_trip_to_another_users_traveler_is_404(client, auth_headers, other_headers, trip_payload):
+    trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
+    theirs = client.post("/traveler", json={"name": "Not mine"}, headers=other_headers).json()["id"]
+    response = update_trip(client, auth_headers, trip_id, {"traveler_id": theirs})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Traveler not found"
+
+
+def test_update_another_users_trip_is_404(client, auth_headers, other_headers, trip_payload):
+    trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
+    assert update_trip(client, other_headers, trip_id, {"budget": 1000}).status_code == 404
+
+
+def test_update_trip_requires_auth(client, auth_headers, trip_payload):
+    trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
+    assert update_trip(client, {}, trip_id, {"budget": 1000}).status_code == 401
