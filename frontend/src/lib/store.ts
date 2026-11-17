@@ -317,9 +317,19 @@ export const actions = {
     }));
     return trip;
   },
-  updateTrip(id: string, patch: Partial<Trip>) {
+  /** In api mode the server saves first (409 if the trip is under review or decided); the local copy only changes after that. */
+  async updateTrip(id: string, patch: Partial<Trip>) {
     const t = state.trips.find((x) => x.id === id);
     if (!t) return;
+    if (isApi()) {
+      const saved = toTrip(await remote((tok) => api.updateTrip(tok, id, fromTrip({ ...t, ...patch }, t.createdAt))), tripContext());
+      patchTrip(
+        id,
+        { ...saved, createdBy: t.createdBy, itinerary: saved.status === "DRAFT" ? undefined : t.itinerary },
+        [log({ tripId: id, type: "TRIP_UPDATED", summary: `Edited ${t.code}: ${saved.origin} → ${saved.destination}, budget ${formatInr(saved.budget)}` })],
+      );
+      return;
+    }
     const reset = t.status === "OPTIMIZATION_FAILED" || t.status === "OPTIMIZED" || t.status === "UNDER_REVIEW";
     patchTrip(id, { ...patch, ...(reset ? { status: "DRAFT", itinerary: undefined, failureReason: undefined } : {}) });
   },
