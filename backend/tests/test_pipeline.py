@@ -237,3 +237,104 @@ def test_compose_fails_when_llm_invents_a_number(monkeypatch):
     result = run_pipeline()
     assert "itinerary" not in result
     assert result["failure_reason"] == "Rationale used numbers not in the itinerary: 123456"
+
+
+# ---- filter rules: time window, red-eye, airlines, nightly cap, amenities ----------
+
+TIMED_FLIGHTS = [
+    {"id": "FL-EARLY", "price": 3000, "cabin_class": "economy", "stops": 0, "airline": "SpiceJet",
+     "airline_code": "SG", "departure_time": "2026-11-01T06:15:00"},
+    {"id": "FL-NOON", "price": 4000, "cabin_class": "economy", "stops": 0, "airline": "IndiGo",
+     "airline_code": "6E", "departure_time": "2026-11-01T13:00:00"},
+    {"id": "FL-LATE", "price": 2500, "cabin_class": "economy", "stops": 0, "airline": "Akasa Air",
+     "airline_code": "QP", "departure_time": "2026-11-01T23:40:00"},
+]
+AMENITY_HOTELS = [
+    {"id": "HT-CHEAP", "price_per_night": 900, "rating": 4.0, "amenities": ["Free Wi-Fi"]},
+    {"id": "HT-MID", "price_per_night": 2500, "rating": 4.1, "amenities": ["Free Wi-Fi", "Free breakfast", "Pool"]},
+    {"id": "HT-POSH", "price_per_night": 9000, "rating": 4.8, "amenities": ["Free Wi-Fi", "Spa", "Fitness centre"]},
+]
+
+
+def rules_broken(check, kind):
+    return {r["option_id"]: r["rule"] for r in check["rejected"] if r["kind"] == kind}
+
+
+def test_check_avoids_red_eye_flights():
+    check = run_check({"avoid_red_eye": True}, flights=TIMED_FLIGHTS)
+    assert check["flight"]["id"] == "FL-EARLY"
+    assert rules_broken(check, "flight") == {"FL-LATE": "avoid_red_eye"}
+
+
+def test_check_keeps_outbound_inside_departure_window():
+    check = run_check({"departure_window": "afternoon"}, flights=TIMED_FLIGHTS)
+    assert check["flight"]["id"] == "FL-NOON"
+    assert rules_broken(check, "flight") == {"FL-EARLY": "departure_window", "FL-LATE": "departure_window"}
+
+
+def test_night_window_wraps_past_midnight():
+    check = run_check({"departure_window": "night"}, flights=TIMED_FLIGHTS)
+    assert check["flight"]["id"] == "FL-LATE"
+
+
+def test_departure_window_does_not_apply_to_the_return_leg():
+    request = {**REQUEST, "preferences": {"departure_window": "afternoon"}}
+    back = [{**f, "departure_time": "2026-11-03" + f["departure_time"][10:]} for f in TIMED_FLIGHTS]
+    check = check_node({"request": request, "flight_options": TIMED_FLIGHTS, "return_options": back,
+                        "hotel_options": HOTELS})["check"]
+    assert check["return_flight"]["id"] == "FL-LATE"
+
+
+def test_check_drops_excluded_airlines_by_name_or_code():
+    for excluded in (["Akasa Air"], ["qp"]):
+        check = run_check({"excluded_airlines": excluded}, flights=TIMED_FLIGHTS)
+        assert check["flight"]["id"] == "FL-EARLY"
+        assert rules_broken(check, "flight") == {"FL-LATE": "excluded_airlines"}
+
+
+def test_preferred_airline_breaks_a_price_tie_only():
+    tied = [{**f, "price": 3000} for f in TIMED_FLIGHTS[:2]]
+    assert run_check({"preferred_airlines": ["IndiGo"]}, flights=tied)["flight"]["id"] == "FL-NOON"
+    # Never at a higher price: a preference is a tie-break, not a rule.
+    assert run_check({"preferred_airlines": ["IndiGo"]}, flights=TIMED_FLIGHTS)["flight"]["id"] == "FL-LATE"
+
+
+def test_check_caps_the_nightly_rate():
+    check = run_check({"max_nightly_rate": 3000}, hotels=AMENITY_HOTELS)
+    assert check["hotel"]["id"] == "HT-CHEAP"
+    assert rules_broken(check, "stay") == {"HT-POSH": "max_nightly_rate"}
+
+
+def test_check_requires_listed_amenities():
+    check = run_check({"required_amenities": ["breakfast", "pool"]}, hotels=AMENITY_HOTELS)
+    assert check["hotel"]["id"] == "HT-MID"
+    assert rules_broken(check, "stay") == {"HT-CHEAP": "required_amenities", "HT-POSH": "required_amenities"}
+    gym = run_check({"required_amenities": ["gym"]}, hotels=AMENITY_HOTELS)
+    assert gym["hotel"]["id"] == "HT-POSH"
+
+
+def test_amenity_ids_with_underscores_match():
+    hotels = [{"id": "HT-X", "price_per_night": 1000, "rating": 4.0, "amenities": ["airport_shuttle"]}]
+    assert run_check({"required_amenities": ["airport_shuttle"]}, hotels=hotels)["hotel"]["id"] == "HT-X"
+
+
+def test_rules_are_read_from_the_web_apps_filters_object():
+    preferences = {"filters": {"avoidRedEye": True, "maxNightlyRate": 3000, "excludedAirlines": ["SpiceJet"]}}
+    check = run_check(preferences, flights=TIMED_FLIGHTS, hotels=AMENITY_HOTELS)
+    assert check["flight"]["id"] == "FL-NOON"
+    assert check["hotel"]["id"] == "HT-CHEAP"
+    assert rules_broken(check, "stay") == {"HT-POSH": "max_nightly_rate"}
+
+
+def test_top_level_preference_wins_over_filters_object():
+    preferences = {"avoid_red_eye": False, "filters": {"avoidRedEye": True}}
+    assert run_check(preferences, flights=TIMED_FLIGHTS)["flight"]["id"] == "FL-LATE"
+
+
+def test_ledger_says_same_price_instead_of_zero_more(no_llm):
+    tied = [{**f, "price": 3000} for f in TIMED_FLIGHTS[:2]]
+    request = {**REQUEST, "end_date": REQUEST["start_date"]}
+    state = check_node({"request": request, "flight_options": tied, "hotel_options": []})
+    ledger = graph.build_ledger({"request": request, "flight_options": tied, "hotel_options": [], **state})
+    losing = [row["reason"] for row in ledger if not row["won"]]
+    assert losing and all("same as" in reason and "0 more" not in reason for reason in losing)
