@@ -25,7 +25,7 @@ def list_audit_events(
     traceable"); members see only their own. A trip_id the caller can't see just returns
     an empty list, so the endpoint doesn't reveal which trip IDs exist.
     """
-    query = select(AuditEvent, User.email).join(User, User.id == AuditEvent.user_id)
+    query = select(AuditEvent, User.email, User.name).join(User, User.id == AuditEvent.user_id)
     if current_user.role != UserRole.admin:
         query = query.where(AuditEvent.user_id == current_user.id)
     if trip_id is not None:
@@ -39,9 +39,10 @@ def list_audit_events(
             trip_id=event.trip_id,
             event_type=event.event_type,
             actor=email,
+            actor_name=name,
             summary=event.summary,
             payload=event.payload,
             created_at=event.created_at,
         )
-        for event, email in rows
+        for event, email, name in rows
     ]
