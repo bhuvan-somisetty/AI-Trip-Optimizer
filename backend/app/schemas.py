@@ -11,6 +11,7 @@ from app.models import AuditEventType, DecisionOutcome, TripStatus, UserRole
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
+    name: str | None = Field(default=None, max_length=100)  # optional display name
 
 
 class LoginRequest(BaseModel):
@@ -31,7 +32,46 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
+    name: str | None = None
     role: UserRole
+
+
+class ProfileUpdate(BaseModel):
+    """PATCH /me. The email is the sign-in identity, so only the display name can change."""
+
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Name cannot be blank")
+        return value.strip()
+
+
+class TravelPolicyBody(BaseModel):
+    """PUT /policy: the whole company policy. Amounts are INR."""
+
+    # A flight fare (per traveler, per leg) above this is flagged for manager approval.
+    manager_approval_flight_over: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    # Hotel caps per night: domestic, and international destinations.
+    max_nightly_rate: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    max_nightly_rate_intl: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    # Business class is only allowed on flights at least this long.
+    business_class_min_hours: float = Field(ge=0, le=24)
+    # Trips should start at least this many days after they're optimized.
+    advance_booking_days: int = Field(ge=0, le=365)
+    # Preferred vendors: they win price ties, never at a higher price.
+    preferred_airlines: list[str] = Field(default_factory=list, max_length=50)
+
+    @field_serializer("manager_approval_flight_over", "max_nightly_rate", "max_nightly_rate_intl")
+    def amount_as_number(self, value: Decimal) -> float:
+        return float(value)
+
+
+class TravelPolicyResponse(TravelPolicyBody):
+    updated_at: datetime | None = None  # None while the built-in defaults apply
+    updated_by: str | None = None  # email of the admin who last changed it
 
 
 class TravelerCreate(BaseModel):
