@@ -15,6 +15,7 @@ from app.schemas import (
     ItineraryEdit,
     TripCreate,
     TripResponse,
+    TripUpdate,
     TripResultResponse,
     WhatIfRequest,
     WhatIfResponse,
@@ -93,6 +94,83 @@ def list_trips(
 
 @router.get("/trips/{trip_id}", response_model=TripResponse)
 def get_trip(trip: Trip = Depends(get_owned_trip)):
+    return trip
+
+
+@router.patch("/trips/{trip_id}", response_model=TripResponse)
+def update_trip(
+    body: TripUpdate,
+    trip: Trip = Depends(get_owned_trip),
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Change a trip request before it goes to review.
+
+    A saved itinerary was built for the old request, so it is dropped and the trip goes
+    back to DRAFT; the earlier pipeline runs stay in the audit trail.
+    """
+    if trip.status not in OPTIMIZABLE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Trip is {trip.status.value}; only DRAFT, OPTIMIZED or OPTIMIZATION_FAILED trips can be edited",
+        )
+
+    sent = body.model_dump(exclude_unset=True)
+    if any(sent.get(key) is None for key in sent):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Fields can be left out but not set to null",
+        )
+
+    if "traveler_id" in sent:
+        traveler = session.get(Traveler, sent["traveler_id"])
+        if traveler is None or traveler.created_by != current_user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Traveler not found")
+
+    if sent.get("origin", trip.origin) == sent.get("destination", trip.destination):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Origin and destination must be different",
+        )
+
+    before = {
+        "traveler_id": trip.traveler_id,
+        "origin": trip.origin,
+        "destination": trip.destination,
+        "dates": (trip.start_date, trip.end_date),
+        "budget": float(trip.budget),
+        "preferences": trip.preferences,
+    }
+    after = {**before, **sent}
+    if "budget" in sent:
+        after["budget"] = float(sent["budget"])
+    if "dates" in sent:
+        after["dates"] = tuple(sent["dates"])
+    changes = {key: {"before": before[key], "after": after[key]} for key in before if before[key] != after[key]}
+    if not changes:
+        return trip
+
+    trip.traveler_id = after["traveler_id"]
+    trip.origin = after["origin"]
+    trip.destination = after["destination"]
+    trip.start_date, trip.end_date = after["dates"]
+    trip.budget = sent.get("budget", trip.budget)
+    trip.preferences = after["preferences"]
+
+    old = saved_itinerary(session, trip)
+    if old is not None:
+        session.delete(old)
+    trip.status = TripStatus.DRAFT
+    trip.failure_reason = None
+    session.add(trip)
+
+    record(
+        session, user=current_user, event_type=AuditEventType.TRIP_UPDATED, trip_id=trip.id,
+        summary=f"Edited trip {trip.origin}→{trip.destination}: changed {', '.join(changes)}",
+        payload={"changes": changes, "itinerary_dropped": old is not None},
+    )
+    session.commit()
+    session.refresh(trip)
     return trip
 
 
