@@ -167,6 +167,7 @@ export type AuditEvent = {
   tripId: string | null;
   type:
     | "TRIP_CREATED"
+    | "TRIP_UPDATED"
     | "TRIP_DELETED"
     | "PIPELINE_RUN"
     | "PIPELINE_FAILED"
