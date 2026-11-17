@@ -141,6 +141,96 @@ def cheapest(options: list[dict], price_of, preferences: dict) -> dict | None:
     return min(options, key=lambda o: (price_of(o), not same_airline(o, preferred)), default=None)
 
 
+# ---- trip priority ---------------------------------------------------------
+# The web app's "What should the optimizer prioritize?". "cheapest" is the default, and the
+# only behaviour before priorities existed. The others rank the options that pass every rule
+# by something besides price, but only spend money the budget has room for (see `choose`).
+PRIORITIES = ("cheapest", "balanced", "comfort", "fastest")
+
+
+def trip_priority(preferences: dict) -> str:
+    value = preference(preferences, "priority", "priority")
+    return value if value in PRIORITIES else "cheapest"
+
+
+def flight_minutes(flight: dict) -> float | None:
+    if flight.get("duration_minutes"):
+        return float(flight["duration_minutes"])
+    leaves, lands = parse_time(flight.get("departure_time")), parse_time(flight.get("arrival_time"))
+    try:
+        return (lands - leaves).total_seconds() / 60 if leaves and lands else None
+    except TypeError:
+        return None
+
+
+def spread(values: list[float]) -> tuple[float, float]:
+    low, high = min(values), max(values)
+    return low, (high - low) or 1.0
+
+
+def scorer(priority: str, kind: str, options: list[dict], price_of):
+    """A sort key for `options` under `priority`: lower is better. None means "by price"."""
+    if priority == "cheapest" or not options:
+        return None
+    is_flight = kind in ("flight", "return")
+    if priority == "fastest":
+        if not is_flight:
+            return None  # no distance or travel-time data for hotels, so they stay by price
+        worst = max((m for m in map(flight_minutes, options) if m is not None), default=0) + 1
+        return lambda o: (flight_minutes(o) if flight_minutes(o) is not None else worst,)
+    if priority == "comfort":
+        if is_flight:
+            return lambda o: (o["stops"],)
+        return lambda o: (-(o.get("rating") or 0),)
+    # balanced: half price, half travel time (flights) or guest rating (hotels), each scaled 0-1.
+    price_low, price_range = spread([float(price_of(o)) for o in options])
+    if is_flight:
+        minutes = [m for m in map(flight_minutes, options) if m is not None]
+        if not minutes:
+            return None
+        low, width = spread(minutes)
+        other = lambda o: ((flight_minutes(o) if flight_minutes(o) is not None else low + width) - low) / width
+    else:
+        ratings = [o.get("rating") or 0 for o in options]
+        low, width = spread(ratings)
+        other = lambda o: 1 - ((o.get("rating") or 0) - low) / width
+    return lambda o: (round(0.5 * (float(price_of(o)) - price_low) / price_range + 0.5 * other(o), 6),)
+
+
+def choose(kind: str, options: list[dict], price_of, preferences: dict, headroom: float) -> tuple[dict | None, list[str]]:
+    """The option to book under the trip's priority, and the ids that ranked higher but cost too much.
+
+    `headroom` is how much more than the cheapest option this line item may cost without the
+    trip going over budget. The cheapest option always fits, so a priority never pushes a trip
+    over budget that the cheapest picks would have kept within it.
+    """
+    floor = cheapest(options, price_of, preferences)
+    rank = scorer(trip_priority(preferences), kind, options, price_of)
+    if floor is None or rank is None:
+        return floor, []
+    preferred = preference(preferences, "preferred_airlines", "preferredAirlines") or []
+    key = lambda o: (*rank(o), price_of(o), not same_airline(o, preferred))
+    room = max(headroom, 0.0)
+    affordable = [o for o in options if price_of(o) - price_of(floor) <= room]
+    chosen = min(affordable, key=key)
+    too_dear = [o["id"] for o in options if o not in affordable and key(o) < key(chosen)]
+    return chosen, too_dear
+
+
+WHY_BY_PRIORITY = {
+    ("balanced", "flight"): "best balance of price and travel time that meets every trip preference and fits the budget",
+    ("balanced", "stay"): "best balance of price and guest rating that meets every trip preference and fits the budget",
+    ("comfort", "flight"): "fewest stops that meets every trip preference and fits the budget",
+    ("comfort", "stay"): "best-rated hotel that meets every trip preference and fits the budget",
+    ("fastest", "flight"): "shortest flight that meets every trip preference and fits the budget",
+}
+
+
+def why_chosen(preferences: dict, kind: str) -> str:
+    group = "stay" if kind == "stay" else "flight"
+    return WHY_BY_PRIORITY.get((trip_priority(preferences), group), WHY_CHOSEN)
+
+
 def parse_time(value: str | None) -> datetime | None:
     try:
         return datetime.fromisoformat(value) if value else None
@@ -276,8 +366,8 @@ def chosen_prices(flight: dict | None, return_flight: dict | None, hotel: dict |
 
 
 def check_node(state: PipelineState) -> dict:
-    # Pure Python, no LLM: picks the cheapest option that passes every rule and does
-    # the money maths here, so the budget verdict is reproducible.
+    # Pure Python, no LLM: picks, per the trip's priority, among the options that pass every
+    # rule (the cheapest, by default) and does the money maths here, so the verdict is reproducible.
     request = state["request"]
     preferences = request["preferences"]
     nights = (request["end_date"] - request["start_date"]).days
@@ -287,9 +377,47 @@ def check_node(state: PipelineState) -> dict:
     # Median price of the options that passed every rule, per line item, for savings.
     typical: dict = {}
 
-    on_day = on_the_day("flight", state["flight_options"], request["start_date"], rejected)
-    flights = screen("flight", on_day, outbound_rule_broken, preferences, rejected)
-    flight = cheapest(flights, lambda f: f["price"], preferences)
+    # Every line item is screened first, so the budget headroom a priority may spend is known
+    # before anything is chosen. Rejections are kept per line item, in the order they're found.
+    flight_price, stay_price = (lambda f: f["price"]), (lambda h: h["price_per_night"] * nights)
+    rejected_flight: list = []
+    on_day = on_the_day("flight", state["flight_options"], request["start_date"], rejected_flight)
+    flights = screen("flight", on_day, outbound_rule_broken, preferences, rejected_flight)
+
+    rejected_return: list = []
+    return_candidates: list = []
+    if "return_options" in state:
+        on_day_back = on_the_day("return", state["return_options"], request["end_date"], rejected_return)
+        return_candidates = screen("return", on_day_back, flight_rule_broken, preferences, rejected_return)
+
+    rejected_stay: list = []
+    hotels: list = []
+    if nights > 0 and not state.get("hotels_unavailable"):
+        hotels = screen("stay", state["hotel_options"], hotel_rule_broken, preferences, rejected_stay)
+
+    # How much the trip can spend above its cheapest valid picks and still be within budget.
+    floor_total = sum(
+        price(option)
+        for option, price in (
+            (cheapest(flights, flight_price, preferences), flight_price),
+            (cheapest(return_candidates, flight_price, preferences), flight_price),
+            (cheapest(hotels, stay_price, preferences), stay_price),
+        )
+        if option
+    )
+    headroom = request["budget"] - floor_total
+    too_dear: dict = {}
+
+    def pick(kind, options, price):
+        nonlocal headroom
+        chosen, blocked = choose(kind, options, price, preferences, headroom)
+        too_dear[kind] = blocked
+        floor = cheapest(options, price, preferences)
+        if chosen and floor:
+            headroom -= price(chosen) - price(floor)
+        return chosen
+
+    flight = pick("flight", flights, flight_price)
     if flights:
         typical["flight"] = statistics.median(f["price"] for f in flights)
     if state.get("search_error"):
@@ -308,11 +436,10 @@ def check_node(state: PipelineState) -> dict:
     if "return_options" in state:
         back = f"{request['destination']} to {request['origin']} on {request['end_date'].isoformat()}"
         no_return = "so the total has no return flight in it"
-        on_day_back = on_the_day("return", state["return_options"], request["end_date"], rejected)
         returns = []
-        for option in screen("return", on_day_back, flight_rule_broken, preferences, rejected):
+        for option in return_candidates:
             if leaves_before_landing(option, flight):
-                rejected.append({
+                rejected_return.append({
                     "kind": "return",
                     "option_id": option["id"],
                     "rule": "connection",
@@ -320,7 +447,7 @@ def check_node(state: PipelineState) -> dict:
                 })
             else:
                 returns.append(option)
-        return_flight = cheapest(returns, lambda f: f["price"], preferences)
+        return_flight = pick("return", returns, flight_price)
         if returns:
             typical["return"] = statistics.median(f["price"] for f in returns)
         if state.get("search_error"):
@@ -336,14 +463,14 @@ def check_node(state: PipelineState) -> dict:
     if nights > 0 and state.get("hotels_unavailable"):
         flags.append(state["hotels_unavailable"])
     elif nights > 0:
-        hotels = screen("stay", state["hotel_options"], hotel_rule_broken, preferences, rejected)
-        hotel = cheapest(hotels, lambda h: h["price_per_night"], preferences)
+        hotel = pick("stay", hotels, stay_price)
         if hotels:
             typical["stay"] = statistics.median(h["price_per_night"] for h in hotels) * nights
         if not state["hotel_options"] and not state.get("search_error"):
             flags.append(f"No hotels found in {request['destination']}")
         elif state["hotel_options"] and hotel is None:
             flags.append(f"No hotel in {request['destination']} meets the trip's preferences")
+    rejected = rejected_flight + rejected_return + rejected_stay
 
     total_cost, within_budget, budget_flag = price_check(request, flight, hotel, nights, return_flight)
     if budget_flag:
@@ -361,6 +488,8 @@ def check_node(state: PipelineState) -> dict:
             "rejected": rejected,
             "typical": typical,
             "savings": savings(typical, chosen_prices(flight, return_flight, hotel, nights)),
+            # Options the trip's priority ranked above the pick but the budget had no room for.
+            "too_dear": too_dear,
         }
     }
 
@@ -377,7 +506,30 @@ def hotel_label(hotel: dict) -> str:
     return f"{hotel['id']} {hotel['name']}, {rating}"
 
 
-def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id, picked=False) -> list[dict]:
+def hours(minutes: float) -> str:
+    return f"{int(minutes // 60)}h {int(minutes % 60):02d}m"
+
+
+def priority_reason(priority: str, kind: str, option: dict, chosen: dict) -> str | None:
+    """Why `option` ranked below `chosen` under a non-default priority, or None to explain by price."""
+    if priority == "cheapest":
+        return None
+    if kind == "stay":
+        if priority in ("comfort", "balanced") and (option.get("rating") or 0) < (chosen.get("rating") or 0):
+            return f"Lower rated: {option.get('rating') or 'unrated'} vs {chosen['rating']} for {chosen['id']}"
+        return None
+    if priority == "comfort" and option["stops"] > chosen["stops"]:
+        return f"More stops: {option['stops']} vs {chosen['stops']} for {chosen['id']}"
+    mine, theirs = flight_minutes(option), flight_minutes(chosen)
+    if priority in ("fastest", "balanced") and mine and theirs and mine > theirs:
+        return f"Slower: {hours(mine)} vs {hours(theirs)} for {chosen['id']}"
+    return None
+
+
+def ledger_entries(
+    kind, options, chosen, price_of, label, rejected_by_id, picked=False,
+    priority="cheapest", why=None, too_dear=(),
+) -> list[dict]:
     # Every option search_node found gets one row: the winner, or why it lost.
     # `kind` ("flight", "return" or "stay") lets clients group rows without parsing option ids.
     # `picked` means a reviewer chose this line item by hand instead of the optimizer.
@@ -385,7 +537,7 @@ def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id, picke
     for option in sorted(options, key=price_of):
         price = float(price_of(option))
         if chosen and option["id"] == chosen["id"]:
-            reason = PICKED_REASON if picked else "Cheapest option that meets every trip preference"
+            reason = PICKED_REASON if picked else (why or WHY_CHOSEN)[0].upper() + (why or WHY_CHOSEN)[1:]
         elif option["id"] in rejected_by_id and rejected_by_id[option["id"]]["rule"] == "travel_date":
             reason = f"Different day: {rejected_by_id[option['id']]['detail']}"
             if chosen:
@@ -399,9 +551,18 @@ def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id, picke
         else:
             difference = price - price_of(chosen)
             if difference == 0:
+                price_note = f"same price as {chosen['id']}"
+            else:
+                price_note = f"{abs(difference):,.0f} {'less' if difference < 0 else 'more'} than {chosen['id']}"
+            ranked = None if picked else priority_reason(priority, kind, option, chosen)
+            if option["id"] in too_dear and not picked:
+                reason = f"Budget: ranks higher but costs {price_note}, more than the budget has room for"
+            elif ranked:
+                reason = f"{ranked}; {price_note}"
+            elif difference == 0:
                 reason = f"Price: same as {chosen['id']}, which was picked first"
             else:
-                reason = f"Price: {abs(difference):,.0f} {'less' if difference < 0 else 'more'} than {chosen['id']}"
+                reason = f"Price: {price_note}"
         won = bool(chosen) and option["id"] == chosen["id"]
         entries.append({"kind": kind, "alternative": label(option), "price": price, "won": won, "reason": reason})
     return entries
@@ -417,10 +578,16 @@ def build_ledger(state: PipelineState) -> list[dict]:
     check = state["check"]
     nights = check["nights"]
     picked = state.get("picked", [])
+    preferences = state["request"]["preferences"]
+    ranking = lambda kind: {
+        "priority": trip_priority(preferences),
+        "why": why_chosen(preferences, kind),
+        "too_dear": check.get("too_dear", {}).get(kind, []),
+    }
     ledger = ledger_entries(
         "flight",
         state["flight_options"], check["flight"], lambda f: f["price"], flight_label, rejections(check, "flight"),
-        picked="flight" in picked,
+        picked="flight" in picked, **ranking("flight"),
     )
     if state.get("return_options"):
         ledger += ledger_entries(
@@ -430,7 +597,7 @@ def build_ledger(state: PipelineState) -> list[dict]:
             lambda f: f["price"],
             flight_label,
             rejections(check, "return"),
-            picked="return" in picked,
+            picked="return" in picked, **ranking("return"),
         )
     if nights > 0:
         ledger += ledger_entries(
@@ -440,7 +607,7 @@ def build_ledger(state: PipelineState) -> list[dict]:
             lambda h: h["price_per_night"] * nights,
             hotel_label,
             rejections(check, "stay"),
-            picked="stay" in picked,
+            picked="stay" in picked, **ranking("stay"),
         )
     return ledger
 
@@ -466,7 +633,7 @@ def rationale_facts(state: PipelineState) -> dict:
         "flight": {
             "option": flight_label(check["flight"]),
             "price": check["flight"]["price"],
-            "why_chosen": WHY_PICKED if "flight" in picked else WHY_CHOSEN,
+            "why_chosen": WHY_PICKED if "flight" in picked else why_chosen(request["preferences"], "flight"),
             "options_compared": len(state["flight_options"]),
         },
         "return_flight": None
@@ -474,7 +641,7 @@ def rationale_facts(state: PipelineState) -> dict:
         else {
             "option": flight_label(return_flight),
             "price": return_flight["price"],
-            "why_chosen": WHY_PICKED if "return" in picked else WHY_CHOSEN,
+            "why_chosen": WHY_PICKED if "return" in picked else why_chosen(request["preferences"], "return"),
             "options_compared": len(state.get("return_options", [])),
         },
         "hotel": None
@@ -484,7 +651,7 @@ def rationale_facts(state: PipelineState) -> dict:
             "price_per_night": hotel["price_per_night"],
             "nights": check["nights"],
             "stay_cost": hotel["price_per_night"] * check["nights"],
-            "why_chosen": WHY_PICKED if "stay" in picked else WHY_CHOSEN,
+            "why_chosen": WHY_PICKED if "stay" in picked else why_chosen(request["preferences"], "stay"),
             "options_compared": len(state["hotel_options"]),
         },
         "total_cost": check["total_cost"],
@@ -513,7 +680,11 @@ def template_rationale(facts: dict) -> str:
         which = "these options" if len(by_hand) > 1 else "one of them"
         text = " ".join(parts) + f". The reviewer picked {which} by hand from the options that meet every trip preference. "
     else:
-        text = " ".join(parts) + ", the cheapest options that meet every trip preference. "
+        reasons = list(dict.fromkeys(item["why_chosen"] for item in items if item))
+        if reasons == [WHY_CHOSEN]:
+            text = " ".join(parts) + ", the cheapest options that meet every trip preference. "
+        else:
+            text = " ".join(parts) + f". Picked as the {' and the '.join(reasons)}. "
     text += f"Total cost is {facts['total_cost']:,.0f} against a budget of {facts['budget']:,.0f}, "
     if facts["within_budget"]:
         text += f"leaving {facts['difference_from_budget']:,.0f} unspent."
@@ -531,7 +702,8 @@ ruled out. Write like a helpful colleague, not a report: never mention field nam
 price_per_night or within_budget, never say true or false, and skip anything that is empty.
 
 Use ONLY the facts below. Never introduce, round, convert or calculate a number that is not written
-in the facts. No currency symbols, no markdown.
+in the facts. Don't mention clock times, flight durations or hours, even when the choice was about
+speed: say "the shortest flight" instead. No currency symbols, no markdown.
 
 Facts:
 {facts}"""
