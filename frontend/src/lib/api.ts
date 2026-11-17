@@ -100,21 +100,36 @@ export const DEMO_ENABLED = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 // Auth calls give up quickly so an offline backend drops straight into demo mode (when enabled).
 const AUTH_TIMEOUT_MS = 2500;
 
-export async function login(email: string, password: string, name?: string): Promise<Session> {
+/** The signed-in user's account (GET /me). `name` is null until they set one; the email can't change. */
+export type MeResponse = { id: string; email: string; name: string | null; role: Session["role"] };
+
+export const getMe = (token: string) => call<MeResponse>("GET", "/me", { token });
+
+/** The name is 1-100 characters and not blank (422 otherwise). */
+export const updateMe = (token: string, body: { name: string }) => call<MeResponse>("PATCH", "/me", { token, body });
+
+/**
+ * Builds the session from GET /me so the role and name come from the server. If /me can't be read,
+ * the role from the token and the fallback name still let the user in.
+ */
+async function sessionFor(token: string, email: string, fallbackName: string): Promise<Session> {
+  try {
+    const me = await getMe(token);
+    return { name: me.name || fallbackName, email: me.email, role: me.role, mode: "api", token };
+  } catch {
+    return { name: fallbackName, email, role: roleFromToken(token), mode: "api", token };
+  }
+}
+
+export async function login(email: string, password: string): Promise<Session> {
   try {
     const { access_token } = await call<{ access_token: string }>("POST", "/auth/login", {
       body: { email, password },
       timeoutMs: AUTH_TIMEOUT_MS,
     });
-    return {
-      name: name || nameFromEmail(email),
-      email,
-      role: roleFromToken(access_token),
-      mode: "api",
-      token: access_token,
-    };
+    return await sessionFor(access_token, email, nameFromEmail(email));
   } catch (e) {
-    if (e instanceof ApiUnavailable && DEMO_ENABLED) return { name: name || nameFromEmail(email), email, role: "admin", mode: "demo" };
+    if (e instanceof ApiUnavailable && DEMO_ENABLED) return { name: nameFromEmail(email), email, role: "admin", mode: "demo" };
     throw e;
   }
 }
@@ -127,24 +142,42 @@ export async function loginWithGoogle(credential: string): Promise<Session> {
   const { access_token } = await call<{ access_token: string }>("POST", "/auth/google", { body: { credential } });
   const google = jwtPayload(credential);
   const email = typeof google.email === "string" ? google.email : "";
-  return {
-    name: typeof google.name === "string" && google.name ? google.name : nameFromEmail(email),
-    email,
-    role: roleFromToken(access_token),
-    mode: "api",
-    token: access_token,
-  };
+  return sessionFor(access_token, email, typeof google.name === "string" && google.name ? google.name : nameFromEmail(email));
 }
 
 export async function register(name: string, email: string, password: string): Promise<Session> {
   try {
-    await call("POST", "/auth/register", { body: { email, password }, timeoutMs: AUTH_TIMEOUT_MS });
-    return await login(email, password, name);
+    await call("POST", "/auth/register", { body: { email, password, name }, timeoutMs: AUTH_TIMEOUT_MS });
+    const { access_token } = await call<{ access_token: string }>("POST", "/auth/login", {
+      body: { email, password },
+      timeoutMs: AUTH_TIMEOUT_MS,
+    });
+    return await sessionFor(access_token, email, name);
   } catch (e) {
     if (e instanceof ApiUnavailable && DEMO_ENABLED) return { name, email, role: "admin", mode: "demo" };
     throw e;
   }
 }
+
+// ---------------------------------------------------------------- travel policy
+
+/** The company travel policy as the backend stores it (snake_case). `updated_by` is the editor's email. */
+export type PolicyResponse = {
+  manager_approval_flight_over: number;
+  max_nightly_rate: number;
+  max_nightly_rate_intl: number;
+  business_class_min_hours: number;
+  advance_booking_days: number;
+  preferred_airlines: string[];
+  updated_at: string | null;
+  updated_by: string | null;
+};
+export type PolicyBody = Omit<PolicyResponse, "updated_at" | "updated_by">;
+
+export const getPolicy = (token: string) => call<PolicyResponse>("GET", "/policy", { token });
+
+/** Admins only: 403 for members. Writes a POLICY_UPDATED audit event. */
+export const putPolicy = (token: string, body: PolicyBody) => call<PolicyResponse>("PUT", "/policy", { token, body });
 
 // ---------------------------------------------------------------- travelers & trips
 
