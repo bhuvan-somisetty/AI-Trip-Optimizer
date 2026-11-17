@@ -174,9 +174,15 @@ export default function PlanningPage() {
       }
     }
     if (editing) {
-      actions.updateTrip(editing.id, effective);
-      toast(`${editing.code} updated`, { description: run ? "Re-running the optimizer…" : "Saved as draft." });
-      router.push(`/trips/${editing.id}${run ? "?run=1" : ""}`);
+      setSaving(true);
+      try {
+        await actions.updateTrip(editing.id, effective);
+        toast(`${editing.code} updated`, { description: run ? "Re-running the optimizer…" : "Saved as draft." });
+        router.push(`/trips/${editing.id}${run ? "?run=1" : ""}`);
+      } catch (e) {
+        toast("Couldn't save changes", { description: (e as Error).message, variant: "error" });
+        setSaving(false);
+      }
       return;
     }
     setSaving(true);
