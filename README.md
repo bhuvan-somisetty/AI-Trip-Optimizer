@@ -22,7 +22,7 @@ automatically, and every step lands in an **append-only audit trail**.
 ![Gemini](https://img.shields.io/badge/Gemini-8e75b2?style=flat-square&logo=googlegemini&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169e1?style=flat-square&logo=postgresql&logoColor=white)
 ![Neon](https://img.shields.io/badge/Neon-00e599?style=flat-square&logo=neon&logoColor=black)
-![pytest](https://img.shields.io/badge/pytest-188_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-246_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
 ![Vitest](https://img.shields.io/badge/Vitest-32_passing-729b1b?style=flat-square&logo=vitest&logoColor=white)
 
 **[Open the app](https://ai-trip-optimizer.vercel.app)** · [Why](#-why-ai-trip-optimizer) · [How it works](#-how-it-works) · [Architecture](#-architecture) · [Tech stack](#-tech-stack) · [Run locally](#-run-it-locally) · [Status](#-project-status) · [Docs](docs/)
@@ -49,9 +49,9 @@ has to approve the spend, and someone will later ask *why this flight and not th
 
 <div align="center">
 
-| **9 / 9** | **20** | **188 + 32** | **6** | **12** | **~2.7 s** |
+| **9 / 9** | **25** | **246 + 32** | **7** | **13** | **5–40 s** |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| PRD user stories built, stretch included | API endpoints | backend + frontend tests | database tables | migrations | full optimizer run, live |
+| PRD user stories built, stretch included | API endpoints | backend + frontend tests | database tables | migrations | optimizer run, live (cached vs fresh search) |
 
 </div>
 
@@ -74,10 +74,10 @@ flowchart LR
 
 | Step | What happens |
 | :--- | :--- |
-| **1. Request** | A traveler, IATA route (e.g. `DEL → BOM`), dates, budget and preferences such as `max_stops` or `min_hotel_rating`. The trip starts as `DRAFT`. |
-| **2. Search** | Flight fares both ways from **Travelpayouts** and hotel prices from **Google Hotels via SerpApi**. If the start date has no fare, the run fails and names the nearest dates that do; if only the return is missing, the trip is built and flagged. |
-| **3. Check** | Pure Python: every option is tested against each rule. Each flag names the rule and the exact line item, e.g. *"Total 41,600 is 29,600 over the 12,000 budget"*. |
-| **4. Compose** | The cheapest option meeting every rule wins, for the outbound flight, the return flight and the stay. The total and the savings (against the median valid option) are computed in code. Every other option gets a ledger row: *"Price: 1,199 more than HT-c5ed804f"*, *"Different day: departs 2026-12-19, 3 day(s) before the trip starts"*. |
+| **1. Request** | A traveler, IATA route (e.g. `DEL → BOM`), dates, budget, rules (stops, cabin, hotel rating, departure time, red-eyes, airlines, nightly rate, amenities) and a priority: lowest cost, balanced, comfort or fastest. The trip starts as `DRAFT` and can be edited until it goes to review. |
+| **2. Search** | Flights both ways from **Google Flights via SerpApi**, with **Travelpayouts** cached fares as the fallback, and hotel prices from **Google Hotels via SerpApi**. If the start date has no fare, the run fails and names the nearest dates that do; if only the return is missing, the trip is built and flagged. |
+| **3. Check** | Pure Python: every option is tested against the trip's rules and the **company travel policy**. Each flag names the rule and the exact line item, e.g. *"Total 41,600 is 29,600 over the 12,000 budget"*. |
+| **4. Compose** | Among the options meeting every rule, the trip's priority picks the outbound flight, the return flight and the stay (the cheapest, by default), never spending more than the budget allows. The total and the savings (against the median valid option) are computed in code. Every other option gets a ledger row: *"Price: 1,199 more than HT-c5ed804f"*, *"Slower: 5h 00m vs 2h 15m for FL-…"*, *"Different day: departs 2026-12-19, 3 day(s) before the trip starts"*. |
 | **5. Explain** | Gemini writes a short rationale from those facts only. Any number in it that isn't a computed figure fails the run; if the LLM is off or errors, a template rationale is used. |
 | **6. Review** | The reviewer can swap the outbound flight, return flight or hotel for any other valid option; the total, flags, savings, ledger and rationale are recomputed on the server. Approve sets the trip to `DECIDED`; reject requires a reason. |
 | **7. What-if** | Change the budget, cabin, stops or hotel rating and preview the result next to the saved itinerary. The preview reruns the checks on the saved search, so it is instant and saves nothing until "Save this instead". |
@@ -124,7 +124,8 @@ flowchart LR
 
 ### Plan
 - Travelers with saved preferences
-- Trip requests with route, dates, budget and rules
+- Trip requests with route, dates, budget, rules and a priority, editable until review
+- Company travel policy, set by admins and applied on every run
 - Real fares and live hotel prices
 - Sign in with Google, or email and password
 
@@ -161,8 +162,8 @@ flowchart LR
 | **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui, TanStack React Query, Zod, `@react-oauth/google` |
 | **API** | FastAPI, SQLModel, Alembic, Pydantic, `python-jose` JWT + `passlib` bcrypt, `google-auth` |
 | **AI** | LangGraph (`search → check → compose`), `langchain-openai` against Gemini's OpenAI-compatible endpoint (`gemini-3.5-flash-lite`) |
-| **Data** | PostgreSQL 16 (Neon in production), Travelpayouts flight fares, Google Hotels via SerpApi |
-| **Quality** | pytest (188 tests, no network or keys needed), Vitest + Testing Library (32 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
+| **Data** | PostgreSQL 16 (Neon in production), Google Flights and Google Hotels via SerpApi, Travelpayouts fares as the flight fallback |
+| **Quality** | pytest (246 tests, no network or keys needed), Vitest + Testing Library (32 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
 | **Delivery** | Frontend and API as two Vercel projects (API in `sin1`), Neon Postgres, Docker Compose for local dev |
 
 ## ✦ Architecture
@@ -174,11 +175,11 @@ flowchart LR
     FE -. "ID token" .-> GI[Google Identity]
     subgraph API["FastAPI · Vercel Python runtime"]
         direction TB
-        AU[auth · travelers · trips · what-if · dashboard · audit] --> PL[LangGraph pipeline<br/>search · check · compose]
+        AU[auth · travelers · trips · what-if · settings · dashboard · audit] --> PL[LangGraph pipeline<br/>search · check · compose]
     end
-    API --> PG[(PostgreSQL · Neon<br/>6 tables)]
-    PL --> TP[Travelpayouts<br/>flight fares]
-    PL --> SA[SerpApi<br/>Google Hotels]
+    API --> PG[(PostgreSQL · Neon<br/>7 tables)]
+    PL --> SA[SerpApi<br/>Google Flights + Hotels]
+    PL --> TP[Travelpayouts<br/>fallback flight fares]
     PL --> GM[Gemini<br/>rationale only]
     GH[GitHub Actions] -- "pytest · vitest · lint · build" --> API
 ```
@@ -189,10 +190,11 @@ flowchart LR
 | :--- | :--- |
 | Auth | `POST /auth/register` · `POST /auth/login` · `POST /auth/google` |
 | Travelers | `POST /traveler` · `GET /travelers` · `PUT /traveler/{id}` · `DELETE /traveler/{id}` |
-| Trips | `POST /trip` · `GET /trips` · `GET /trips/{id}` |
+| Trips | `POST /trip` · `GET /trips` · `GET /trips/{id}` · `PATCH /trips/{id}` |
 | Optimizer | `POST /trips/{id}/optimize` · `GET /trips/{id}/itinerary` · `PATCH /trips/{id}/itinerary` |
 | What-if | `POST /trips/{id}/preview` · `POST /trips/{id}/preview/apply` |
 | Review | `POST /trips/{id}/review` · `POST /trips/{id}/decision` · `GET /trips/{id}/decision` |
+| Settings | `GET /me` · `PATCH /me` · `GET /policy` · `PUT /policy` (admins) |
 | Dashboard & audit | `GET /dashboard` (`period`: `2026`, `2026-Q4`, `2026-11`) · `GET /audit` (filters: `trip_id`, `event_type`, `limit`) |
 
 Full request and response examples: [`docs/07_API_Specification.md`](docs/07_API_Specification.md) · live Swagger: [ai-trip-optimizer-api.vercel.app/docs](https://ai-trip-optimizer-api.vercel.app/docs)
@@ -218,15 +220,15 @@ Every key except `JWT_SECRET` and `DATABASE_URL` switches on one feature and can
 
 | Key | Turns on |
 | :--- | :--- |
-| `TRAVELPAYOUTS_TOKEN` | real flight fares |
-| `SERPAPI_API_KEY` | live hotel prices (free: 250 searches a month) |
+| `SERPAPI_API_KEY` | live flights (Google Flights) and hotel prices (free: 250 searches a month; one trip uses about 3) |
+| `TRAVELPAYOUTS_TOKEN` | cached flight fares, used when Google Flights is off or finds nothing |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | LLM rationale (Gemini or any OpenAI-compatible model); otherwise a template |
 | `GOOGLE_CLIENT_ID` / `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Sign in with Google |
 | `NEXT_PUBLIC_DEMO_MODE=true` | a "Try the demo" sign-in that runs in the browser on generated fares |
 
 | Command | What it does |
 | :--- | :--- |
-| `cd backend && python -m pytest -q` | 188 backend tests on in-memory SQLite, with fixture fares and no LLM |
+| `cd backend && python -m pytest -q` | 246 backend tests on in-memory SQLite, with fixture fares and no LLM |
 | `cd frontend && npm run lint && npm test && npm run build` | the frontend checks CI runs (Vitest in jsdom, no backend needed) |
 | `cd backend && alembic upgrade head` | apply migrations when running the API outside Docker |
 
@@ -239,12 +241,12 @@ AI-Trip-Optimizer/
 ├── backend/                  # FastAPI API
 │   ├── app/
 │   │   ├── pipeline/         # LangGraph graph: search, check, compose, guardrail, edits
-│   │   ├── routers/          # auth, travelers, trips (+ what-if), dashboard, audit
-│   │   ├── travel_data.py    # Travelpayouts and SerpApi clients, with caching
+│   │   ├── routers/          # auth, travelers, trips (+ what-if), settings, dashboard, audit
+│   │   ├── travel_data.py    # SerpApi (Google Flights, Hotels) and Travelpayouts clients, with caching
 │   │   ├── audit.py          # writes audit events in the caller's transaction
-│   │   └── models.py         # 6 SQLModel tables
-│   ├── alembic/versions/     # 12 migrations
-│   └── tests/                # 188 tests, fixture fares in tests/fixtures
+│   │   └── models.py         # 7 SQLModel tables
+│   ├── alembic/versions/     # 13 migrations
+│   └── tests/                # 246 tests, fixture fares in tests/fixtures
 ├── frontend/                 # Next.js 16 app
 │   └── src/
 │       ├── app/              # dashboard, planning, trips, analytics, audit, travelers, settings
