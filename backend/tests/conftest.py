@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, Session, create_engine
 
 import app.models  # noqa: F401  (registers models on SQLModel.metadata)
-from app import travel_data
+from app import policy, travel_data
 from app.database import get_session
 from app.main import app
 from app.pipeline import graph
@@ -19,6 +19,21 @@ def no_real_llm(monkeypatch):
     # A real key in .env must never make tests call the LLM: that costs quota and
     # makes results depend on the network. Tests that need an LLM patch in a fake.
     monkeypatch.setattr(graph, "get_llm", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def no_default_policy_limits(monkeypatch):
+    # The fixture fares and trip dates predate the company policy (and are in the past), so with
+    # the real defaults every test would get policy flags. Tests start from a policy that limits
+    # nothing; tests of the policy itself save one through PUT /policy or patch these values.
+    monkeypatch.setattr(policy, "DEFAULT_POLICY", {
+        "manager_approval_flight_over": 10_000_000.0,
+        "max_nightly_rate": 10_000_000.0,
+        "max_nightly_rate_intl": 10_000_000.0,
+        "business_class_min_hours": 0.0,
+        "advance_booking_days": 0,
+        "preferred_airlines": [],
+    })
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
