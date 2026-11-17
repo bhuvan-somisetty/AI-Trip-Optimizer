@@ -56,7 +56,7 @@ export default function PlanningPage() {
   const router = useRouter();
   const params = useSearchParams();
   const editId = params.get("edit");
-  const editing = s.trips.find((t) => t.id === editId && (t.status === "DRAFT" || t.status === "OPTIMIZATION_FAILED" || t.status === "OPTIMIZED" || t.status === "UNDER_REVIEW"));
+  const editing = s.trips.find((t) => t.id === editId && (t.status === "DRAFT" || t.status === "OPTIMIZATION_FAILED" || t.status === "OPTIMIZED"));
 
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
