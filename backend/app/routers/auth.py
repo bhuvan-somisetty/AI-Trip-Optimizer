@@ -19,7 +19,8 @@ def register(body: RegisterRequest, session: Session = Depends(get_session)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     # Self sign-up always creates a member; a client can't make itself an admin.
-    user = User(email=body.email, hashed_password=hash_password(body.password), role=UserRole.member)
+    name = body.name.strip() if body.name and body.name.strip() else None
+    user = User(email=body.email, name=name, hashed_password=hash_password(body.password), role=UserRole.member)
     session.add(user)
     session.commit()
     session.refresh(user)
@@ -54,7 +55,7 @@ def google_login(body: GoogleLoginRequest, session: Session = Depends(get_sessio
     email = info["email"]
     user = session.exec(select(User).where(User.email == email)).first()
     if not user:
-        user = User(email=email, hashed_password=None, role=UserRole.member)
+        user = User(email=email, name=(info.get("name") or "")[:100] or None, hashed_password=None, role=UserRole.member)
         session.add(user)
         session.commit()
         session.refresh(user)
