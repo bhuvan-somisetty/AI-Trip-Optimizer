@@ -154,3 +154,26 @@ def test_limit_returns_the_newest_events(client, auth_headers, trip_payload):
     create_trip(client, auth_headers, trip_payload)
     (newest,) = audit(client, auth_headers, limit=1)
     assert newest["event_type"] == "TRIP_CREATED"
+
+
+# ---- who did it: email and display name ---------------------------------------
+
+def test_events_name_the_actor_once_they_set_a_name(client, auth_headers, trip_payload):
+    create_trip(client, auth_headers, trip_payload)
+    before = audit(client, auth_headers)[0]
+    assert before["actor"] == "owner@example.com" and before["actor_name"] is None
+
+    client.patch("/me", json={"name": "Asha Rao"}, headers=auth_headers)
+    # The name is looked up when the trail is read, so earlier events show it too.
+    events = audit(client, auth_headers)
+    assert {e["actor_name"] for e in events} == {"Asha Rao"}
+    assert {e["actor"] for e in events} == {"owner@example.com"}
+
+
+def test_admins_see_each_actors_own_name(client, db, auth_headers, other_headers, trip_payload):
+    client.patch("/me", json={"name": "Owner One"}, headers=auth_headers)
+    create_trip(client, auth_headers, trip_payload)
+    client.post("/traveler", json={"name": "Someone"}, headers=other_headers)
+    make_admin(db, "other@example.com")
+    names = {e["actor"]: e["actor_name"] for e in audit(client, other_headers)}
+    assert names == {"owner@example.com": "Owner One", "other@example.com": None}
