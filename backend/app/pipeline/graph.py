@@ -365,11 +365,80 @@ def chosen_prices(flight: dict | None, return_flight: dict | None, hotel: dict |
     return prices
 
 
+# ---- company travel policy (Settings > Travel policy, app/policy.py) ---------------
+# The router puts the policy in request["policy"]. A request without one (older saved runs,
+# unit tests) is checked against the trip's own preferences only.
+
+def international(request: dict) -> bool:
+    return travel_data.CITIES.get(request["destination"], ("", "IN"))[1] != "IN"
+
+
+def policy_flight_rule(policy: dict):
+    def broken(flight: dict, _preferences: dict) -> tuple[str, str] | None:
+        minimum = policy.get("business_class_min_hours") or 0
+        minutes = flight_minutes(flight)
+        if flight.get("cabin_class") == "business" and minutes is not None and minutes < minimum * 60:
+            return (
+                "policy_business_class",
+                f"{flight['id']} is business class on a {hours(minutes)} flight; company policy allows "
+                f"business class only on flights of {minimum:g} hours or more",
+            )
+        return None
+    return broken
+
+
+def policy_hotel_rule(policy: dict, abroad: bool):
+    cap = policy.get("max_nightly_rate_intl" if abroad else "max_nightly_rate")
+
+    def broken(hotel: dict, _preferences: dict) -> tuple[str, str] | None:
+        if cap and hotel["price_per_night"] > cap:
+            where = "international" if abroad else "domestic"
+            return (
+                "policy_hotel_cap",
+                f"{hotel['id']} is {hotel['price_per_night']:,.0f} a night; company policy caps "
+                f"{where} hotels at {cap:,.0f}",
+            )
+        return None
+    return broken
+
+
+def policy_flags(request: dict, flight: dict | None, return_flight: dict | None) -> list[str]:
+    """Warnings, not rules: the trip can still be approved, but the reviewer should know."""
+    policy = request.get("policy")
+    if not policy:
+        return []
+    flags = []
+    limit = policy.get("manager_approval_flight_over")
+    for leg, option in (("Flight", flight), ("Return flight", return_flight)):
+        if limit and option and option["price"] > limit:
+            flags.append(
+                f"{leg} {option['id']} costs {option['price']:,.0f}, over the {limit:,.0f} company limit: "
+                "needs manager approval"
+            )
+    ahead = policy.get("advance_booking_days") or 0
+    days = (request["start_date"] - date.today()).days
+    if ahead and days < ahead:  # 0 days means the policy sets no advance-booking rule
+        when = f"starts in {days} day(s)" if days >= 0 else f"started {-days} day(s) ago"
+        flags.append(f"Trip {when}; company policy asks for booking at least {ahead} days ahead")
+    return flags
+
+
+def with_policy_preferences(request: dict) -> dict:
+    # The policy's preferred vendors join the trip's preferred airlines: both only break price ties.
+    preferences = request["preferences"]
+    policy = request.get("policy") or {}
+    if not policy.get("preferred_airlines"):
+        return preferences
+    trip_preferred = preference(preferences, "preferred_airlines", "preferredAirlines") or []
+    return {**preferences, "preferred_airlines": list(trip_preferred) + list(policy["preferred_airlines"])}
+
+
 def check_node(state: PipelineState) -> dict:
     # Pure Python, no LLM: picks, per the trip's priority, among the options that pass every
     # rule (the cheapest, by default) and does the money maths here, so the verdict is reproducible.
     request = state["request"]
-    preferences = request["preferences"]
+    preferences = with_policy_preferences(request)
+    policy = request.get("policy")
     nights = (request["end_date"] - request["start_date"]).days
     route = f"{request['origin']} to {request['destination']} on {request['start_date'].isoformat()}"
     flags: list[str] = []
@@ -383,17 +452,25 @@ def check_node(state: PipelineState) -> dict:
     rejected_flight: list = []
     on_day = on_the_day("flight", state["flight_options"], request["start_date"], rejected_flight)
     flights = screen("flight", on_day, outbound_rule_broken, preferences, rejected_flight)
+    if policy:
+        flights = screen("flight", flights, policy_flight_rule(policy), preferences, rejected_flight)
 
     rejected_return: list = []
     return_candidates: list = []
     if "return_options" in state:
         on_day_back = on_the_day("return", state["return_options"], request["end_date"], rejected_return)
         return_candidates = screen("return", on_day_back, flight_rule_broken, preferences, rejected_return)
+        if policy:
+            return_candidates = screen(
+                "return", return_candidates, policy_flight_rule(policy), preferences, rejected_return
+            )
 
     rejected_stay: list = []
     hotels: list = []
     if nights > 0 and not state.get("hotels_unavailable"):
         hotels = screen("stay", state["hotel_options"], hotel_rule_broken, preferences, rejected_stay)
+        if policy:
+            hotels = screen("stay", hotels, policy_hotel_rule(policy, international(request)), preferences, rejected_stay)
 
     # How much the trip can spend above its cheapest valid picks and still be within budget.
     floor_total = sum(
@@ -475,6 +552,7 @@ def check_node(state: PipelineState) -> dict:
     total_cost, within_budget, budget_flag = price_check(request, flight, hotel, nights, return_flight)
     if budget_flag:
         flags.append(budget_flag)
+    flags += policy_flags(request, flight, return_flight)
 
     return {
         "check": {
@@ -834,14 +912,17 @@ def edit_itinerary(state: PipelineState, current: dict, kind: str, option_id: st
     hotel = option if kind == "stay" else current["hotel"]
     if return_flight and leaves_before_landing(return_flight, flight):
         raise EditRefused(f"{return_flight['id']} leaves before {flight['id']} lands")
-    # check_node's flags describe its own pick: keep the availability ones, redo the budget one.
+    # check_node's flags describe its own pick: keep the availability ones, redo the budget and
+    # policy ones for the line items the reviewer ends up with.
     _, _, own_budget_flag = price_check(
         request, check["flight"], check["hotel"], check["nights"], check.get("return_flight")
     )
-    flags = [f for f in check["flags"] if f != own_budget_flag]
+    own = {own_budget_flag, *policy_flags(request, check["flight"], check.get("return_flight"))}
+    flags = [f for f in check["flags"] if f not in own]
     total_cost, within_budget, budget_flag = price_check(request, flight, hotel, check["nights"], return_flight)
     if budget_flag:
         flags.append(budget_flag)
+    flags += policy_flags(request, flight, return_flight)
     saved = savings(check["typical"], chosen_prices(flight, return_flight, hotel, check["nights"]))
 
     edited: PipelineState = {
