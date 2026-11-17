@@ -295,7 +295,8 @@ class AuditEventResponse(BaseModel):
     id: uuid.UUID
     trip_id: uuid.UUID | None
     event_type: AuditEventType
-    actor: str  # email of the user who did it
+    actor: str  # email of the user who did it (stable: use it to filter by person)
+    actor_name: str | None = None  # their display name, None until they set one
     summary: str
     payload: dict
     created_at: datetime
