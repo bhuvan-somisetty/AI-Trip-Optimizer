@@ -181,6 +181,14 @@ export const getTrip = (token: string, tripId: string) => call<TripResponse>("GE
 
 export const createTrip = (token: string, body: TripBody) => call<TripResponse>("POST", "/trip", { token, body });
 
+/**
+ * Any subset of the trip fields; leave a field out instead of sending null. `preferences` replaces the whole object.
+ * 409 when the trip is OPTIMIZING, UNDER_REVIEW or DECIDED; 404 when it isn't yours; 422 on bad values.
+ * An optimized or failed trip goes back to DRAFT and loses its saved itinerary.
+ */
+export const updateTrip = (token: string, tripId: string, body: Partial<TripBody>) =>
+  call<TripResponse>("PATCH", `/trips/${id(tripId)}`, { token, body });
+
 // ---------------------------------------------------------------- optimize, review, decide
 
 /** One row of the backend's Trade-off Ledger. Stay prices are the total for the whole stay. */
