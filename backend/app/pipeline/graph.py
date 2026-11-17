@@ -60,6 +60,46 @@ def search_node(state: PipelineState) -> dict:
     return found
 
 
+def preference(preferences: dict, key: str, client_key: str):
+    """A trip preference by its API name, falling back to the web app's `filters` object.
+
+    The web app saves its whole filter form under preferences["filters"] (camelCase) and copies
+    only some keys to the top level, so both places are read; the top-level key wins.
+    """
+    if key in preferences:
+        return preferences[key]
+    filters = preferences.get("filters")
+    return filters.get(client_key) if isinstance(filters, dict) else None
+
+
+# Departure windows as the web app labels them, in local airport time: [start, end) hours.
+DEPARTURE_WINDOWS = {
+    "early_morning": (4, 8),
+    "morning": (8, 12),
+    "afternoon": (12, 17),
+    "evening": (17, 21),
+    "night": (21, 4),  # wraps past midnight
+}
+# A red-eye leaves between 22:30 and 05:00 local time (the web app's wording).
+RED_EYE_FROM, RED_EYE_UNTIL = 22 * 60 + 30, 5 * 60
+
+
+def minutes_after_midnight(flight: dict) -> int | None:
+    departs = parse_time(flight.get("departure_time"))
+    return departs.hour * 60 + departs.minute if departs else None
+
+
+def in_window(minutes: int, window: tuple[int, int]) -> bool:
+    start, end = window[0] * 60, window[1] * 60
+    return start <= minutes < end if start < end else minutes >= start or minutes < end
+
+
+def same_airline(flight: dict, names: list) -> bool:
+    airline = str(flight.get("airline") or "").casefold()
+    code = str(flight.get("airline_code") or "").casefold()
+    return any(str(n).casefold() in (airline, code) for n in names or [])
+
+
 def flight_rule_broken(flight: dict, preferences: dict) -> tuple[str, str] | None:
     cabin = preferences.get("cabin_class")
     if cabin and flight["cabin_class"] != cabin:
@@ -67,7 +107,38 @@ def flight_rule_broken(flight: dict, preferences: dict) -> tuple[str, str] | Non
     max_stops = preferences.get("max_stops")
     if max_stops is not None and flight["stops"] > max_stops:
         return "max_stops", f"{flight['id']} has {flight['stops']} stop(s), trip allows {max_stops}"
+    excluded = preference(preferences, "excluded_airlines", "excludedAirlines")
+    if excluded and same_airline(flight, excluded):
+        return "excluded_airlines", f"{flight['id']} is {flight['airline']}, which the trip excludes"
+    minutes = minutes_after_midnight(flight)
+    if preference(preferences, "avoid_red_eye", "avoidRedEye") and minutes is not None and (
+        minutes >= RED_EYE_FROM or minutes < RED_EYE_UNTIL
+    ):
+        return "avoid_red_eye", f"{flight['id']} departs at {flight['departure_time'][11:16]}, a red-eye"
     return None
+
+
+def outbound_rule_broken(flight: dict, preferences: dict) -> tuple[str, str] | None:
+    # The departure window is about when the trip starts, so it applies to the outbound leg only.
+    broken = flight_rule_broken(flight, preferences)
+    if broken:
+        return broken
+    window = preference(preferences, "departure_window", "departureWindow")
+    minutes = minutes_after_midnight(flight)
+    if window in DEPARTURE_WINDOWS and minutes is not None and not in_window(minutes, DEPARTURE_WINDOWS[window]):
+        start, end = DEPARTURE_WINDOWS[window]
+        return (
+            "departure_window",
+            f"{flight['id']} departs at {flight['departure_time'][11:16]}, "
+            f"trip wants {window.replace('_', ' ')} ({start:02d}:00-{end:02d}:00)",
+        )
+    return None
+
+
+def cheapest(options: list[dict], price_of, preferences: dict) -> dict | None:
+    # Cheapest first; at the same price a preferred airline wins (a tie-break, not a rule).
+    preferred = preference(preferences, "preferred_airlines", "preferredAirlines") or []
+    return min(options, key=lambda o: (price_of(o), not same_airline(o, preferred)), default=None)
 
 
 def parse_time(value: str | None) -> datetime | None:
@@ -100,7 +171,33 @@ def hotel_rule_broken(hotel: dict, preferences: dict) -> tuple[str, str] | None:
         return "min_hotel_rating", f"{hotel['id']} has no guest rating, trip needs at least {min_rating}"
     if min_rating is not None and hotel["rating"] < min_rating:
         return "min_hotel_rating", f"{hotel['id']} is rated {hotel['rating']}, trip needs at least {min_rating}"
+    cap = preference(preferences, "max_nightly_rate", "maxNightlyRate")
+    if cap and hotel["price_per_night"] > cap:
+        return "max_nightly_rate", f"{hotel['id']} is {hotel['price_per_night']:,.0f} a night, trip caps it at {cap:,.0f}"
+    for amenity in preference(preferences, "required_amenities", "requiredAmenities") or []:
+        if not has_amenity(hotel, amenity):
+            label = AMENITY_WORDS.get(amenity, (amenity,))[0]
+            return "required_amenities", f"{hotel['id']} doesn't list {label}"
     return None
+
+
+# Required-amenity ids (as the web app sends them) and words that mark them in a hotel's amenity list.
+AMENITY_WORDS = {
+    "wifi": ("Wi-Fi", "wifi"),
+    "breakfast": ("breakfast",),
+    "gym": ("gym", "fitness"),
+    "pool": ("pool",),
+    "airport_shuttle": ("airport shuttle",),
+    "meeting_rooms": ("meeting room", "business centre", "business center", "conference"),
+    "spa": ("spa",),
+    "parking": ("parking",),
+}
+
+
+def has_amenity(hotel: dict, amenity: str) -> bool:
+    words = AMENITY_WORDS.get(amenity, (amenity.replace("_", " "),))
+    listed = " | ".join(str(a).replace("_", " ") for a in hotel.get("amenities") or [])
+    return any(re.search(rf"\b{re.escape(w)}\b", listed, re.IGNORECASE) for w in words)
 
 
 def screen(kind: str, options: list[dict], rule_broken, preferences: dict, rejected: list) -> list[dict]:
@@ -191,8 +288,8 @@ def check_node(state: PipelineState) -> dict:
     typical: dict = {}
 
     on_day = on_the_day("flight", state["flight_options"], request["start_date"], rejected)
-    flights = screen("flight", on_day, flight_rule_broken, preferences, rejected)
-    flight = min(flights, key=lambda f: f["price"], default=None)
+    flights = screen("flight", on_day, outbound_rule_broken, preferences, rejected)
+    flight = cheapest(flights, lambda f: f["price"], preferences)
     if flights:
         typical["flight"] = statistics.median(f["price"] for f in flights)
     if state.get("search_error"):
@@ -223,7 +320,7 @@ def check_node(state: PipelineState) -> dict:
                 })
             else:
                 returns.append(option)
-        return_flight = min(returns, key=lambda f: f["price"], default=None)
+        return_flight = cheapest(returns, lambda f: f["price"], preferences)
         if returns:
             typical["return"] = statistics.median(f["price"] for f in returns)
         if state.get("search_error"):
@@ -240,7 +337,7 @@ def check_node(state: PipelineState) -> dict:
         flags.append(state["hotels_unavailable"])
     elif nights > 0:
         hotels = screen("stay", state["hotel_options"], hotel_rule_broken, preferences, rejected)
-        hotel = min(hotels, key=lambda h: h["price_per_night"], default=None)
+        hotel = cheapest(hotels, lambda h: h["price_per_night"], preferences)
         if hotels:
             typical["stay"] = statistics.median(h["price_per_night"] for h in hotels) * nights
         if not state["hotel_options"] and not state.get("search_error"):
@@ -301,7 +398,10 @@ def ledger_entries(kind, options, chosen, price_of, label, rejected_by_id, picke
             reason = f"Preference {rejection['rule']}: {rejection['detail']}"
         else:
             difference = price - price_of(chosen)
-            reason = f"Price: {abs(difference):,.0f} {'less' if difference < 0 else 'more'} than {chosen['id']}"
+            if difference == 0:
+                reason = f"Price: same as {chosen['id']}, which was picked first"
+            else:
+                reason = f"Price: {abs(difference):,.0f} {'less' if difference < 0 else 'more'} than {chosen['id']}"
         won = bool(chosen) and option["id"] == chosen["id"]
         entries.append({"kind": kind, "alternative": label(option), "price": price, "won": won, "reason": reason})
     return entries
