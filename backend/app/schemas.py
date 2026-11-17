@@ -73,6 +73,28 @@ class TripCreate(BaseModel):
         return self
 
 
+class TripUpdate(BaseModel):
+    """PATCH /trips/{id}: send only the fields that change. `preferences` replaces the whole dict."""
+
+    traveler_id: uuid.UUID | None = None
+    origin: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
+    destination: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
+    dates: tuple[date, date] | None = None
+    budget: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    preferences: dict | None = None
+
+    @field_validator("origin", "destination")
+    @classmethod
+    def uppercase_code(cls, value: str | None) -> str | None:
+        return value.upper() if value else value
+
+    @model_validator(mode="after")
+    def end_not_before_start(self):
+        if self.dates and self.dates[1] < self.dates[0]:
+            raise ValueError("End date cannot be before start date")
+        return self
+
+
 class TripResponse(BaseModel):
     id: uuid.UUID
     traveler_id: uuid.UUID
