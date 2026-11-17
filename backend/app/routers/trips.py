@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from app.audit import record
 from app.database import get_session
 from app.models import AuditEventType, Decision, DecisionOutcome, Itinerary, Traveler, Trip, TripStatus, User
+from app.policy import load_policy
 from app.pipeline.graph import EditRefused, edit_itinerary, pipeline, rerun
 from app.schemas import (
     DecisionCreate,
@@ -200,7 +201,7 @@ def saved_itinerary(session: Session, trip: Trip) -> Itinerary | None:
     return session.exec(select(Itinerary).where(Itinerary.trip_id == trip.id)).first()
 
 
-def trip_request(trip: Trip) -> dict:
+def trip_request(trip: Trip, session: Session) -> dict:
     return {
         "origin": trip.origin,
         "destination": trip.destination,
@@ -208,6 +209,8 @@ def trip_request(trip: Trip) -> dict:
         "end_date": trip.end_date,
         "budget": float(trip.budget),
         "preferences": trip.preferences,
+        # The company policy as it is now, so every run, edit and preview is checked against it.
+        "policy": load_policy(session),
     }
 
 
@@ -276,7 +279,7 @@ def optimize_trip(
     session.add(trip)
     session.commit()
 
-    request = trip_request(trip)
+    request = trip_request(trip, session)
     started = time.monotonic()
     try:
         result = pipeline.invoke({"request": request})
@@ -385,7 +388,7 @@ def edit_trip_itinerary(
 ):
     """PRD US-007: swap one line item for another option; totals and flags are recalculated."""
     itinerary = changeable_itinerary(session, trip, "edited")
-    state = saved_state(trip_request(trip), itinerary.search_results)
+    state = saved_state(trip_request(trip, session), itinerary.search_results)
     before = float(itinerary.total_cost)
     current = {"flight": itinerary.flight, "return_flight": itinerary.return_flight, "hotel": itinerary.hotel}
     try:
@@ -422,9 +425,9 @@ def edit_trip_itinerary(
 PREFERENCES = ("cabin_class", "max_stops", "min_hotel_rating")
 
 
-def changed_request(trip: Trip, body: WhatIfRequest) -> tuple[dict, list[dict]]:
+def changed_request(trip: Trip, body: WhatIfRequest, session: Session) -> tuple[dict, list[dict]]:
     """The trip's request with the What-If changes applied, and the inputs that changed."""
-    request = trip_request(trip)
+    request = trip_request(trip, session)
     preferences = dict(trip.preferences)
     inputs = []
     if "budget" in body.model_fields_set and float(body.budget) != request["budget"]:
@@ -497,7 +500,7 @@ def preview_trip(
     with like. The rationale is the template one; applying the preview writes the real one.
     """
     itinerary = changeable_itinerary(session, trip, "previewed")
-    request, inputs = changed_request(trip, body)
+    request, inputs = changed_request(trip, body, session)
     result = rerun(saved_state(request, itinerary.search_results), use_llm=False)
     return {"inputs": inputs, "preview": preview_result(result), "diff": itinerary_diff(itinerary, result)}
 
@@ -515,7 +518,7 @@ def apply_preview(
     edits are dropped. A change that can't build an itinerary is refused and saves nothing.
     """
     itinerary = changeable_itinerary(session, trip, "previewed")
-    request, inputs = changed_request(trip, body)
+    request, inputs = changed_request(trip, body, session)
     result = rerun(saved_state(request, itinerary.search_results))
     if "itinerary" not in result:
         raise HTTPException(
