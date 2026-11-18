@@ -180,7 +180,10 @@ export type AuditEvent = {
     | "TRAVELER_DELETED"
     | "ASSISTANT_QUERY"
     | "POLICY_UPDATED";
+  /** Email of who did it. */
   actor: string;
+  /** Their display name when they have set one; show it in place of the email. */
+  actorName?: string;
   summary: string;
   payload?: Record<string, unknown>;
   createdAt: string;
