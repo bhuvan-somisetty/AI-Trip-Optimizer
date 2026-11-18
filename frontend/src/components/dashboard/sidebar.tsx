@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Plane, ChevronsUpDown, Settings, LogOut, Sparkles } from "lucide-react";
 import { navItems } from "@/lib/nav";
+import { MiniWindow } from "@/components/app/mini-window";
 import { cn } from "@/lib/utils";
 import { actions, useStore } from "@/lib/store";
 import { initials } from "@/lib/format";
@@ -30,7 +31,7 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+    <div className="grain relative flex h-full flex-col bg-sidebar bg-[radial-gradient(120%_60%_at_0%_100%,rgba(255,105,61,0.12),transparent_60%)] text-sidebar-foreground">
       <Link href="/dashboard" onClick={onNavigate} className="flex h-16 shrink-0 items-center gap-2.5 px-5">
         <div className="flex size-9 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_8px_24px_-6px_rgba(255,105,61,0.55)]">
           <Plane className="size-4" />
@@ -84,14 +85,17 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
           </div>
         ))}
 
-        <div className="mx-1 rounded-2xl border border-white/10 bg-gradient-to-br from-[#ff693d]/[0.10] to-white/[0.02] p-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-white">
-            <Sparkles className="size-4 text-sidebar-primary" />
-            Human-in-the-loop
+        <div className="mx-1 flex items-center gap-3 rounded-2xl border border-white/10 bg-gradient-to-br from-[#ff693d]/[0.10] to-white/[0.02] p-3">
+          <MiniWindow className="w-12 shrink-0" />
+          <div>
+            <div className="flex items-center gap-1.5 text-sm font-medium text-[#f6f0e4]">
+              <Sparkles className="size-3.5 text-sidebar-primary" />
+              Human-in-the-loop
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-sidebar-foreground/55">
+              The optimizer recommends. Your reviewers decide. Nothing books itself.
+            </p>
           </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-sidebar-foreground/60">
-            The optimizer recommends. Your reviewers decide. Nothing is ever booked automatically.
-          </p>
         </div>
       </nav>
 

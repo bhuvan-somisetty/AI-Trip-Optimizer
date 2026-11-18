@@ -18,7 +18,7 @@ import { toast } from "@/lib/toast";
 
 type Period = "30" | "90" | "180" | "365" | "all";
 const periodLabel: Record<Period, string> = { "30": "30 days", "90": "90 days", "180": "6 months", "365": "12 months", all: "All time" };
-const palette = ["var(--color-chart-4)", "var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-5)", "oklch(0.65 0.15 200)", "oklch(0.6 0.18 300)", "var(--color-chart-3)"];
+const palette = ["var(--color-chart-2)", "var(--color-chart-1)", "var(--color-chart-4)", "var(--color-chart-5)", "var(--color-chart-3)", "#5a6676", "#ffb08f"];
 
 const tooltipStyle = { background: "var(--color-popover)", border: "1px solid var(--color-border)", borderRadius: 10, fontSize: 12 };
 

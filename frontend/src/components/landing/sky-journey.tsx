@@ -154,7 +154,8 @@ export function SkyJourney() {
   }
 
   const ar = box.w / box.h;
-  const fit = ar < 0.8 ? (ar * 1000 * 0.62) / BEZEL.w : Math.min(1.5, (ar * 1000 * 0.88) / BEZEL.w);
+  // On wide screens keep the bezel inside the middle third so it never runs into the side headlines.
+  const fit = ar < 0.8 ? (ar * 1000 * 0.62) / BEZEL.w : Math.min(1.5, (ar * 1000 * 0.34) / BEZEL.w);
   const viewBox = `${C - 500 * ar} 0 ${1000 * ar} 1000`;
 
   // Fly out through the window: slow at first, then accelerating.
@@ -190,18 +191,18 @@ export function SkyJourney() {
 
         <motion.p
           style={{ opacity: brand }}
-          className="pointer-events-none absolute top-[42%] left-1/2 -translate-x-1/2 text-[13px] font-light tracking-[0.42em] whitespace-nowrap text-white/90 uppercase [text-shadow:0_1px_12px_rgba(40,60,90,0.35)]"
+          className="pointer-events-none absolute top-[31%] left-1/2 -translate-x-1/2 text-[13px] font-light tracking-[0.42em] whitespace-nowrap text-white/90 uppercase [text-shadow:0_1px_3px_rgba(20,45,95,0.45),0_0_18px_rgba(20,45,95,0.35)]"
         >
           Trip Optimizer
         </motion.p>
 
         <motion.div style={{ opacity: textOpacity, filter: textBlur }} className="pointer-events-none absolute inset-0 text-[#f6efe3]">
-          <motion.h1 style={{ x: leftX }} className="font-display absolute top-[10%] left-[6%] text-[clamp(2.6rem,6.6vw,6.4rem)] leading-[0.92] font-normal md:top-[17%] md:left-[5%]">
+          <motion.h1 style={{ x: leftX }} className="font-display absolute top-[10%] left-[6%] text-[clamp(2.4rem,5.2vw,5.6rem)] leading-[0.92] font-normal md:top-[17%] md:left-[5%]">
             Smarter
             <br />
             travel.
           </motion.h1>
-          <motion.h1 style={{ x: rightX }} className="font-display absolute right-[6%] bottom-[13%] text-right text-[clamp(2.6rem,6.6vw,6.4rem)] leading-[0.92] font-normal md:right-[5%] md:bottom-[25%]">
+          <motion.h1 style={{ x: rightX }} className="font-display absolute right-[6%] bottom-[13%] text-right text-[clamp(2.4rem,5.2vw,5.6rem)] leading-[0.92] font-normal md:right-[5%] md:bottom-[25%]">
             Better
             <br />
             decisions.

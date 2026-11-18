@@ -5,11 +5,11 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import type { Trip } from "@/lib/types";
 
 const groups = [
-  { key: "approved", label: "Approved", color: "var(--color-success)", match: (t: Trip) => t.status === "DECIDED" && t.outcome === "APPROVED" },
-  { key: "review", label: "Needs review", color: "var(--color-warning)", match: (t: Trip) => t.status === "OPTIMIZED" || t.status === "UNDER_REVIEW" },
-  { key: "draft", label: "Draft", color: "var(--color-muted-foreground)", match: (t: Trip) => t.status === "DRAFT" || t.status === "OPTIMIZING" },
+  { key: "approved", label: "Approved", color: "var(--color-chart-2)", match: (t: Trip) => t.status === "DECIDED" && t.outcome === "APPROVED" },
+  { key: "review", label: "Needs review", color: "var(--color-primary)", match: (t: Trip) => t.status === "OPTIMIZED" || t.status === "UNDER_REVIEW" },
+  { key: "draft", label: "Draft", color: "var(--color-chart-3)", match: (t: Trip) => t.status === "DRAFT" || t.status === "OPTIMIZING" },
   { key: "rejected", label: "Rejected", color: "var(--color-destructive)", match: (t: Trip) => t.status === "DECIDED" && t.outcome === "REJECTED" },
-  { key: "failed", label: "Failed", color: "oklch(0.65 0.2 45)", match: (t: Trip) => t.status === "OPTIMIZATION_FAILED" },
+  { key: "failed", label: "Failed", color: "var(--color-chart-5)", match: (t: Trip) => t.status === "OPTIMIZATION_FAILED" },
 ];
 
 export function TripsByStatusChart({ trips }: { trips: Trip[] }) {
