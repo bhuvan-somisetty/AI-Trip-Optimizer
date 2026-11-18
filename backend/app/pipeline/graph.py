@@ -335,11 +335,11 @@ def price_check(
         return total_cost, True, None
     items = []
     if flight:
-        items.append(f"flight {flight['id']} {flight_cost:,}")
+        items.append(f"flight {flight['id']} {flight_cost:,.0f}")
     if return_flight:
-        items.append(f"return flight {return_flight['id']} {return_cost:,}")
+        items.append(f"return flight {return_flight['id']} {return_cost:,.0f}")
     if hotel:
-        items.append(f"hotel {hotel['id']} {nights} night(s) {hotel_cost:,}")
+        items.append(f"hotel {hotel['id']} {nights} night(s) {hotel_cost:,.0f}")
     flag = (
         f"Total {total_cost:,.0f} is {total_cost - request['budget']:,.0f} over the "
         f"{request['budget']:,.0f} budget ({' + '.join(items)})"
@@ -697,6 +697,12 @@ WHY_PICKED = "picked by the reviewer from the options that meet every trip prefe
 PICKED_REASON = "Picked by the reviewer; meets every trip preference"
 
 
+def rupees(amount) -> int:
+    # Whole rupees, as the app shows them: the facts then never carry "15986.0" or 950.3333 for the
+    # LLM to copy. The guardrail compares numbers, and 15,986 written by the LLM still matches 15986.
+    return round(float(amount))
+
+
 def rationale_facts(state: PipelineState) -> dict:
     # The only numbers the rationale may use; all of them were computed in code.
     request = state["request"]
@@ -707,10 +713,10 @@ def rationale_facts(state: PipelineState) -> dict:
     return {
         "route": f"{request['origin']} to {request['destination']}",
         "dates": f"{request['start_date'].isoformat()} to {request['end_date'].isoformat()}",
-        "budget": request["budget"],
+        "budget": rupees(request["budget"]),
         "flight": {
             "option": flight_label(check["flight"]),
-            "price": check["flight"]["price"],
+            "price": rupees(check["flight"]["price"]),
             "why_chosen": WHY_PICKED if "flight" in picked else why_chosen(request["preferences"], "flight"),
             "options_compared": len(state["flight_options"]),
         },
@@ -718,7 +724,7 @@ def rationale_facts(state: PipelineState) -> dict:
         if return_flight is None
         else {
             "option": flight_label(return_flight),
-            "price": return_flight["price"],
+            "price": rupees(return_flight["price"]),
             "why_chosen": WHY_PICKED if "return" in picked else why_chosen(request["preferences"], "return"),
             "options_compared": len(state.get("return_options", [])),
         },
@@ -726,16 +732,16 @@ def rationale_facts(state: PipelineState) -> dict:
         if hotel is None
         else {
             "option": hotel_label(hotel),
-            "price_per_night": hotel["price_per_night"],
+            "price_per_night": rupees(hotel["price_per_night"]),
             "nights": check["nights"],
-            "stay_cost": hotel["price_per_night"] * check["nights"],
+            "stay_cost": rupees(hotel["price_per_night"] * check["nights"]),
             "why_chosen": WHY_PICKED if "stay" in picked else why_chosen(request["preferences"], "stay"),
             "options_compared": len(state["hotel_options"]),
         },
-        "total_cost": check["total_cost"],
-        "savings_vs_median_valid_options": check.get("savings", 0.0),
+        "total_cost": rupees(check["total_cost"]),
+        "savings_vs_median_valid_options": rupees(check.get("savings", 0.0)),
         "within_budget": check["within_budget"],
-        "difference_from_budget": abs(request["budget"] - check["total_cost"]),
+        "difference_from_budget": rupees(abs(request["budget"] - check["total_cost"])),
         "flags": check["flags"],
         "options_ruled_out": [r["detail"] for r in check["rejected"]],
     }
@@ -780,7 +786,7 @@ ruled out. Write like a helpful colleague, not a report: never mention field nam
 price_per_night or within_budget, never say true or false, and skip anything that is empty.
 
 Use ONLY the facts below. Never introduce, round, convert or calculate a number that is not written
-in the facts. Don't mention clock times, flight durations or hours, even when the choice was about
+in the facts. Write amounts as whole numbers with thousands separators, e.g. 15,986. Don't mention clock times, flight durations or hours, even when the choice was about
 speed: say "the shortest flight" instead. No currency symbols, no markdown.
 
 Facts:
