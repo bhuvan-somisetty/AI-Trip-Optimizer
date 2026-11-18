@@ -102,7 +102,7 @@ export default function TripDetailPage() {
     if (after?.status === "OPTIMIZED" && after.itinerary) {
       toast("Itinerary ready", { description: `${formatInr(after.itinerary.totalCost)} · ${after.itinerary.issues.length} flag${after.itinerary.issues.length === 1 ? "" : "s"} to review.` });
     } else if (after?.status === "OPTIMIZATION_FAILED") {
-      toast("Optimization failed", { description: after.failureReason ?? "No feasible combination — adjust the filters.", variant: "error" });
+      toast("Optimization failed", { description: after.failureReason ?? "No feasible combination. Adjust the filters.", variant: "error" });
     }
   }
 
@@ -311,8 +311,8 @@ export default function TripDetailPage() {
                 const r = t.decisionReason ?? (ev?.payload?.reason as string | null | undefined);
                 return `${ev?.actorName ?? ev?.actor ?? "Reviewer"} recorded this decision${r ? `: “${r}”` : "."} ${
                   t.outcome === "APPROVED"
-                    ? "Approved itineraries are final — duplicate the trip to request changes."
-                    : "Rejected trips can't be edited — duplicate the trip to plan a new version."
+                    ? "Approved itineraries are final. Duplicate the trip to request changes."
+                    : "Rejected trips can't be edited. Duplicate the trip to plan a new version."
                 }`;
               })()}
             </p>
@@ -423,7 +423,7 @@ export default function TripDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Audit trail</CardTitle>
-            <CardDescription>Every pipeline run, edit and decision for this trip — append-only.</CardDescription>
+            <CardDescription>Every pipeline run, edit and decision for this trip (append-only).</CardDescription>
           </CardHeader>
           <CardContent>
             <AuditTimeline events={events} />
@@ -487,10 +487,10 @@ export default function TripDetailPage() {
                 <p className="font-medium text-destructive">{blocking.length} blocking issue{blocking.length > 1 ? "s" : ""}</p>
                 <ul className="mt-1 list-disc pl-4 text-xs text-muted-foreground">
                   {blocking.map((b) => (
-                    <li key={b.id}>{b.rule} — {b.lineItem}</li>
+                    <li key={b.id}>{b.rule}: {b.lineItem}</li>
                   ))}
                 </ul>
-                <p className="mt-1 text-xs text-muted-foreground">Approving records an explicit override — add a justification below.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Approving records an explicit override. Add a justification below.</p>
               </div>
             </div>
           )}
@@ -506,7 +506,7 @@ export default function TripDetailPage() {
               }}
               placeholder={decision === "REJECTED" ? "e.g. Trip no longer needed; meeting moved online." : "e.g. Approved per VP sign-off."}
             />
-            {reasonError && <p className="text-xs text-destructive">Please enter a reason — rejections must be explained.</p>}
+            {reasonError && <p className="text-xs text-destructive">Please enter a reason: rejections must be explained.</p>}
             {decision === "REJECTED" && (
               <div className="flex flex-wrap gap-1.5">
                 {["Over budget", "Trip no longer required", "Choose a different date", "Policy violation", "Meeting moved online"].map((r) => (
