@@ -126,7 +126,7 @@ export default function AnalyticsPage() {
         <StatCard label="Total approved spend" value={formatCompactInr(d.spend)} icon={IndianRupee} hint={`${d.approved.length} approved trip${d.approved.length === 1 ? "" : "s"} · ${formatInr(d.perTraveler)}/traveler`} />
         <StatCard label="Average savings" value={formatInr(d.avgSavings)} icon={PiggyBank} iconClassName="bg-success/15 text-success" hint={`${formatCompactInr(d.savings)} total · ${d.savingsPct}% below ${s.session?.mode === "api" ? "typical valid options" : "typical"}`} />
         <StatCard label="Avg. turnaround" value={d.avgTurn >= 24 ? `${(d.avgTurn / 24).toFixed(1)} days` : `${d.avgTurn.toFixed(1)} h`} icon={Timer} iconClassName="bg-warning/15 text-amber-600 dark:text-warning" hint="Request created → decision" />
-        <StatCard label="Approval rate" value={`${d.approvalRate}%`} icon={BadgeCheck} iconClassName="bg-sky-500/10 text-sky-600" hint={`${d.decided.length} decisions in period`} />
+        <StatCard label="Approval rate" value={`${d.approvalRate}%`} icon={BadgeCheck} iconClassName="bg-sky-500/10 text-sky-600" hint={`${d.decided.length} decision${d.decided.length === 1 ? "" : "s"} in period`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -227,7 +227,7 @@ export default function AnalyticsPage() {
                       </TableCell>
                       <TableCell className={t.outcome === "APPROVED" ? "text-emerald-600 dark:text-success" : "text-destructive"}>{t.outcome === "APPROVED" ? "Approved" : "Rejected"}</TableCell>
                       <TableCell className="text-right tabular-nums">{h >= 24 ? `${(h / 24).toFixed(1)} d` : `${h.toFixed(1)} h`}</TableCell>
-                      <TableCell className="pr-6 text-right tabular-nums">{t.outcome === "APPROVED" && t.itinerary?.savings !== undefined ? formatInr(t.itinerary.savings) : "—"}</TableCell>
+                      <TableCell className="pr-6 text-right tabular-nums">{t.outcome === "APPROVED" && t.itinerary?.savings !== undefined ? formatInr(t.itinerary.savings) : "-"}</TableCell>
                     </TableRow>
                   );
                 })}
