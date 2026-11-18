@@ -70,6 +70,7 @@ function Globe({ progress }: { progress: MotionValue<number> }) {
     const target = -1.3 + p * Math.PI * 1.6 + state.clock.elapsedTime * 0.06;
     g.rotation.y += (target - g.rotation.y) * 0.06;
     g.rotation.x = 0.35;
+    g.scale.setScalar(Math.min(1, (state.size.width / state.size.height) * 1.35));
     planes.current.forEach((m, i) => {
       if (!m) return;
       const t = ((state.clock.elapsedTime * 0.12 + i * 0.37) % 1 + 1) % 1;
@@ -116,9 +117,9 @@ function Globe({ progress }: { progress: MotionValue<number> }) {
   );
 }
 
-export default function GlobeScene({ progress }: { progress: MotionValue<number> }) {
+export default function GlobeScene({ progress, active }: { progress: MotionValue<number>; active: boolean }) {
   return (
-    <Canvas dpr={[1, 2]} camera={{ position: [0, 0, 5.6], fov: 38 }} gl={{ alpha: true, antialias: true }} style={{ background: "transparent" }}>
+    <Canvas dpr={[1, 1.75]} frameloop={active ? "always" : "never"} camera={{ position: [0, -0.4, 6.6], fov: 38 }} gl={{ alpha: true, antialias: true }} style={{ background: "transparent" }}>
       <Globe progress={progress} />
     </Canvas>
   );

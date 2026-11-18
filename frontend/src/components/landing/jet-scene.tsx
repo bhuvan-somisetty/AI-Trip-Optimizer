@@ -33,20 +33,23 @@ function Jet({ progress }: { progress: MotionValue<number> }) {
     const g = group.current;
     if (!g) return;
     const p = progress.get();
-    // Starts nose-up seen from above, then banks and turns to show its profile as the section scrolls.
-    const targetX = THREE.MathUtils.lerp(-1.25, -0.25, p);
-    const targetY = THREE.MathUtils.lerp(0, Math.PI * 1.35, p);
-    const targetZ = THREE.MathUtils.lerp(0, -0.35, p);
+    // Top-down and nose-up first, then it rolls to show its profile, then settles back top-down and smaller.
+    const a = THREE.MathUtils.smoothstep(p, 0, 0.5);
+    const b = THREE.MathUtils.smoothstep(p, 0.5, 1);
+    const targetX = -0.95 * a * (1 - b);
+    const targetY = Math.PI * (a + b);
+    const targetZ = -0.35 * a * (1 - b);
     g.rotation.x += (targetX - g.rotation.x) * 0.08;
     g.rotation.y += (targetY - g.rotation.y) * 0.08;
     g.rotation.z += (targetZ - g.rotation.z) * 0.08;
-    const sc = THREE.MathUtils.lerp(0.78, 1.05, p);
-    g.scale.setScalar(sc);
+    const sc = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.85, 1.05, a), 0.62, b);
+    // Keep the whole jet in frame on narrow (portrait) screens.
+    g.scale.setScalar(sc * Math.min(1, (state.size.width / state.size.height) * 1.25));
     g.position.y = Math.sin(state.clock.elapsedTime * 0.8) * 0.06;
   });
 
   const gold = (
-    <meshPhysicalMaterial color="#e3be8a" metalness={1} roughness={0.22} clearcoat={1} clearcoatRoughness={0.12} envMapIntensity={1.4} />
+    <meshPhysicalMaterial color="#d8b07a" metalness={0.75} roughness={0.28} clearcoat={1} clearcoatRoughness={0.15} envMapIntensity={1.2} />
   );
   const pearl = (
     <meshPhysicalMaterial color="#f4ece0" metalness={0.35} roughness={0.28} clearcoat={1} clearcoatRoughness={0.1} envMapIntensity={1.1} />
@@ -54,7 +57,7 @@ function Jet({ progress }: { progress: MotionValue<number> }) {
   const dark = <meshStandardMaterial color="#1a1612" metalness={0.6} roughness={0.35} />;
 
   return (
-    <group ref={group} rotation={[-1.25, 0, 0]}>
+    <group ref={group}>
       {/* fuselage along Z: nose toward +Z */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <capsuleGeometry args={[0.36, 4.1, 24, 48]} />
@@ -118,13 +121,14 @@ function Jet({ progress }: { progress: MotionValue<number> }) {
   );
 }
 
-export default function JetScene({ progress }: { progress: MotionValue<number> }) {
+export default function JetScene({ progress, active }: { progress: MotionValue<number>; active: boolean }) {
   return (
-    <Canvas dpr={[1, 2]} camera={{ position: [0, 5.2, 0.01], fov: 32 }} gl={{ alpha: true, antialias: true }} style={{ background: "transparent" }}>
+    <Canvas dpr={[1, 1.75]} frameloop={active ? "always" : "never"} camera={{ position: [0, 11, 0.01], fov: 32 }} gl={{ alpha: true, antialias: true }} style={{ background: "transparent" }}>
       <ambientLight intensity={0.7} />
       <directionalLight position={[4, 6, 3]} intensity={2.2} color="#fff1dc" />
       <directionalLight position={[-5, 2, -3]} intensity={0.8} color="#cfe0ff" />
       <Environment resolution={256}>
+        <color attach="background" args={["#e6dccb"]} />
         <Lightformer form="rect" intensity={3} position={[0, 5, 2]} scale={[8, 3, 1]} color="#fff3e2" />
         <Lightformer form="rect" intensity={2} position={[-5, 1, -2]} scale={[3, 6, 1]} color="#ffd6b0" />
         <Lightformer form="rect" intensity={1.4} position={[5, -1, 3]} scale={[3, 5, 1]} color="#bcd6ff" />

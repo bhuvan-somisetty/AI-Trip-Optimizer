@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import Lenis from "lenis";
-import { motion, useReducedMotion, useScroll, useTransform, type MotionValue } from "framer-motion";
+import { motion, useInView, useReducedMotion, useScroll } from "framer-motion";
+import { SkyJourney } from "./sky-journey";
+import { useScrollRange } from "./scroll-range";
 import { ArrowRight, ArrowUpRight, BadgeCheck, BarChart3, FileCheck2, History, Plane, ShieldCheck } from "lucide-react";
 
 const JetScene = dynamic(() => import("./jet-scene"), { ssr: false });
@@ -33,15 +35,34 @@ function useSmoothScroll() {
 function useSection() {
   const ref = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
-  return { ref, p: scrollYProgress };
+  const active = useInView(ref, { margin: "200px" });
+  return { ref, p: scrollYProgress, active };
 }
 
 /* ---------- Fixed chrome ---------- */
 
+// Nav text switches between light and dark depending on the section underneath it.
+function useNavTone() {
+  const [dark, setDark] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const el = document.elementsFromPoint(window.innerWidth / 2, 40).find((e) => e.closest("[data-nav]"));
+      setDark(el?.closest("[data-nav]")?.getAttribute("data-nav") === "dark");
+    };
+    check();
+    window.addEventListener("scroll", check, { passive: true });
+    return () => window.removeEventListener("scroll", check);
+  }, []);
+  return dark;
+}
+
 function Chrome() {
+  const dark = useNavTone();
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-50 flex items-center justify-between px-6 py-5 text-white mix-blend-difference md:px-10">
+      <header
+        className={`fixed inset-x-0 top-0 z-50 flex items-center justify-between px-6 py-5 transition-colors duration-500 md:px-10 ${dark ? "text-[#1d1712]" : "text-white [text-shadow:0_1px_10px_rgba(0,0,0,0.25)]"}`}
+      >
         <nav className="hidden items-center gap-7 text-[13px] tracking-wide md:flex">
           <a href="#story">About</a>
           <a href="#jet">Optimizer</a>
@@ -68,177 +89,44 @@ function Chrome() {
   );
 }
 
-/* ---------- 1. Airplane window opening into the clouds ---------- */
-
-function Clouds() {
-  const blobs = [
-    { top: "12%", left: "-10%", w: "70%", h: "22%", d: 22, o: 0.75 },
-    { top: "34%", left: "30%", w: "80%", h: "26%", d: 28, o: 0.6 },
-    { top: "58%", left: "-20%", w: "90%", h: "30%", d: 26, o: 0.85 },
-    { top: "72%", left: "20%", w: "90%", h: "34%", d: 32, o: 0.9 },
-  ];
-  return (
-    <div className="absolute inset-0 overflow-hidden bg-[linear-gradient(180deg,#7fa9e0_0%,#bcd5ee_38%,#efd4d2_72%,#e2aeb0_100%)]">
-      {blobs.map((b, i) => (
-        <motion.div
-          key={i}
-          className="absolute rounded-[50%] bg-white blur-2xl"
-          style={{ top: b.top, left: b.left, width: b.w, height: b.h, opacity: b.o }}
-          animate={{ x: [0, i % 2 ? 40 : -40, 0] }}
-          transition={{ duration: b.d, repeat: Infinity, ease: "easeInOut" }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function WindowHero() {
-  const { ref, p } = useSection();
-  const scale = useTransform(p, [0, 0.45, 0.78], [1, 3.4, 9.5]);
-  const side = useTransform(p, [0, 0.16], [1, 0]);
-  const sideY = useTransform(p, [0, 0.16], [0, -40]);
-  const shade = useTransform(p, [0, 0.14], ["36%", "0%"]);
-  const brand = useTransform(p, [0.58, 0.72, 0.92, 1], [0, 1, 1, 0]);
-  const warm = useTransform(p, [0.5, 0.8], [1, 0]);
-
-  return (
-    <section ref={ref} className="relative h-[340vh]">
-      <div className="sticky top-0 h-dvh overflow-hidden bg-[#1a100b]">
-        <motion.div
-          style={{ opacity: warm }}
-          className="absolute inset-0 bg-[radial-gradient(60%_70%_at_50%_45%,#d6a577_0%,#8a5a3a_38%,#2b1a12_75%,#140b07_100%)]"
-        />
-        <div className="grain pointer-events-none absolute inset-0" />
-
-        <motion.div style={{ opacity: side, y: sideY }} className="pointer-events-none absolute inset-0 z-10">
-          <h1 className="font-display absolute top-[22%] left-[6%] text-[clamp(2.6rem,6.4vw,6rem)] leading-[0.95] font-normal text-[#f6efe3]">
-            Smarter
-            <br />
-            travel.
-          </h1>
-          <h1 className="font-display absolute right-[6%] bottom-[24%] text-right text-[clamp(2.6rem,6.4vw,6rem)] leading-[0.95] font-normal text-[#f6efe3]">
-            Better
-            <br />
-            decisions.
-          </h1>
-          <div className="absolute bottom-[14%] left-[6%] max-w-[15rem] text-[#f6efe3]/80">
-            <p className="font-display text-2xl leading-tight">Your decisions, made clear.</p>
-            <p className="mt-3 text-[12px] leading-relaxed text-[#f6efe3]/55">
-              Every flight and stay is ranked against your policy. A reviewer makes the final call.
-            </p>
-          </div>
-          <p className="absolute right-[6%] bottom-[7%] text-[10px] tracking-[0.25em] text-[#f6efe3]/60 uppercase">Scroll down to begin</p>
-        </motion.div>
-
-        <div className="absolute inset-0 flex items-center justify-center">
-          <motion.div
-            style={{ scale }}
-            className="relative h-[60dvh] w-[39.6dvh] rounded-[50%/42%] bg-gradient-to-b from-[#fbf4e8] via-[#e8dac4] to-[#cdb89b] p-[3.4%] shadow-[0_0_120px_30px_rgba(255,214,160,0.35),inset_0_2px_6px_rgba(255,255,255,0.8)]"
-          >
-            <div className="relative h-full w-full overflow-hidden rounded-[50%/42%] shadow-[inset_0_0_40px_rgba(60,40,20,0.45)]">
-              <Clouds />
-              <motion.div
-                style={{ height: shade }}
-                className="absolute inset-x-0 top-0 z-10 bg-gradient-to-b from-[#f1e6d3] to-[#dcc9ab] shadow-[0_8px_20px_rgba(0,0,0,0.25)]"
-              />
-            </div>
-          </motion.div>
-        </div>
-
-        <motion.div style={{ opacity: brand }} className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center text-center text-white">
-          <p className="mb-4 text-[11px] tracking-[0.3em] uppercase opacity-80">Welcome aboard</p>
-          <p className="font-display text-[clamp(3rem,8vw,7.5rem)] leading-none font-light">Trip Optimizer</p>
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
-/* ---------- 2. Statement with scroll-linked word reveal ---------- */
-
-const STATEMENT =
-  "AI Trip Optimizer is decision support for business travel. It compares real flights and hotels, checks every option against company policy and explains each choice, so reviewers can approve with confidence, every single time.";
-
-function Word({ word, range, p }: { word: string; range: [number, number]; p: MotionValue<number> }) {
-  const opacity = useTransform(p, range, [0.14, 1]);
-  const blur = useTransform(p, range, ["blur(6px)", "blur(0px)"]);
-  return (
-    <motion.span style={{ opacity, filter: blur }} className="mr-[0.28em] inline-block">
-      {word}
-    </motion.span>
-  );
-}
-
-function Statement() {
-  const { ref, p } = useSection();
-  const words = STATEMENT.split(" ");
-  const cols = useTransform(p, [0.62, 0.8], [0, 1]);
-  const colsY = useTransform(p, [0.62, 0.8], [30, 0]);
-  return (
-    <section id="story" ref={ref} className="relative h-[300vh]">
-      <div className="sticky top-0 flex h-dvh flex-col justify-center overflow-hidden bg-[linear-gradient(180deg,#bcd2f2_0%,#5d8fe0_45%,#2f63c9_100%)] px-6 text-white md:px-16">
-        <div className="grain pointer-events-none absolute inset-0" />
-        <p className="font-display relative mx-auto max-w-6xl text-[clamp(1.9rem,4.6vw,4.2rem)] leading-[1.08] font-light">
-          {words.map((w, i) => {
-            const a = (i / words.length) * 0.6;
-            return <Word key={i} word={w} range={[a, a + 0.08]} p={p} />;
-          })}
-        </p>
-        <motion.div style={{ opacity: cols, y: colsY }} className="relative mx-auto mt-14 grid w-full max-w-6xl gap-8 text-sm text-white/85 md:grid-cols-3">
-          {[
-            ["Live fares and stays", "Real options from live search, never a canned list."],
-            ["Your policy, enforced", "Cabin rules and hotel caps are checked on every itinerary."],
-            ["A person decides", "Approve or reject with a written reason. Nothing books itself."],
-          ].map(([t, d]) => (
-            <div key={t} className="border-t border-white/35 pt-4">
-              <p className="font-display text-2xl">{t}</p>
-              <p className="mt-2 max-w-xs text-white/70">{d}</p>
-            </div>
-          ))}
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
 /* ---------- 3. Rotating 3D jet ---------- */
 
 function JetSection() {
-  const { ref, p } = useSection();
-  const headOpacity = useTransform(p, [0, 0.12, 0.56, 0.7], [0, 1, 1, 0]);
-  const leftX = useTransform(p, [0, 0.2], [-60, 0]);
-  const rightX = useTransform(p, [0, 0.2], [60, 0]);
-  const spec = useTransform(p, [0.62, 0.8], [0, 1]);
-  const specY = useTransform(p, [0.62, 0.8], [40, 0]);
-  const jetProgress = useTransform(p, [0.1, 0.85], [0, 1]);
+  const { ref, p, active } = useSection();
+  const headOpacity = useScrollRange(p, [0, 0.12, 0.56, 0.7], [0, 1, 1, 0]);
+  const leftX = useScrollRange(p, [0, 0.2], [-60, 0]);
+  const rightX = useScrollRange(p, [0, 0.2], [60, 0]);
+  const spec = useScrollRange(p, [0.62, 0.8], [0, 1]);
+  const specY = useScrollRange(p, [0.62, 0.8], [40, 0]);
+  const jetProgress = useScrollRange(p, [0.1, 0.85], [0, 1]);
 
   return (
-    <section id="jet" ref={ref} className="relative h-[380vh]">
+    <section id="jet" ref={ref} data-nav="dark" className="relative h-[380vh]">
       <div className="sticky top-0 h-dvh overflow-hidden bg-[radial-gradient(70%_60%_at_50%_40%,#f7f0e3_0%,#e8dcc8_60%,#d9c9ae_100%)] text-[#2a211b]">
         <div className="absolute inset-0 z-0">
-          <JetScene progress={jetProgress} />
+          <JetScene progress={jetProgress} active={active} />
         </div>
 
         <motion.div style={{ opacity: headOpacity }} className="pointer-events-none absolute inset-0 z-10">
-          <motion.h2 style={{ x: leftX }} className="font-display absolute top-1/2 left-[5%] -translate-y-1/2 text-[clamp(3rem,9vw,8.5rem)] leading-none font-normal">
+          <motion.h2 style={{ x: leftX }} className="font-display absolute top-[14%] left-[6%] text-[clamp(3rem,9vw,8.5rem)] leading-none font-normal md:top-1/2 md:left-[5%] md:-translate-y-1/2">
             Plan in
           </motion.h2>
-          <motion.h2 style={{ x: rightX }} className="font-display absolute top-1/2 right-[5%] -translate-y-1/2 text-[clamp(3rem,9vw,8.5rem)] leading-none font-normal">
+          <motion.h2 style={{ x: rightX }} className="font-display absolute right-[6%] bottom-[24%] text-[clamp(3rem,9vw,8.5rem)] leading-none font-normal md:top-1/2 md:right-[5%] md:bottom-auto md:-translate-y-1/2">
             Clarity
           </motion.h2>
-          <p className="font-display absolute bottom-[16%] left-[5%] max-w-[12rem] text-xl leading-snug opacity-80">Decisions that move with you</p>
+          <p className="font-display absolute bottom-[16%] left-[5%] hidden max-w-[12rem] text-xl leading-snug opacity-80 md:block">Decisions that move with you</p>
           <p className="absolute right-[5%] bottom-[14%] hidden max-w-[17rem] text-[12px] leading-relaxed opacity-70 md:block">
             Dates, budget, cabin and traveler preferences go in. The optimizer returns a ranked itinerary and a plain reason for every alternative it set aside.
           </p>
         </motion.div>
 
-        <motion.div style={{ opacity: spec, y: specY }} className="pointer-events-none absolute inset-0 z-10 grid items-center px-6 md:grid-cols-[1fr_auto_1fr] md:px-16">
+        <motion.div style={{ opacity: spec, y: specY }} className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between px-6 pt-24 pb-28 md:grid md:grid-cols-[1fr_auto_1fr] md:items-center md:px-16 md:py-0">
           <div>
             <p className="text-[11px] tracking-[0.25em] uppercase opacity-60">Example trip</p>
             <p className="font-display mt-2 text-[clamp(3rem,8vw,7rem)] leading-none">DEL to BOM</p>
           </div>
           <div className="hidden w-[22vw] md:block" />
-          <dl className="mt-8 grid grid-cols-2 gap-x-8 gap-y-6 text-sm md:mt-0">
+          <dl className="grid grid-cols-2 gap-x-8 gap-y-6 text-sm">
             {[
               ["Budget", "₹8,000"],
               ["Chosen", "₹5,420"],
@@ -270,7 +158,7 @@ const features = [
 
 function Features() {
   return (
-    <section id="features" className="bg-[#f3eee4] text-[#0f1b2d]">
+    <section id="features" data-nav="dark" className="bg-[#f3eee4] text-[#0f1b2d]">
       <div className="mx-auto max-w-7xl px-6 py-28 md:px-10">
         <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-80px" }} transition={{ duration: 0.9, ease }}>
           <p className="text-[11px] font-semibold tracking-[0.22em] text-[#e04e22] uppercase">What it does</p>
@@ -302,13 +190,15 @@ function Features() {
 /* ---------- 5. Global ---------- */
 
 function GlobalSection() {
-  const { ref, p } = useSection();
-  const textY = useTransform(p, [0, 1], ["8%", "-6%"]);
-  const globeProgress = useTransform(p, [0, 1], [0, 1]);
-  const cta = useTransform(p, [0.55, 0.8], [0, 1]);
-  const ctaY = useTransform(p, [0.55, 0.8], [30, 0]);
+  const { ref, p, active } = useSection();
+  const textY = useScrollRange(p, [0, 1], ["8%", "-6%"]);
+  const globeProgress = useScrollRange(p, [0, 1], [0, 1]);
+  const cta = useScrollRange(p, [0.55, 0.8], [0, 1]);
+  const ctaY = useScrollRange(p, [0.55, 0.8], [30, 0]);
+  const lede = useScrollRange(p, [0.1, 0.25, 0.45, 0.55], [0, 1, 1, 0]);
+  const globeY = useScrollRange(p, [0.45, 0.8], ["0%", "-12%"]);
   return (
-    <section id="global" ref={ref} className="relative h-[300vh]">
+    <section id="global" ref={ref} data-nav="light" className="relative h-[300vh]">
       <div className="sticky top-0 h-dvh overflow-hidden bg-[linear-gradient(180deg,#2c1d17_0%,#120b09_55%,#07090d_100%)] text-[#f6efe3]">
         <motion.p
           style={{ y: textY }}
@@ -316,11 +206,13 @@ function GlobalSection() {
         >
           Global
         </motion.p>
-        <div className="absolute inset-0 z-10">
-          <GlobeScene progress={globeProgress} />
-        </div>
-        <p className="font-display absolute bottom-[22%] left-[6%] z-20 max-w-[14rem] text-xl leading-snug text-[#f6efe3]/85">Plan anywhere with total clarity and control.</p>
-        <motion.div style={{ opacity: cta, y: ctaY }} className="absolute inset-x-0 bottom-[16%] z-20 flex flex-col items-center gap-5 text-center md:bottom-[12%]">
+        <motion.div style={{ y: globeY }} className="absolute inset-0 z-10">
+          <GlobeScene progress={globeProgress} active={active} />
+        </motion.div>
+        <motion.p style={{ opacity: lede }} className="font-display absolute top-1/2 left-[6%] z-20 max-w-[14rem] text-xl leading-snug text-[#f6efe3]/85">
+          Plan anywhere with total clarity and control.
+        </motion.p>
+        <motion.div style={{ opacity: cta, y: ctaY }} className="absolute inset-x-0 bottom-[17%] z-20 flex flex-col items-center gap-5 px-6 text-center">
           <h3 className="font-display text-[clamp(1.8rem,4vw,3.4rem)] leading-tight">
             Make the next trip <em className="text-[#ff8a62]">an easy decision.</em>
           </h3>
@@ -343,8 +235,7 @@ export function Landing() {
   return (
     <div className="bg-[#07090d] text-foreground">
       <Chrome />
-      <WindowHero />
-      <Statement />
+      <SkyJourney />
       <JetSection />
       <Features />
       <GlobalSection />
