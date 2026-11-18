@@ -231,7 +231,7 @@ export function Topbar() {
                   <span className="min-w-0 flex-1">
                     <span className="line-clamp-2 block text-sm">{n.summary}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {n.actor} · {timeAgo(n.createdAt)}
+                      {n.actorName ?? n.actor} · {timeAgo(n.createdAt)}
                     </span>
                   </span>
                 </DropdownMenuItem>

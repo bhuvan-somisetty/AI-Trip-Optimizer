@@ -310,6 +310,7 @@ export function toAuditEvent(r: AuditEventResponse): AuditEvent {
     tripId: r.trip_id,
     type: r.event_type as AuditEvent["type"],
     actor: r.actor,
+    actorName: r.actor_name ?? undefined,
     summary: readableSummary(r.summary),
     payload: r.payload,
     createdAt: r.created_at,
