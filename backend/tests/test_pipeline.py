@@ -431,3 +431,41 @@ def test_template_rationale_names_the_priority(no_llm):
     request = {**REQUEST, "preferences": {"priority": "comfort"}}
     result = pipeline.invoke({"request": request})
     assert "fewest stops" in result["itinerary"]["rationale"]
+
+
+# ---- whole rupees in flags and rationale facts ---------------------------------
+
+def test_over_budget_flag_shows_whole_rupees():
+    # 950.333... a night x 3 nights: the flag must not say "2,851.0".
+    hotels = [{"id": "HT-F", "name": "Fractional", "price_per_night": 2851 / 3, "rating": 4.0}]
+    request_end = REQUEST["start_date"].replace(day=REQUEST["start_date"].day + 3)
+    check = run_check(budget=1000.0, hotels=hotels, end=request_end)
+    flag = check["flags"][-1]
+    assert "hotel HT-F 3 night(s) 2,851)" in flag
+    assert ".0" not in flag
+
+
+def test_rationale_facts_are_whole_rupees():
+    hotels = [{"id": "HT-F", "name": "Fractional", "price_per_night": 2851 / 3, "rating": 4.0}]
+    request = {**REQUEST, "end_date": REQUEST["start_date"].replace(day=REQUEST["start_date"].day + 3)}
+    state = {"request": request, "flight_options": PRIORITY_FLIGHTS, "hotel_options": hotels}
+    state.update(check_node(state))
+    facts = graph.rationale_facts(state)
+    money = [facts["budget"], facts["total_cost"], facts["savings_vs_median_valid_options"],
+             facts["difference_from_budget"], facts["flight"]["price"],
+             facts["hotel"]["price_per_night"], facts["hotel"]["stay_cost"]]
+    assert all(isinstance(value, int) for value in money)
+    assert facts["hotel"]["price_per_night"] == 950 and facts["hotel"]["stay_cost"] == 2851
+
+
+def test_llm_amounts_with_thousands_separators_pass_the_guardrail(monkeypatch):
+    request = {**REQUEST, "end_date": REQUEST["start_date"].replace(day=REQUEST["start_date"].day + 3)}
+    state = {"request": request, "flight_options": PRIORITY_FLIGHTS,
+             "hotel_options": [{"id": "HT-F", "name": "Fractional", "price_per_night": 2851 / 3, "rating": 4.0}]}
+    state.update(check_node(state))
+    total = graph.rationale_facts(state)["total_cost"]
+    fake = FakeLLM(f"The total comes to {total:,}, within the {int(REQUEST['budget']):,} budget.")
+    monkeypatch.setattr(graph, "get_llm", lambda: fake)
+    result = graph.compose(state)
+    assert result["itinerary"]["rationale"] == fake.text
+    assert "whole numbers with thousands separators" in fake.prompt
