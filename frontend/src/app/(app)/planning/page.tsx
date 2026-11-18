@@ -286,7 +286,7 @@ export default function PlanningPage() {
                                 ...p,
                                 travelerIds: ids,
                                 rooms: Math.max(1, ids.length),
-                                origin: !on && ids.length === 1 && first && cityOptions.some((c) => c.code === first.homeCity) ? first.homeCity : p.origin,
+                                origin: !on && ids.length === 1 && first && cityOptions.some((c) => c.code === first.homeCity) && first.homeCity !== p.destination ? first.homeCity : p.origin,
                                 filters: { ...p.filters, preferredAirlines: prefAir },
                               }));
                             }}
