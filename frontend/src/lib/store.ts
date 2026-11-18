@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import * as api from "./api";
 import { cityByCode } from "./catalog";
 import { addDays, formatInr, toIsoDate, uid } from "./format";
-import { fromTraveler, fromTrip, toAuditEvent, toItinerary, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
+import { fromPolicy, fromTraveler, fromTrip, toAuditEvent, toItinerary, toPolicy, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
 import { OptimizationError, editItinerary, optimize } from "./optimizer";
 import { toast } from "./toast";
 import type {
@@ -220,7 +220,14 @@ export const actions = {
       return { session: null, travelers, trips };
     });
   },
-  updateProfile(patch: Partial<Session>) {
+  /** In api mode only the name is saved (PATCH /me; the email can't change) and the server's value is kept. */
+  async updateProfile(patch: Partial<Session>) {
+    if (isApi()) {
+      if (patch.name === undefined) return;
+      const me = await remote((tok) => api.updateMe(tok, { name: patch.name! }));
+      set((s) => ({ session: s.session ? { ...s.session, name: me.name || s.session.name } : s.session }));
+      return;
+    }
     set((s) => ({ session: s.session ? { ...s.session, ...patch } : s.session }));
   },
 
@@ -231,15 +238,23 @@ export const actions = {
       const token = state.session?.token;
       set(() => ({ syncing: true }));
       try {
-        const [travelers, rows, events] = await Promise.all([
+        const [travelers, rows, events, me, policy] = await Promise.all([
           remote(api.listTravelers),
           remote((tok) => api.listTrips(tok)),
           remote(api.listAudit),
+          remote(api.getMe).catch(() => null),
+          remote(api.getPolicy).catch(() => null),
         ]);
         const trips = await Promise.all(rows.map((r) => withServerResult(toTrip(r, tripContext()))));
         if (state.session?.token !== token) return; // signed out or switched accounts meanwhile
         // The server's trail is the record; events logged in this tab are replaced by it.
-        set(() => ({ travelers: travelers.map(toTraveler), trips, audit: events.map(toAuditEvent) }));
+        set((s) => ({
+          travelers: travelers.map(toTraveler),
+          trips,
+          audit: events.map(toAuditEvent),
+          policy: policy ? toPolicy(policy) : s.policy,
+          session: s.session && me ? { ...s.session, name: me.name || s.session.name, role: me.role } : s.session,
+        }));
       } catch (e) {
         toast("Couldn't load your data", { description: (e as Error).message, variant: "error" });
       } finally {
@@ -507,7 +522,14 @@ export const actions = {
     ]);
   },
 
-  updatePolicy(p: Policy) {
+  /** In api mode this is PUT /policy (admins only, 403 otherwise); the server logs the audit event. */
+  async updatePolicy(p: Policy) {
+    if (isApi()) {
+      const saved = toPolicy(await remote((tok) => api.putPolicy(tok, fromPolicy(p))));
+      const events = await remote(api.listAudit).catch(() => null);
+      set((s) => ({ policy: saved, audit: events ? events.map(toAuditEvent) : s.audit }));
+      return;
+    }
     set((s) => ({ policy: p, audit: [log({ tripId: null, type: "POLICY_UPDATED", summary: "Updated travel policy rules" }), ...s.audit] }));
   },
   updateSettings(p: Partial<Settings>) {

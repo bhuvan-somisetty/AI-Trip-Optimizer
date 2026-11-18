@@ -195,6 +195,9 @@ export type Policy = {
   businessClassMinHours: number;
   advanceBookingDays: number;
   preferredAirlines: string[];
+  /** Set by the API: when the policy last changed and the email of who changed it. */
+  updatedAt?: string;
+  updatedBy?: string;
 };
 
 export type Session = {
