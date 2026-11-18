@@ -361,6 +361,7 @@ export type AuditEventResponse = {
   trip_id: string | null;
   event_type: string;
   actor: string; // email of the user who did it; admins see everyone's events
+  actor_name: string | null; // their display name, null until they set one
   summary: string;
   payload: Record<string, unknown>;
   created_at: string;
