@@ -119,7 +119,7 @@ export function WhatIf({ trip, editable }: { trip: Trip; editable: boolean }) {
                 Save this instead
               </Button>
             ) : (
-              <p className="text-xs text-muted-foreground">This trip has been decided — previews can&apos;t be saved.</p>
+              <p className="text-xs text-muted-foreground">This trip has been decided, so previews can&apos;t be saved.</p>
             )}
           </div>
         )}
@@ -140,7 +140,7 @@ function compareRows(trip: Trip, orig: Itinerary, next: Itinerary, budget: numbe
   return [
     { label: "Outbound", a: flight(orig.outbound), b: flight(next.outbound) },
     ...(orig.return || next.return ? [{ label: "Return", a: flight(orig.return), b: flight(next.return) }] : []),
-    { label: "Stay", a: orig.stay?.name ?? "—", b: next.stay?.name ?? "—" },
+    { label: "Stay", a: orig.stay?.name ?? "-", b: next.stay?.name ?? "-" },
     { label: "Cabin", a: cabinLabel[orig.outbound.cabin], b: cabinLabel[next.outbound.cabin] },
     { label: "Budget", a: formatInr(trip.budget), b: formatInr(budget) },
     { label: "Total cost", a: formatInr(orig.totalCost), b: formatInr(next.totalCost), better: next.totalCost === orig.totalCost ? null : next.totalCost < orig.totalCost },
