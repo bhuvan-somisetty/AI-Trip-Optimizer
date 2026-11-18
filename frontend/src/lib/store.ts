@@ -472,7 +472,7 @@ export const actions = {
       log({
         tripId: id,
         type: "DECISION",
-        summary: `${outcome === "APPROVED" ? "Approved" : "Rejected"} itinerary${reason.trim() ? ` — "${reason.trim()}"` : ""}`,
+        summary: `${outcome === "APPROVED" ? "Approved" : "Rejected"} itinerary${reason.trim() ? `: "${reason.trim()}"` : ""}`,
         payload: { outcome, reason: reason.trim() || null },
       }),
     ]);
@@ -576,10 +576,10 @@ function seed(): State {
     f?: Partial<TripFilters>;
   };
   const plan: SeedTrip[] = [
-    { title: "Q3 client pitch — Reliance", who: [0], o: "BLR", d: "BOM", start: -104, len: 2, budget: 38000, created: -121, purpose: "Client meeting", status: "APPROVED", turnaroundH: 5 },
+    { title: "Q3 client pitch, Reliance", who: [0], o: "BLR", d: "BOM", start: -104, len: 2, budget: 38000, created: -121, purpose: "Client meeting", status: "APPROVED", turnaroundH: 5 },
     { title: "AWS Summit Singapore", who: [1], o: "BLR", d: "SIN", start: -92, len: 4, budget: 145000, created: -118, purpose: "Conference", status: "APPROVED", turnaroundH: 20 },
-    { title: "Board offsite prep", who: [2], o: "DEL", d: "DXB", start: -80, len: 3, budget: 70000, created: -99, purpose: "Leadership offsite", status: "REJECTED", turnaroundH: 30, reason: "Offsite moved online — trip no longer required." },
-    { title: "Campaign shoot — Goa", who: [3, 4], o: "BOM", d: "GOI", start: -70, len: 3, budget: 62000, created: -88, purpose: "Marketing event", status: "APPROVED", turnaroundH: 9 },
+    { title: "Board offsite prep", who: [2], o: "DEL", d: "DXB", start: -80, len: 3, budget: 70000, created: -99, purpose: "Leadership offsite", status: "REJECTED", turnaroundH: 30, reason: "Offsite moved online, trip no longer required." },
+    { title: "Campaign shoot, Goa", who: [3, 4], o: "BOM", d: "GOI", start: -70, len: 3, budget: 62000, created: -88, purpose: "Marketing event", status: "APPROVED", turnaroundH: 9 },
     { title: "Plant audit Hyderabad", who: [5], o: "BBI", d: "HYD", start: -55, len: 2, budget: 30000, created: -73, purpose: "Audit", status: "APPROVED", turnaroundH: 3 },
     { title: "Partner summit London", who: [2], o: "DEL", d: "LHR", start: -40, len: 5, budget: 320000, created: -66, purpose: "Partnership", status: "APPROVED", turnaroundH: 26, f: { cabin: "business", priority: "comfort" } },
     { title: "Hiring drive Chennai", who: [1, 4], o: "BLR", d: "MAA", start: -28, len: 1, budget: 26000, created: -44, purpose: "Recruitment", status: "APPROVED", turnaroundH: 4 },
@@ -642,7 +642,7 @@ function seed(): State {
       trip.status = "DECIDED";
       trip.outcome = p.status;
       trip.decidedAt = iso(decided);
-      audit.push(log({ tripId: trip.id, type: "DECISION", actor: "Bhuvan Somisetty", createdAt: iso(decided), summary: `${p.status === "APPROVED" ? "Approved" : "Rejected"} itinerary${p.reason ? ` — "${p.reason}"` : ""}`, payload: { outcome: p.status, reason: p.reason ?? null } }));
+      audit.push(log({ tripId: trip.id, type: "DECISION", actor: "Bhuvan Somisetty", createdAt: iso(decided), summary: `${p.status === "APPROVED" ? "Approved" : "Rejected"} itinerary${p.reason ? `: "${p.reason}"` : ""}`, payload: { outcome: p.status, reason: p.reason ?? null } }));
     }
     trips.push(trip);
   });
