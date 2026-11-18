@@ -39,7 +39,7 @@ export function SpendChart({ trips, months, height = 260 }: { trips: Trip[]; mon
           />
           <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
           <Bar dataKey="spend" name="Approved spend" fill="var(--color-primary)" radius={[6, 6, 0, 0]} maxBarSize={36} />
-          <Bar dataKey="savings" name="Savings" fill="var(--color-success)" radius={[6, 6, 0, 0]} maxBarSize={36} />
+          <Bar dataKey="savings" name="Savings" fill="var(--color-chart-2)" radius={[6, 6, 0, 0]} maxBarSize={36} />
         </BarChart>
       </ResponsiveContainer>
     </div>
