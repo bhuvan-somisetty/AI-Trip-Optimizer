@@ -20,7 +20,7 @@ import { Bus } from "./vehicles";
 const SWITCH = 470;
 const END = 820;
 
-const TRAIN_SPEED = 9; // m/s: trains take the gorge slowly
+const TRAIN_SPEED = 5.5; // m/s, about 20 km/h: trains crawl across the gorge
 const BUS_SPEED = 22; // m/s, about 80 km/h
 const BUS_Z = ROAD_Z - 1.9; // keep-left lane
 const BUS_X = -32;
@@ -101,14 +101,14 @@ function Rig({ progress, reduce }: { progress: MotionValue<number>; reduce: bool
     const set = u < SWITCH ? "falls" : "road";
     if (set !== world.set) {
       // The hand-over happens inside the spray: snap the camera to the other path, and bring the
-      // train back to the near end of the bridge for the next time the gorge is shown.
+      // train back across the bridge for the next time the gorge is shown.
       world.set = set;
       k.current = -1;
       if (set === "falls") world.trainStart = world.d;
     }
     world.u = u;
     world.d += (reduce ? 0 : set === "falls" ? TRAIN_SPEED : BUS_SPEED) * dt;
-    // While the gorge is still hidden in cloud, hold the train at the near end of the bridge so it
+    // While the gorge is still hidden in cloud, hold the train with its coaches across the bridge so it
     // is crossing when the view opens up.
     if (set === "falls" && u < 60) world.trainStart = world.d;
 
