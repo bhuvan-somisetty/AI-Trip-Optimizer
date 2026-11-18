@@ -487,9 +487,6 @@ export default function PlanningPage() {
                     <Field label={`Minimum guest rating: ${d.filters.minHotelRating.toFixed(1)}+`}>
                       <Range min={3} max={4.8} step={0.1} value={d.filters.minHotelRating} onChange={(v) => upF({ minHotelRating: v })} aria-label="Minimum hotel rating" />
                     </Field>
-                    <Field label={`Max distance from centre: ${d.filters.maxHotelDistanceKm} km`}>
-                      <Range min={1} max={15} step={0.5} value={d.filters.maxHotelDistanceKm} onChange={(v) => upF({ maxHotelDistanceKm: v })} aria-label="Maximum distance" />
-                    </Field>
                     <Field label="Nightly rate cap for this trip" hint="Leave empty to use the company policy cap.">
                       <div className="relative max-w-56">
                         <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
@@ -561,10 +558,10 @@ export default function PlanningPage() {
                             <p className="text-xs text-muted-foreground">
                               {
                                 {
-                                  cheapest: "Minimise spend; accept stops and less convenient times.",
-                                  balanced: "Weigh cost, travel time and comfort evenly.",
-                                  comfort: "Direct flights, better-rated hotels, refundable fares.",
-                                  fastest: "Shortest door-to-door time; central hotels.",
+                                  cheapest: "Cheapest valid options.",
+                                  balanced: "Half price, half flight time (hotels: half price, half guest rating).",
+                                  comfort: "Fewest stops, best-rated hotel.",
+                                  fastest: "Shortest flight; hotels stay cheapest.",
                                 }[p]
                               }
                             </p>
@@ -594,7 +591,7 @@ export default function PlanningPage() {
                     />
                     <ReviewRow
                       label="Stay"
-                      value={`${d.rooms} room${d.rooms > 1 ? "s" : ""} · ${d.filters.minHotelRating.toFixed(1)}+ rating · ≤ ${d.filters.maxHotelDistanceKm} km${d.filters.requiredAmenities.length ? ` · ${d.filters.requiredAmenities.map((a) => amenityLabel[a]).join(", ")}` : ""}${d.filters.maxNightlyRate ? ` · cap ${formatInr(d.filters.maxNightlyRate)}/night` : ""}`}
+                      value={`${d.rooms} room${d.rooms > 1 ? "s" : ""} · ${d.filters.minHotelRating.toFixed(1)}+ rating${d.filters.requiredAmenities.length ? ` · ${d.filters.requiredAmenities.map((a) => amenityLabel[a]).join(", ")}` : ""}${d.filters.maxNightlyRate ? ` · cap ${formatInr(d.filters.maxNightlyRate)}/night` : ""}`}
                       onEdit={() => go(3)}
                     />
                     <ReviewRow label="Budget" value={`${formatInr(d.budget)} · ${priorityLabel[d.filters.priority]}`} onEdit={() => go(4)} />
