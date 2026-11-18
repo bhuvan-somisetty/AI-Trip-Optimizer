@@ -151,7 +151,7 @@ export default function AuditPage() {
                         </span>
                       </TableCell>
                       <TableCell className="whitespace-nowrap" title={a.actorName ? a.actor : undefined}>{a.actorName ?? a.actor}</TableCell>
-                      <TableCell>{code ? <Link href={`/trips/${a.tripId}`} className="font-medium text-primary hover:underline">{code}</Link> : <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell>{code ? <Link href={`/trips/${a.tripId}`} className="font-medium text-primary hover:underline">{code}</Link> : <span className="text-muted-foreground">-</span>}</TableCell>
                       <TableCell className="max-w-xl pr-4 whitespace-normal text-muted-foreground">{a.summary}</TableCell>
                     </TableRow>
                   );
