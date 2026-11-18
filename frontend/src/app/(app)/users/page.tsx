@@ -18,7 +18,7 @@ import { toast } from "@/lib/toast";
 import type { Traveler } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const avatarColors = ["bg-sky-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-cyan-600", "bg-indigo-500"];
+const avatarColors = ["bg-sky-600", "bg-orange-500", "bg-emerald-600", "bg-amber-600", "bg-rose-500", "bg-cyan-700", "bg-slate-600"];
 
 export default function TravelersPage() {
   const s = useStore();
@@ -82,7 +82,7 @@ export default function TravelersPage() {
 
       {list.length === 0 ? (
         <Card>
-          <EmptyState icon={Users} title={s.travelers.length ? "No travelers match" : "No travelers yet"} description="Add the people you book travel for — you'll pick them when creating a trip." action={<Button onClick={() => setOpen(true)}><UserPlus />Add traveler</Button>} />
+          <EmptyState icon={Users} title={s.travelers.length ? "No travelers match" : "No travelers yet"} description="Add the people you book travel for. You'll pick them when creating a trip." action={<Button onClick={() => setOpen(true)}><UserPlus />Add traveler</Button>} />
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
