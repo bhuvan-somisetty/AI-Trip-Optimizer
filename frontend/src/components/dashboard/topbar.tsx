@@ -100,7 +100,7 @@ export function Topbar() {
   const kindIcon = { Trip: Plane, Traveler: User, Document: FileText };
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur-md md:px-6">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl backdrop-saturate-150 md:px-6">
       <button
         className="flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
         onClick={() => setMobileOpen(true)}
