@@ -30,7 +30,7 @@ export function PipelineProgress() {
           </div>
           <div>
             <p className="font-semibold">Optimizer pipeline running</p>
-            <p className="text-sm text-muted-foreground">Status: OPTIMIZING — results appear here in a few seconds.</p>
+            <p className="text-sm text-muted-foreground">Status: OPTIMIZING. Results appear here in a few seconds.</p>
           </div>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-muted">
