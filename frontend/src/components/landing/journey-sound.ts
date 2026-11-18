@@ -22,12 +22,12 @@ const span = (inA: number, inB: number, outA: number, outB: number) => (y: numbe
 const LAYERS: Layer[] = [
   { name: "cabin", level: 0.5, gain: span(-1, 0, 160, 300) },
   { name: "wind", level: 0.45, gain: span(150, 300, 900, 960) },
-  { name: "jet", level: 0.7, gain: span(640, 730, 840, 940) },
-  { name: "waterfall", level: 0.55, gain: (y) => span(930, 1000, 1410, 1445)(y) * (0.75 + 0.45 * ramp(1300, 1400, y)) },
-  { name: "train", level: 0.55, gain: span(1000, 1120, 1360, 1420) },
-  { name: "road", level: 0.55, gain: span(1420, 1490, 1690, 1770) },
+  { name: "jet", level: 0.7, gain: span(640, 730, 1250, 1330) },
+  { name: "waterfall", level: 0.55, gain: (y) => span(1330, 1400, 1810, 1845)(y) * (0.75 + 0.45 * ramp(1700, 1800, y)) },
+  { name: "train", level: 0.55, gain: span(1400, 1520, 1760, 1820) },
+  { name: "road", level: 0.55, gain: span(1820, 1890, 2090, 2170) },
 ];
-const HORN_AT = 1150;
+const HORN_AT = 1550;
 
 function noiseBuffer(ctx: AudioContext, seconds: number, color: "white" | "brown") {
   const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * seconds), ctx.sampleRate);

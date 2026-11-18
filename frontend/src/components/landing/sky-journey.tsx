@@ -134,9 +134,10 @@ function Word({ word, range, p }: { word: string; range: [number, number]; p: Mo
 }
 
 // Scroll budget of the pinned story, in vh. The sky leg keeps its original 660vh of scroll, then
-// the camera chases the airliner over the clouds and follows it down; the ground leg (the train at
-// the falls, then the coach on the highway) starts at GROUND_START.
-const TOTAL = 1770;
+// the camera turns to the airliner flying alongside and follows it down through the cloud; the
+// ground leg (the landing, the train at the falls, then the coach on the highway) starts at
+// GROUND_START.
+const TOTAL = 2170;
 const SKY = 660;
 const GROUND_START = 950;
 
@@ -212,21 +213,22 @@ export function SkyJourney({ sound }: { sound: boolean }) {
   const textOpacity = useScrollRange(p, [0.02, 0.13], [1, 0]);
   const brandScroll = useScrollRange(p, [0, 0.3, 0.42], [1, 1, 0]);
   const brand = useTransform(() => brandScroll.get() * (1 - closed.get()));
-  const statementY = useScrollRange(p, [0.42, 0.88, 0.94, 1.1], ["72vh", "13vh", "13vh", "-55vh"]);
+  const statementY = useScrollRange(p, [0.42, 0.88, 0.94, 1.1], ["72vh", "16vh", "16vh", "-55vh"]);
   const statementOpacity = useScrollRange(p, [0.42, 0.5, 0.95, 1.08], [0, 1, 1, 0]);
   const cols = useScrollRange(p, [0.8, 0.9], [0, 1]);
   const windowOpacity = useScrollRange(p, [0.33, 0.36], [1, 0]);
   // White-outs that hide the hand-overs: inside the cloud deck on the way down, then inside the
   // waterfall spray between the gorge and the highway.
   const cloudMist = useScrollRange(y, [890, 945, 962, 1000], [0, 1, 1, 0]);
-  const sprayMist = useScrollRange(y, [1350, 1412, 1428, 1490], [0, 1, 1, 0]);
-  const mist = useTransform(() => Math.max(cloudMist.get(), sprayMist.get()));
+  const skyMist = useScrollRange(y, [1285, 1340, 1356, 1410], [0, 1, 1, 0]);
+  const sprayMist = useScrollRange(y, [1750, 1812, 1828, 1890], [0, 1, 1, 0]);
+  const mist = useTransform(() => Math.max(cloudMist.get(), skyMist.get(), sprayMist.get()));
   const groundOpacity = useScrollRange(y, [940, 955], [0, 1]);
-  const haze = useScrollRange(y, [1690, 1770], [0, 1]);
+  const haze = useScrollRange(y, [2090, 2170], [0, 1]);
   const words = STATEMENT.split(" ");
 
   return (
-    <section id="story" ref={ref} data-nav="light" className="relative h-[1870vh]">
+    <section id="story" ref={ref} data-nav="light" className="relative h-[2270vh]">
       <div className="sticky top-0 h-dvh overflow-hidden bg-[linear-gradient(180deg,#5d8fd6_0%,#c9d8ee_50%,#f1dcd6_100%)]">
         {stage.cloud && (
           <motion.div style={{ scale: cloudScale }} className="absolute inset-0">
@@ -276,22 +278,22 @@ export function SkyJourney({ sound }: { sound: boolean }) {
           </motion.div>
         </motion.div>
 
-        <motion.div style={{ y: statementY, opacity: statementOpacity }} className="pointer-events-none absolute inset-x-0 top-0 px-6 text-white md:px-16">
-          <p className="font-display mx-auto max-w-6xl text-[clamp(1.9rem,4.4vw,4.1rem)] leading-[1.08] font-light [text-shadow:0_1px_2px_rgba(20,45,95,0.25),0_0_40px_rgba(20,45,95,0.25)]">
+        <motion.div style={{ y: statementY, opacity: statementOpacity }} className="pointer-events-none absolute top-0 left-0 w-full px-6 text-white md:w-[50%] md:pl-16">
+          <p className="font-display text-[clamp(1.7rem,2.9vw,3rem)] leading-[1.1] font-light [text-shadow:0_1px_2px_rgba(20,45,95,0.25),0_0_40px_rgba(20,45,95,0.25)]">
             {words.map((w, i) => {
               const a = 0.46 + (i / words.length) * 0.32;
               return <Word key={i} word={w} range={[a, a + 0.05]} p={p} />;
             })}
           </p>
-          <motion.div style={{ opacity: cols }} className="mx-auto mt-14 grid max-w-6xl gap-8 text-sm md:grid-cols-3">
+          <motion.div style={{ opacity: cols }} className="mt-10 grid max-w-xl gap-5 text-sm">
             {[
               ["Live fares and stays", "Real options from live search, never a canned list."],
               ["Your policy, enforced", "Cabin rules and hotel caps are checked on every itinerary."],
               ["A person decides", "Approve or reject with a written reason. Nothing books itself."],
             ].map(([t, d]) => (
-              <div key={t} className="border-t border-white/50 pt-4">
-                <p className="font-display text-2xl">{t}</p>
-                <p className="mt-2 max-w-xs text-white/80">{d}</p>
+              <div key={t} className="border-t border-white/50 pt-3">
+                <p className="font-display text-xl">{t}</p>
+                <p className="mt-1 text-white/80">{d}</p>
               </div>
             ))}
           </motion.div>
@@ -299,7 +301,20 @@ export function SkyJourney({ sound }: { sound: boolean }) {
 
         <Caption
           y={y}
-          range={[1195, 1235, 1320, 1350]}
+          range={[1040, 1080, 1150, 1185]}
+          label="Arrive on plan"
+          title={
+            <>
+              Touchdown,
+              <br />
+              on budget.
+            </>
+          }
+          body="The chosen fare, the reason it won and the approval behind it travel with the trip."
+        />
+        <Caption
+          y={y}
+          range={[1595, 1635, 1720, 1750]}
           label="Every leg of the way"
           title={
             <>
@@ -312,7 +327,7 @@ export function SkyJourney({ sound }: { sound: boolean }) {
         />
         <Caption
           y={y}
-          range={[1500, 1540, 1640, 1675]}
+          range={[1900, 1940, 2040, 2075]}
           label="Arrive informed"
           title={
             <>

@@ -5,7 +5,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { MotionValue } from "framer-motion";
 
-import { cameraPitch } from "./flight-path";
+import { cameraPitch, cameraYaw } from "./flight-path";
 
 // Raymarched volumetric cumulus from cruising altitude: deep blue sky, bright white tops,
 // blue-grey undersides and a few taller towers, all drifting past the window.
@@ -22,6 +22,7 @@ const fragmentShader = /* glsl */ `
   uniform float uDrift;
   uniform float uTravel;
   uniform float uPitch;
+  uniform float uYaw;
   uniform float uAlt;
   uniform float uCover;
 
@@ -66,8 +67,9 @@ const fragmentShader = /* glsl */ `
   void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
     vec3 ro = vec3(uDrift, uAlt, uTravel);
-    vec3 fw = normalize(vec3(0.0, sin(uPitch), cos(uPitch)));
-    vec3 rt = vec3(1.0, 0.0, 0.0);
+    // Yaw turns the view about the vertical; the camera keeps travelling along +z.
+    vec3 fw = normalize(vec3(sin(uYaw) * cos(uPitch), sin(uPitch), cos(uYaw) * cos(uPitch)));
+    vec3 rt = vec3(cos(uYaw), 0.0, -sin(uYaw));
     vec3 up = cross(fw, rt);
     vec3 rd = normalize(fw * 1.5 + uv.x * rt + uv.y * up);
 
@@ -151,6 +153,7 @@ function CloudPlane({ progress, level, descend }: { progress: MotionValue<number
     uDrift: { value: 0 },
     uTravel: { value: 0 },
     uPitch: { value: -0.06 },
+    uYaw: { value: 0 },
     uAlt: { value: 3.2 },
     uCover: { value: 0 },
   }));
@@ -161,15 +164,15 @@ function CloudPlane({ progress, level, descend }: { progress: MotionValue<number
     const cruise = level.get();
     const down = descend.get();
     // Cruising drift, then the camera surges forward as you leave the window, and lifts to the sky.
-    // It climbs above broken cloud to fly alongside the airliner, whose heading is towards the
-    // viewer and to the right, so the cloud streams away and to the left. Then it noses over and
-    // sinks into the deck.
+    // It turns to look out to the right at the airliner flying alongside, both heading along +z, so
+    // the cloud streams past from the jet's nose to its tail. Then it noses over and sinks into the
+    // deck.
     const smooth = THREE.MathUtils.smoothstep;
     const surge = smooth(p, 0.08, 0.34) * (1 - smooth(p, 0.6, 0.9)) + smooth(down, 0, 0.5) * 0.4;
     const fly = cruise * (1 - smooth(down, 0, 0.45));
     time.current += d;
-    drift.current += d * (0.55 * (1 - surge * 0.7) + fly * 1.1);
-    travel.current += d * (0.05 + surge * 1.8 - fly * 1.7);
+    drift.current += d * 0.55 * (1 - surge * 0.7) * (1 - fly);
+    travel.current += d * (0.05 + surge * 1.8 + fly * 1.9);
     const m = mat.current;
     if (!m) return;
     const u = m.uniforms;
@@ -178,11 +181,12 @@ function CloudPlane({ progress, level, descend }: { progress: MotionValue<number
     u.uDrift.value = drift.current;
     u.uTravel.value = travel.current;
     u.uPitch.value = cameraPitch(p, cruise, down);
+    u.uYaw.value = -cameraYaw(cruise);
     const alt = THREE.MathUtils.lerp(3.2, 2.85, smooth(p, 0.1, 0.4));
-    const high = THREE.MathUtils.lerp(alt, 7.5, smooth(cruise, 0, 1));
+    const high = THREE.MathUtils.lerp(alt, 4.6, smooth(cruise, 0, 1));
     u.uAlt.value = THREE.MathUtils.lerp(high, 1.1, smooth(down, 0.3, 1));
     // Broken cloud over the land during the chase; a closed deck again for the way down.
-    u.uCover.value = cruise * (1 - smooth(down, 0.15, 0.6));
+    u.uCover.value = cruise * 0.55 * (1 - smooth(down, 0.15, 0.6));
   });
 
   return (

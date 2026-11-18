@@ -7,15 +7,18 @@ import * as THREE from "three";
 import type { MotionValue } from "framer-motion";
 
 import { FallsSet } from "./falls-set";
+import { RUNWAY_END, RunwaySet, runwayCamera } from "./runway-set";
 import { ASPHALT_COLOR, GROUND_COLOR, NOISE, PERIOD, ROAD_Z, crownGeometry, leafTexture, patternMaterial, scatter, trunkGeometry, world, type TreeSpot } from "./ground-kit";
 import { Bus } from "./vehicles";
 
-// Ground leg of the landing story, in two places. First a monsoon gorge where a train crosses a
-// stone bridge in front of a waterfall; the camera then pushes into the spray and comes out on a
-// country highway beside an intercity coach.
+// Ground leg of the landing story, in three places. The airliner comes out of the cloud on final
+// approach and lands; the camera tilts up into the bright sky and comes down into a monsoon gorge
+// where a train crosses a stone bridge in front of a waterfall; then it pushes into the spray and
+// comes out on a country highway beside an intercity coach.
 //
-// `progress` is the scroll position inside this leg in vh: 0 is the moment the clouds clear,
-// SWITCH is the hand-over inside the spray, END is the hand-off to the next section.
+// `progress` is the scroll position inside this leg in vh: 0 is the moment the clouds clear and
+// RUNWAY_END the hand-over to the gorge. The gorge and highway paths below are measured from there:
+// SWITCH is the hand-over inside the spray, END the hand-off to the next section.
 
 const SWITCH = 470;
 const END = 820;
@@ -97,28 +100,38 @@ function Rig({ progress, reduce }: { progress: MotionValue<number>; reduce: bool
 
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05);
-    const u = progress.get();
-    const set = u < SWITCH ? "falls" : "road";
+    const raw = progress.get();
+    const g = raw - RUNWAY_END; // scroll into the gorge and highway part
+    const set = raw < RUNWAY_END ? "runway" : g < SWITCH ? "falls" : "road";
     if (set !== world.set) {
-      // The hand-over happens inside the spray: snap the camera to the other path, and bring the
+      // Hand-overs happen inside a white-out: snap the camera to the other path, and bring the
       // train back across the bridge for the next time the gorge is shown.
       world.set = set;
       k.current = -1;
       if (set === "falls") world.trainStart = world.d;
     }
-    world.u = u;
-    world.d += (reduce ? 0 : set === "falls" ? TRAIN_SPEED : BUS_SPEED) * dt;
+    world.d += (reduce ? 0 : set === "falls" ? TRAIN_SPEED : set === "road" ? BUS_SPEED : 0) * dt;
     // While the gorge is still hidden in cloud, hold the train with its coaches across the bridge so it
     // is crossing when the view opens up.
-    if (set === "falls" && u < 60) world.trainStart = world.d;
+    if (set === "falls" && g < 60) world.trainStart = world.d;
 
-    const path = set === "falls" ? FALLS : ROAD;
-    const c = paths[set];
-    const target = keyAt(path, u);
-    k.current = k.current < 0 ? target : k.current + (target - k.current) * (1 - Math.exp(-dt * 5));
-    const t = k.current / c.last;
-    c.pos.getPoint(t, p);
-    c.look.getPoint(t, l);
+    // The landing is driven straight from scroll, smoothed a little; the other sets follow paths.
+    const ease = 1 - Math.exp(-dt * 5);
+    if (set === "runway") {
+      k.current = k.current < 0 ? raw : k.current + (raw - k.current) * ease;
+      world.u = k.current;
+      runwayCamera(k.current, p, l);
+    } else {
+      world.u = raw;
+      const path = set === "falls" ? FALLS : ROAD;
+      const c = paths[set];
+      const target = keyAt(path, g);
+      k.current = k.current < 0 ? target : k.current + (target - k.current) * ease;
+      const t = k.current / c.last;
+      c.pos.getPoint(t, p);
+      c.look.getPoint(t, l);
+    }
+    const u = set === "runway" ? world.u : g;
     // A little ride vibration when the camera is down beside the coach.
     if (set === "road" && !reduce) {
       const near = 1 - THREE.MathUtils.smoothstep(p.y, 3, 9);
@@ -141,6 +154,10 @@ function Rig({ progress, reduce }: { progress: MotionValue<number>; reduce: bool
         const clear = Math.min(0.0034, 0.62 / Math.max(p.distanceTo(l), 1));
         fog.density = THREE.MathUtils.lerp(0.02, clear, THREE.MathUtils.smoothstep(u, 10, 110));
         fogColor.setRGB(MONSOON[0], MONSOON[1], MONSOON[2], THREE.SRGBColorSpace);
+      } else if (set === "runway") {
+        // Out of the cloud base into clear air over the airfield.
+        fog.density = THREE.MathUtils.lerp(0.02, 0.0011, THREE.MathUtils.smoothstep(u, 5, 55));
+        fogColor.setRGB(CLEAR[0], CLEAR[1], CLEAR[2], THREE.SRGBColorSpace);
       } else {
         fog.density = 0.0021;
         fogColor.setRGB(CLEAR[0], CLEAR[1], CLEAR[2], THREE.SRGBColorSpace);
@@ -484,6 +501,7 @@ export default function GroundScene({ progress, live, reduce }: { progress: Moti
         <Lightformer form="rect" intensity={1.2} position={[0, -4, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={[20, 20, 1]} color="#6f7a4a" />
         <Lightformer form="rect" intensity={3} position={[4, 4, 6]} scale={[6, 3, 1]} color="#fff2df" />
       </Environment>
+      <RunwaySet />
       <FallsSet reduce={reduce} />
       <RoadSet reduce={reduce} />
     </Canvas>
