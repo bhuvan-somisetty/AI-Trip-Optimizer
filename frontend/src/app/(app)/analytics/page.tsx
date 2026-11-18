@@ -18,7 +18,7 @@ import { toast } from "@/lib/toast";
 
 type Period = "30" | "90" | "180" | "365" | "all";
 const periodLabel: Record<Period, string> = { "30": "30 days", "90": "90 days", "180": "6 months", "365": "12 months", all: "All time" };
-const palette = ["var(--color-chart-4)", "var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-5)", "oklch(0.65 0.15 200)", "oklch(0.6 0.18 300)", "var(--color-chart-3)"];
+const palette = ["var(--color-chart-2)", "var(--color-chart-1)", "var(--color-chart-4)", "var(--color-chart-5)", "var(--color-chart-3)", "#5a6676", "#ffb08f"];
 
 const tooltipStyle = { background: "var(--color-popover)", border: "1px solid var(--color-border)", borderRadius: 10, fontSize: 12 };
 
@@ -126,7 +126,7 @@ export default function AnalyticsPage() {
         <StatCard label="Total approved spend" value={formatCompactInr(d.spend)} icon={IndianRupee} hint={`${d.approved.length} approved trip${d.approved.length === 1 ? "" : "s"} · ${formatInr(d.perTraveler)}/traveler`} />
         <StatCard label="Average savings" value={formatInr(d.avgSavings)} icon={PiggyBank} iconClassName="bg-success/15 text-success" hint={`${formatCompactInr(d.savings)} total · ${d.savingsPct}% below ${s.session?.mode === "api" ? "typical valid options" : "typical"}`} />
         <StatCard label="Avg. turnaround" value={d.avgTurn >= 24 ? `${(d.avgTurn / 24).toFixed(1)} days` : `${d.avgTurn.toFixed(1)} h`} icon={Timer} iconClassName="bg-warning/15 text-amber-600 dark:text-warning" hint="Request created → decision" />
-        <StatCard label="Approval rate" value={`${d.approvalRate}%`} icon={BadgeCheck} iconClassName="bg-sky-500/10 text-sky-600" hint={`${d.decided.length} decisions in period`} />
+        <StatCard label="Approval rate" value={`${d.approvalRate}%`} icon={BadgeCheck} iconClassName="bg-sky-500/10 text-sky-600" hint={`${d.decided.length} decision${d.decided.length === 1 ? "" : "s"} in period`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -227,7 +227,7 @@ export default function AnalyticsPage() {
                       </TableCell>
                       <TableCell className={t.outcome === "APPROVED" ? "text-emerald-600 dark:text-success" : "text-destructive"}>{t.outcome === "APPROVED" ? "Approved" : "Rejected"}</TableCell>
                       <TableCell className="text-right tabular-nums">{h >= 24 ? `${(h / 24).toFixed(1)} d` : `${h.toFixed(1)} h`}</TableCell>
-                      <TableCell className="pr-6 text-right tabular-nums">{t.outcome === "APPROVED" && t.itinerary?.savings !== undefined ? formatInr(t.itinerary.savings) : "—"}</TableCell>
+                      <TableCell className="pr-6 text-right tabular-nums">{t.outcome === "APPROVED" && t.itinerary?.savings !== undefined ? formatInr(t.itinerary.savings) : "-"}</TableCell>
                     </TableRow>
                   );
                 })}
