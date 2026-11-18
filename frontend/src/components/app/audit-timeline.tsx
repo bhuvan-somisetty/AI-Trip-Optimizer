@@ -52,7 +52,7 @@ export function AuditTimeline({ events }: { events: AuditEvent[] }) {
             <div className="min-w-0 flex-1 pt-0.5">
               <p className="text-sm">
                 <span className="font-medium">{m.label}</span>
-                <span className="text-muted-foreground"> · {e.actor}</span>
+                <span className="text-muted-foreground"> · {e.actorName ?? e.actor}</span>
               </p>
               <p className="text-sm text-muted-foreground">{e.summary}</p>
               <p className="mt-0.5 text-xs text-muted-foreground/80" title={new Date(e.createdAt).toLocaleString("en-IN")}>
