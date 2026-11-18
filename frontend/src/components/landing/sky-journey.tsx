@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { animate, motion, useInView, useMotionValue, useScroll, useTransform, type MotionValue } from "framer-motion";
+import { animate, motion, useInView, useMotionValue, useMotionValueEvent, useReducedMotion, useScroll, useTransform, type MotionValue } from "framer-motion";
 
+import { useJourneySound } from "./journey-sound";
 import { useScrollRange } from "./scroll-range";
 
 const CloudScene = dynamic(() => import("./cloud-scene"), { ssr: false });
+const AirlinerScene = dynamic(() => import("./airliner-scene"), { ssr: false });
+const GroundScene = dynamic(() => import("./ground-scene"), { ssr: false });
 
 // Rounded-rectangle path, used for the window opening, the bezel and the shade clip.
 function rr(cx: number, cy: number, w: number, h: number, r: number) {
@@ -130,11 +133,49 @@ function Word({ word, range, p }: { word: string; range: [number, number]; p: Mo
   );
 }
 
-export function SkyJourney() {
+// Scroll budget of the pinned story, in vh. The sky leg keeps its original 660vh of scroll, then
+// the camera chases the airliner over the clouds and follows it down; the ground leg (the train at
+// the falls, then the coach on the highway) starts at GROUND_START.
+const TOTAL = 1770;
+const SKY = 660;
+const GROUND_START = 950;
+
+function Caption({ y, range, label, title, body }: { y: MotionValue<number>; range: number[]; label: string; title: ReactNode; body: string }) {
+  const opacity = useScrollRange(y, range, [0, 1, 1, 0]);
+  const shift = useScrollRange(y, range, [40, 0, 0, -30]);
+  return (
+    <motion.div style={{ opacity, y: shift }} className="pointer-events-none absolute bottom-[16%] left-[6%] max-w-[30rem] text-[#f6efe3] md:bottom-[18%] md:left-[5%]">
+      <div className="absolute -inset-x-24 -inset-y-20 -z-10 bg-[radial-gradient(closest-side,rgba(8,14,24,0.5),rgba(8,14,24,0))]" />
+      <p className="text-[11px] tracking-[0.28em] text-[#f6efe3]/80 uppercase [text-shadow:0_1px_8px_rgba(0,0,0,0.45)]">{label}</p>
+      <h2 className="font-display mt-3 text-[clamp(2.4rem,5vw,4.8rem)] leading-[0.98] font-normal [text-shadow:0_2px_24px_rgba(0,0,0,0.35)]">{title}</h2>
+      <p className="mt-4 max-w-[22rem] text-[14px] leading-relaxed text-[#f6efe3]/85 [text-shadow:0_1px_10px_rgba(0,0,0,0.5)]">{body}</p>
+    </motion.div>
+  );
+}
+
+export function SkyJourney({ sound }: { sound: boolean }) {
   const ref = useRef<HTMLElement>(null);
-  const { scrollYProgress: p } = useScroll({ target: ref, offset: ["start start", "end end"] });
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
   const inView = useInView(ref, { margin: "200px" });
+  const reduce = useReducedMotion() ?? false;
   const [box, setBox] = useState({ w: 1600, h: 900 });
+
+  // y: scroll inside the story in vh. p: progress of the sky leg (0 to 1 over its 660vh).
+  const y = useTransform(scrollYProgress, (v) => v * TOTAL);
+  const p = useTransform(y, (v) => v / SKY);
+  const flight = useScrollRange(y, [620, 950], [0, 1]);
+  const level = useScrollRange(y, [630, 720], [0, 1]);
+  const descend = useScrollRange(y, [800, 950], [0, 1]);
+  const ground = useTransform(y, (v) => v - GROUND_START);
+  useJourneySound(y, sound);
+
+  // Mount the ground scene early so its shaders compile while the statement is being read, and
+  // only run each canvas while it can be seen.
+  const [stage, setStage] = useState<{ cloud: boolean; plane: boolean; ground: "off" | "warm" | "live" }>({ cloud: true, plane: false, ground: "off" });
+  useMotionValueEvent(y, "change", (v) => {
+    const next = { cloud: v < 980, plane: v > 540 && v < 980, ground: v > 860 ? "live" : v > 640 ? "warm" : "off" } as const;
+    setStage((s) => (s.cloud === next.cloud && s.plane === next.plane && s.ground === next.ground ? s : next));
+  });
 
   useEffect(() => {
     const update = () => setBox({ w: window.innerWidth, h: window.innerHeight });
@@ -171,22 +212,39 @@ export function SkyJourney() {
   const textOpacity = useScrollRange(p, [0.02, 0.13], [1, 0]);
   const brandScroll = useScrollRange(p, [0, 0.3, 0.42], [1, 1, 0]);
   const brand = useTransform(() => brandScroll.get() * (1 - closed.get()));
-  const statementY = useScrollRange(p, [0.42, 0.88], ["72vh", "13vh"]);
-  const statementOpacity = useScrollRange(p, [0.42, 0.5], [0, 1]);
+  const statementY = useScrollRange(p, [0.42, 0.88, 0.94, 1.1], ["72vh", "13vh", "13vh", "-55vh"]);
+  const statementOpacity = useScrollRange(p, [0.42, 0.5, 0.95, 1.08], [0, 1, 1, 0]);
   const cols = useScrollRange(p, [0.8, 0.9], [0, 1]);
-  const haze = useScrollRange(p, [0.93, 1], [0, 1]);
+  const windowOpacity = useScrollRange(p, [0.33, 0.36], [1, 0]);
+  // White-outs that hide the hand-overs: inside the cloud deck on the way down, then inside the
+  // waterfall spray between the gorge and the highway.
+  const cloudMist = useScrollRange(y, [890, 945, 962, 1000], [0, 1, 1, 0]);
+  const sprayMist = useScrollRange(y, [1350, 1412, 1428, 1490], [0, 1, 1, 0]);
+  const mist = useTransform(() => Math.max(cloudMist.get(), sprayMist.get()));
+  const groundOpacity = useScrollRange(y, [940, 955], [0, 1]);
+  const haze = useScrollRange(y, [1690, 1770], [0, 1]);
   const words = STATEMENT.split(" ");
 
   return (
-    <section id="story" ref={ref} data-nav="light" className="relative h-[760vh]">
+    <section id="story" ref={ref} data-nav="light" className="relative h-[1870vh]">
       <div className="sticky top-0 h-dvh overflow-hidden bg-[linear-gradient(180deg,#5d8fd6_0%,#c9d8ee_50%,#f1dcd6_100%)]">
-        <motion.div style={{ scale: cloudScale }} className="absolute inset-0">
-          <CloudScene progress={p} active={inView} />
-        </motion.div>
+        {stage.cloud && (
+          <motion.div style={{ scale: cloudScale }} className="absolute inset-0">
+            <CloudScene progress={p} level={level} descend={descend} active={inView} />
+          </motion.div>
+        )}
+        {stage.plane && <AirlinerScene progress={flight} sky={p} level={level} descend={descend} active={inView} />}
 
-        <svg className="absolute inset-0 h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid slice" aria-hidden>
+        {stage.ground !== "off" && (
+          <motion.div style={{ opacity: groundOpacity }} className="absolute inset-0">
+            <GroundScene progress={ground} live={inView && stage.ground === "live"} reduce={reduce} />
+          </motion.div>
+        )}
+
+        <motion.svg style={{ opacity: windowOpacity }} className="absolute inset-0 h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid slice" aria-hidden>
           <CabinWindow scale={scale} closed={closed} onToggle={toggleShade} />
-        </svg>
+        </motion.svg>
+        <motion.div style={{ opacity: mist }} className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_45%,#f4f6f8_0%,#e3e9f0_60%,#d3dce7_100%)]" />
         <div className="grain pointer-events-none absolute inset-0 opacity-60" />
 
         <motion.p
@@ -238,6 +296,33 @@ export function SkyJourney() {
             ))}
           </motion.div>
         </motion.div>
+
+        <Caption
+          y={y}
+          range={[1195, 1235, 1320, 1350]}
+          label="Every leg of the way"
+          title={
+            <>
+              Policy rides
+              <br />
+              along.
+            </>
+          }
+          body="Cabin rules, hotel caps and approval limits are checked on every itinerary before anyone is asked to sign off."
+        />
+        <Caption
+          y={y}
+          range={[1500, 1540, 1640, 1675]}
+          label="Arrive informed"
+          title={
+            <>
+              No surprises
+              <br />
+              at the door.
+            </>
+          }
+          body="Each option carries a plain reason, so the trip that gets approved is the one the traveler expected."
+        />
 
         <motion.div style={{ opacity: haze }} className="pointer-events-none absolute inset-0 bg-[#efe6d8]" />
       </div>

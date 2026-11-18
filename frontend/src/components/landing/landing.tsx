@@ -7,7 +7,7 @@ import Lenis from "lenis";
 import { motion, useInView, useReducedMotion, useScroll } from "framer-motion";
 import { SkyJourney } from "./sky-journey";
 import { useScrollRange } from "./scroll-range";
-import { ArrowRight, ArrowUpRight, BadgeCheck, BarChart3, FileCheck2, History, Plane, ShieldCheck } from "lucide-react";
+import { ArrowRight, ArrowUpRight, BadgeCheck, BarChart3, FileCheck2, History, Plane, ShieldCheck, Volume2, VolumeX } from "lucide-react";
 
 const JetScene = dynamic(() => import("./jet-scene"), { ssr: false });
 const GlobeScene = dynamic(() => import("./globe-scene"), { ssr: false });
@@ -56,7 +56,7 @@ function useNavTone() {
   return dark;
 }
 
-function Chrome() {
+function Chrome({ sound, onSound }: { sound: boolean; onSound: () => void }) {
   const dark = useNavTone();
   return (
     <>
@@ -72,9 +72,21 @@ function Chrome() {
         <Link href="/" className="font-display text-xl tracking-tight md:absolute md:left-1/2 md:-translate-x-1/2">
           Trip Optimizer
         </Link>
-        <Link href="/login" className="text-[13px] tracking-wide">
-          Sign in
-        </Link>
+        <div className="flex items-center gap-5">
+          <button
+            type="button"
+            onClick={onSound}
+            aria-pressed={sound}
+            aria-label={sound ? "Turn sound off" : "Turn sound on"}
+            className="flex items-center gap-1.5 text-[13px] tracking-wide"
+          >
+            {sound ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+            <span className="hidden sm:inline">Sound {sound ? "on" : "off"}</span>
+          </button>
+          <Link href="/login" className="text-[13px] tracking-wide">
+            Sign in
+          </Link>
+        </div>
       </header>
       <Link
         href="/signup"
@@ -232,10 +244,11 @@ function GlobalSection() {
 
 export function Landing() {
   useSmoothScroll();
+  const [sound, setSound] = useState(false);
   return (
     <div className="bg-[#07090d] text-foreground">
-      <Chrome />
-      <SkyJourney />
+      <Chrome sound={sound} onSound={() => setSound((s) => !s)} />
+      <SkyJourney sound={sound} />
       <JetSection />
       <Features />
       <GlobalSection />
