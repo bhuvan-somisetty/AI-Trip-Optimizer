@@ -124,6 +124,28 @@ const optionIdOf = (alternative: string) => alternative.split(" ")[0];
 
 const ledgerKinds = { flight: "outbound", return: "return", stay: "stay" } as const;
 
+/** Names for the rules a ledger row can cite as "Preference <rule>: <detail>". */
+const ruleLabels: Record<string, string> = {
+  cabin_class: "Cabin class",
+  max_stops: "Stops",
+  departure_window: "Departure time",
+  avoid_red_eye: "Red-eye flight",
+  excluded_airlines: "Excluded airline",
+  min_hotel_rating: "Hotel rating",
+  max_nightly_rate: "Nightly rate cap",
+  required_amenities: "Missing amenity",
+  policy_hotel_cap: "Company hotel cap",
+  policy_business_class: "Business class policy",
+};
+
+/** "Preference avoid_red_eye: FL-1 departs at 02:10" becomes "Red-eye flight: FL-1 departs at 02:10". Other reasons are already plain. */
+export function readableReason(reason: string): string {
+  const m = /^Preference ([a-z_]+): ([\s\S]*)$/.exec(reason);
+  if (!m) return reason;
+  const label = ruleLabels[m[1]] ?? m[1].replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  return `${label}: ${m[2]}`;
+}
+
 function toLedgerEntry(e: LedgerEntryResponse, i: number, nights: number): LedgerEntry {
   const optionId = optionIdOf(e.alternative);
   const isStay = e.kind ? e.kind === "stay" : optionId.startsWith("HT-");
@@ -140,7 +162,7 @@ function toLedgerEntry(e: LedgerEntryResponse, i: number, nights: number): Ledge
     won: e.won,
     feasible: !screened,
     reasonCode: e.won ? "WINNER" : screened ? "CONSTRAINT" : "PRICE",
-    reason: e.reason,
+    reason: readableReason(e.reason),
   };
 }
 
@@ -235,6 +257,23 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
 
 // ---------------------------------------------------------------- audit
 
+const fieldLabels: Record<string, string> = {
+  budget: "budget",
+  cabin_class: "cabin",
+  max_stops: "max stops",
+  min_hotel_rating: "min hotel rating",
+  traveler_id: "traveler",
+  preferences: "filters",
+};
+
+/** Field changes arrive as "max_stops 1 -> 0"; show them as "max stops 1 → 0". */
+function readableSummary(summary: string): string {
+  return summary
+    .replace(/\b(budget|cabin_class|max_stops|min_hotel_rating) (\S+) -> (\S+?)(?=[,)])/g, (_m, f: string, from: string, to: string) => `${fieldLabels[f]} ${from} → ${to}`)
+    .replace(/ -> /g, " → ")
+    .replace(/(changed )([a-z_, ]+)$/, (_m, lead: string, list: string) => lead + list.replace(/\b[a-z_]+\b/g, (w) => fieldLabels[w] ?? w));
+}
+
 /** A row of GET /audit as the Audit page shows it. */
 export function toAuditEvent(r: AuditEventResponse): AuditEvent {
   return {
@@ -243,7 +282,7 @@ export function toAuditEvent(r: AuditEventResponse): AuditEvent {
     type: r.event_type as AuditEvent["type"],
     actor: r.actor,
     actorName: r.actor_name ?? undefined,
-    summary: r.summary,
+    summary: readableSummary(r.summary),
     payload: r.payload,
     createdAt: r.created_at,
   };

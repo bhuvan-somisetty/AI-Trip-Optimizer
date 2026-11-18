@@ -61,7 +61,7 @@ export default function AuditPage() {
     a.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast("Audit trail exported", { description: `${list.length} events` });
+    toast("Audit trail exported", { description: `${list.length} event${list.length === 1 ? "" : "s"}` });
   }
 
   function clear() {
@@ -117,7 +117,7 @@ export default function AuditPage() {
         </CardContent>
       </Card>
 
-      <p className="text-sm text-muted-foreground">{list.length} events</p>
+      <p className="text-sm text-muted-foreground">{list.length} event{list.length === 1 ? "" : "s"}</p>
 
       {list.length === 0 ? (
         <Card><EmptyState icon={ScrollText} title="No events match" description="Try widening the filters." /></Card>
