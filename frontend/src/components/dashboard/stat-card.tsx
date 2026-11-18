@@ -21,11 +21,11 @@ export function StatCard({ label, value, icon: Icon, iconClassName, trend, hint 
   const TrendIcon = trend?.direction === "up" ? ArrowUp : ArrowDown;
 
   return (
-    <Card className="h-full gap-3 py-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5">
+    <Card className="h-full gap-3 py-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-[#0f1b2d]/10">
       <CardContent className="flex items-start justify-between px-5">
         <div className="space-y-1.5">
           <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
+          <p className="font-display text-3xl font-medium tabular-nums">{value}</p>
           {trend ? (
             <p className={cn("flex items-center gap-1 text-xs font-medium", isPositive ? "text-success" : "text-destructive")}>
               <TrendIcon className="size-3" />
