@@ -183,6 +183,7 @@ export default function TripsPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="scrollbar-thin -mx-1 overflow-x-auto px-1">
           <Segmented
+            aria-label="Filter trips by status"
             value={tab}
             onChange={setTab}
             options={tabs.map((t) => ({
@@ -278,6 +279,7 @@ export default function TripsPage() {
             <div className="flex flex-wrap items-center gap-3 sm:col-span-2 lg:col-span-4 xl:col-span-6">
               <Segmented
                 size="sm"
+                aria-label="Filter trips by date"
                 value={f.timeframe}
                 onChange={(v) => upd("timeframe", v)}
                 options={[
