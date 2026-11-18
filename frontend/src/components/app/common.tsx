@@ -21,10 +21,10 @@ export function PageHeader({
   eyebrow?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0 space-y-1">
-        {eyebrow && <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{eyebrow}</div>}
-        <h1 className="text-2xl font-bold tracking-tight text-balance">{title}</h1>
+        {eyebrow && <div className="text-[11px] font-semibold tracking-[0.18em] text-primary uppercase">{eyebrow}</div>}
+        <h1 className="text-4xl font-normal tracking-tight text-balance sm:text-5xl">{title}</h1>
         {description && <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
