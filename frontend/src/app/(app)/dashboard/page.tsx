@@ -65,7 +65,7 @@ export default function DashboardPage() {
             {greeting()}, {first}!
           </h1>
           <p className="text-sm text-muted-foreground">
-            {m.pending.length > 0 ? `${m.pending.length} itinerar${m.pending.length === 1 ? "y is" : "ies are"} waiting for your review.` : "Everything is reviewed — nice work."}
+            {m.pending.length > 0 ? `${m.pending.length} itinerar${m.pending.length === 1 ? "y is" : "ies are"} waiting for your review.` : "Everything is reviewed, nice work."}
           </p>
         </div>
         <Link
@@ -108,7 +108,7 @@ export default function DashboardPage() {
                   <Link key={t.id} href={`/trips/${t.id}`} className="group flex items-center gap-3 rounded-xl border bg-background p-3 transition-all hover:border-primary/40 hover:shadow-sm">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{t.code} · {t.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">{routeLabel(t)} · {t.itinerary ? formatInr(t.itinerary.totalCost) : "—"} of {formatInr(t.budget)}</p>
+                      <p className="truncate text-xs text-muted-foreground">{routeLabel(t)} · {t.itinerary ? formatInr(t.itinerary.totalCost) : "-"} of {formatInr(t.budget)}</p>
                     </div>
                     <TripStatusBadge trip={t} />
                     <ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
