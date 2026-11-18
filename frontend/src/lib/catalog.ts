@@ -52,7 +52,6 @@ export function cityLabel(code: string) {
 export const airlines = [
   "IndiGo",
   "Air India",
-  "Vistara",
   "Akasa Air",
   "SpiceJet",
   "Emirates",
@@ -62,12 +61,11 @@ export const airlines = [
   "Qatar Airways",
 ];
 
-const domesticAirlines = ["IndiGo", "Air India", "Vistara", "Akasa Air", "SpiceJet"];
-const intlAirlines = ["Air India", "Vistara", "Emirates", "Singapore Airlines", "Lufthansa", "British Airways", "Qatar Airways"];
+const domesticAirlines = ["IndiGo", "Air India", "Akasa Air", "SpiceJet"];
+const intlAirlines = ["Air India", "Emirates", "Singapore Airlines", "Lufthansa", "British Airways", "Qatar Airways"];
 const airlineCode: Record<string, string> = {
   IndiGo: "6E",
   "Air India": "AI",
-  Vistara: "UK",
   "Akasa Air": "QP",
   SpiceJet: "SG",
   Emirates: "EK",
@@ -160,7 +158,7 @@ export function searchFlights(origin: string, destination: string, date: string,
     if (redEye) price *= 0.82;
     if (peak) price *= 1.12;
     if (stops > 0) price *= 0.86 - (stops - 1) * 0.05;
-    if (airline === "Emirates" || airline === "Singapore Airlines" || airline === "Vistara") price *= 1.1;
+    if (airline === "Emirates" || airline === "Singapore Airlines") price *= 1.1;
 
     const dep = new Date(`${date}T00:00:00`);
     dep.setMinutes(Math.round(slot * 60));
