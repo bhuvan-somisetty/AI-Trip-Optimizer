@@ -257,6 +257,23 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
 
 // ---------------------------------------------------------------- audit
 
+const fieldLabels: Record<string, string> = {
+  budget: "budget",
+  cabin_class: "cabin",
+  max_stops: "max stops",
+  min_hotel_rating: "min hotel rating",
+  traveler_id: "traveler",
+  preferences: "filters",
+};
+
+/** Field changes arrive as "max_stops 1 -> 0"; show them as "max stops 1 → 0". */
+function readableSummary(summary: string): string {
+  return summary
+    .replace(/\b(budget|cabin_class|max_stops|min_hotel_rating) (\S+) -> (\S+?)(?=[,)])/g, (_m, f: string, from: string, to: string) => `${fieldLabels[f]} ${from} → ${to}`)
+    .replace(/ -> /g, " → ")
+    .replace(/(changed )([a-z_, ]+)$/, (_m, lead: string, list: string) => lead + list.replace(/\b[a-z_]+\b/g, (w) => fieldLabels[w] ?? w));
+}
+
 /** A row of GET /audit as the Audit page shows it. */
 export function toAuditEvent(r: AuditEventResponse): AuditEvent {
   return {
@@ -264,7 +281,7 @@ export function toAuditEvent(r: AuditEventResponse): AuditEvent {
     tripId: r.trip_id,
     type: r.event_type as AuditEvent["type"],
     actor: r.actor,
-    summary: r.summary,
+    summary: readableSummary(r.summary),
     payload: r.payload,
     createdAt: r.created_at,
   };
