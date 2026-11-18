@@ -458,7 +458,6 @@ export default function TripDetailPage() {
               <Detail label="Preferred airlines" value={t.filters.preferredAirlines.join(", ") || "None"} />
               <Detail label="Excluded airlines" value={t.filters.excludedAirlines.join(", ") || "None"} />
               <Detail label="Hotel rating" value={`${t.filters.minHotelRating.toFixed(1)}+`} />
-              <Detail label="Hotel distance" value={`≤ ${t.filters.maxHotelDistanceKm} km`} />
               <Detail label="Nightly cap" value={t.filters.maxNightlyRate ? formatInr(t.filters.maxNightlyRate) : "Company policy"} />
               <Detail label="Amenities" value={t.filters.requiredAmenities.map((a) => amenityLabel[a]).join(", ") || "None"} />
             </CardContent>
