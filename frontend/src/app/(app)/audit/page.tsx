@@ -31,6 +31,8 @@ export default function AuditPage() {
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
 
+  // The filter still works on the email; the name is only what people read.
+  const actorNames = useMemo(() => new Map(s.audit.flatMap((a) => (a.actorName ? [[a.actor, a.actorName] as const] : []))), [s.audit]);
   const actors = useMemo(() => [...new Set(s.audit.map((a) => a.actor))].sort(), [s.audit]);
   const tripCode = (id: string | null) => (id ? s.trips.find((t) => t.id === id)?.code : undefined);
 
@@ -42,7 +44,7 @@ export default function AuditPage() {
         if (trip && a.tripId !== trip) return false;
         if (from && a.createdAt.slice(0, 10) < from) return false;
         if (to && a.createdAt.slice(0, 10) > to) return false;
-        if (q && !`${a.summary} ${a.actor} ${tripCode(a.tripId) ?? ""}`.toLowerCase().includes(q.toLowerCase())) return false;
+        if (q && !`${a.summary} ${a.actor} ${a.actorName ?? ""} ${tripCode(a.tripId) ?? ""}`.toLowerCase().includes(q.toLowerCase())) return false;
         return true;
       }),
     [s.audit, type, actor, trip, from, to, q] // eslint-disable-line react-hooks/exhaustive-deps
@@ -51,7 +53,7 @@ export default function AuditPage() {
   const active = [q, type, actor, trip, from, to].filter(Boolean).length;
 
   function exportCsv() {
-    const rows = [["Timestamp", "Event", "Actor", "Trip", "Summary"], ...list.map((a) => [a.createdAt, a.type, a.actor, tripCode(a.tripId) ?? "", a.summary])];
+    const rows = [["Timestamp", "Event", "Actor", "Trip", "Summary"], ...list.map((a) => [a.createdAt, a.type, a.actorName ?? a.actor, tripCode(a.tripId) ?? "", a.summary])];
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
@@ -94,7 +96,7 @@ export default function AuditPage() {
           <NativeSelect value={actor} onChange={(e) => { setActor(e.target.value); setPage(1); }} aria-label="Actor">
             <option value="">All people</option>
             {actors.map((a) => (
-              <option key={a}>{a}</option>
+              <option key={a} value={a}>{actorNames.has(a) ? `${actorNames.get(a)} (${a})` : a}</option>
             ))}
           </NativeSelect>
           <NativeSelect value={trip} onChange={(e) => { setTrip(e.target.value); setPage(1); }} aria-label="Trip">
@@ -148,7 +150,7 @@ export default function AuditPage() {
                           {m.label}
                         </span>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">{a.actor}</TableCell>
+                      <TableCell className="whitespace-nowrap" title={a.actorName ? a.actor : undefined}>{a.actorName ?? a.actor}</TableCell>
                       <TableCell>{code ? <Link href={`/trips/${a.tripId}`} className="font-medium text-primary hover:underline">{code}</Link> : <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="max-w-xl pr-4 whitespace-normal text-muted-foreground">{a.summary}</TableCell>
                     </TableRow>
