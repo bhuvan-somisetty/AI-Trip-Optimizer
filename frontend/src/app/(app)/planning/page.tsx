@@ -56,7 +56,7 @@ export default function PlanningPage() {
   const router = useRouter();
   const params = useSearchParams();
   const editId = params.get("edit");
-  const editing = s.trips.find((t) => t.id === editId && (t.status === "DRAFT" || t.status === "OPTIMIZATION_FAILED" || t.status === "OPTIMIZED" || t.status === "UNDER_REVIEW"));
+  const editing = s.trips.find((t) => t.id === editId && (t.status === "DRAFT" || t.status === "OPTIMIZATION_FAILED" || t.status === "OPTIMIZED"));
 
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
@@ -174,9 +174,15 @@ export default function PlanningPage() {
       }
     }
     if (editing) {
-      actions.updateTrip(editing.id, effective);
-      toast(`${editing.code} updated`, { description: run ? "Re-running the optimizer…" : "Saved as draft." });
-      router.push(`/trips/${editing.id}${run ? "?run=1" : ""}`);
+      setSaving(true);
+      try {
+        await actions.updateTrip(editing.id, effective);
+        toast(`${editing.code} updated`, { description: run ? "Re-running the optimizer…" : "Saved as draft." });
+        router.push(`/trips/${editing.id}${run ? "?run=1" : ""}`);
+      } catch (e) {
+        toast("Couldn't save changes", { description: (e as Error).message, variant: "error" });
+        setSaving(false);
+      }
       return;
     }
     setSaving(true);
