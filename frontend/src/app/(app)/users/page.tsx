@@ -82,7 +82,7 @@ export default function TravelersPage() {
 
       {list.length === 0 ? (
         <Card>
-          <EmptyState icon={Users} title={s.travelers.length ? "No travelers match" : "No travelers yet"} description="Add the people you book travel for — you'll pick them when creating a trip." action={<Button onClick={() => setOpen(true)}><UserPlus />Add traveler</Button>} />
+          <EmptyState icon={Users} title={s.travelers.length ? "No travelers match" : "No travelers yet"} description="Add the people you book travel for. You'll pick them when creating a trip." action={<Button onClick={() => setOpen(true)}><UserPlus />Add traveler</Button>} />
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
