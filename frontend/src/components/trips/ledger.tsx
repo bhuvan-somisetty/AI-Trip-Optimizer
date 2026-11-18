@@ -51,7 +51,7 @@ export function TradeoffLedger({
         <CardTitle>Trade-off Ledger</CardTitle>
         <CardDescription>
           Every alternative the optimizer considered, its price, and the structured reason it won or lost.
-          {editable && " Swap any feasible option in — totals and flags recalculate instantly."}
+          {editable && " Swap any feasible option in. Totals and flags recalculate instantly."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
