@@ -51,7 +51,7 @@ export const defaultPolicy: Policy = {
   maxNightlyRateIntl: 18000,
   businessClassMinHours: 6,
   advanceBookingDays: 14,
-  preferredAirlines: ["IndiGo", "Air India", "Vistara", "Emirates", "Singapore Airlines"],
+  preferredAirlines: ["IndiGo", "Air India", "Emirates", "Singapore Airlines"],
 };
 
 export const defaultFilters: TripFilters = {
@@ -520,7 +520,7 @@ function seed(): State {
   const now = new Date();
   const iso = (d: Date) => d.toISOString();
   const travelers: Traveler[] = [
-    { name: "Aarav Mehta", email: "aarav.mehta@acmecorp.in", department: "Sales", homeCity: "BLR", preferences: { seat: "Aisle", dietary: "Vegetarian", tags: ["frequent-flyer", "client-facing"], preferredAirlines: ["Vistara"] } },
+    { name: "Aarav Mehta", email: "aarav.mehta@acmecorp.in", department: "Sales", homeCity: "BLR", preferences: { seat: "Aisle", dietary: "Vegetarian", tags: ["frequent-flyer", "client-facing"], preferredAirlines: ["Air India"] } },
     { name: "Priya Nair", email: "priya.nair@acmecorp.in", department: "Engineering", homeCity: "BLR", preferences: { seat: "Window", dietary: "None", tags: ["conference-speaker"], preferredAirlines: [] } },
     { name: "Rohan Kapoor", email: "rohan.kapoor@acmecorp.in", department: "Leadership", homeCity: "DEL", preferences: { seat: "Aisle", dietary: "Jain", notes: "Needs lounge access on long-haul", tags: ["executive"], preferredAirlines: ["Emirates", "Air India"] } },
     { name: "Ananya Iyer", email: "ananya.iyer@acmecorp.in", department: "Marketing", homeCity: "BOM", preferences: { seat: "Window", dietary: "Vegan", tags: ["events"], preferredAirlines: ["IndiGo"] } },
