@@ -92,7 +92,7 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
             <span className={cn("text-xs font-medium", flight.stops === 0 ? "text-emerald-600 dark:text-success" : "text-amber-600")}>{flight.stops === 0 ? "Non-stop" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}${flight.via ? ` · ${flight.via}` : ""}`}</span>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-semibold tabular-nums">{flight.arrival ? formatTime(flight.arrival) : "—"}</p>
+            <p className="text-2xl font-semibold tabular-nums">{flight.arrival ? formatTime(flight.arrival) : "-"}</p>
             <p className="text-sm text-muted-foreground">{flight.destination} · {cityByCode[flight.destination]?.name}</p>
           </div>
         </div>
@@ -235,7 +235,7 @@ export function Rationale({ it }: { it: Itinerary }) {
           Rationale
         </CardTitle>
         <CardDescription>
-          Generated from the data above — it never states a figure that isn&apos;t shown on this page.
+          Generated from the data above. It never states a figure that isn&apos;t shown on this page.
           {it.edited && " Reflects reviewer edits."}
         </CardDescription>
       </CardHeader>
