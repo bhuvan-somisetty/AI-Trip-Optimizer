@@ -18,7 +18,7 @@ import { toast } from "@/lib/toast";
 import type { Traveler } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const avatarColors = ["bg-sky-500", "bg-violet-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-cyan-600", "bg-indigo-500"];
+const avatarColors = ["bg-sky-600", "bg-orange-500", "bg-emerald-600", "bg-amber-600", "bg-rose-500", "bg-cyan-700", "bg-slate-600"];
 
 export default function TravelersPage() {
   const s = useStore();

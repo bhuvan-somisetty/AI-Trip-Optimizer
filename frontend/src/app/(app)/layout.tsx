@@ -10,7 +10,7 @@ export default function DashboardLayout({
 }) {
   return (
     <AppGate>
-      <div className="flex h-dvh w-full overflow-hidden bg-muted/30">
+      <div className="flex h-dvh w-full overflow-hidden bg-[radial-gradient(80%_50%_at_50%_-10%,color-mix(in_oklch,var(--primary)_9%,transparent),transparent)] bg-background">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />

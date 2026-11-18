@@ -61,7 +61,7 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <Reveal className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="text-3xl font-medium tracking-tight sm:text-4xl">
             {greeting()}, {first}!
           </h1>
           <p className="text-sm text-muted-foreground">

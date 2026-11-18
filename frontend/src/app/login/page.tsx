@@ -60,7 +60,7 @@ export default function LoginPage() {
       </Link>
 
       <div className="space-y-1.5 text-center lg:text-left">
-        <h1 className="text-3xl font-bold tracking-tight">Welcome Back</h1>
+        <h1 className="text-4xl font-medium tracking-tight">Welcome Back</h1>
         <p className="text-sm text-muted-foreground">Log in to your account to continue.</p>
       </div>
 

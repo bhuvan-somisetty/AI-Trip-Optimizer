@@ -77,7 +77,7 @@ export const reasonMeta: Record<ReasonCode, { label: string; className: string }
   PRICE: { label: "Price", className: "bg-sky-500/10 text-sky-700 border-sky-500/25 dark:text-sky-400" },
   BUDGET: { label: "Budget", className: "bg-destructive/10 text-destructive border-destructive/20" },
   CONSTRAINT: { label: "Constraint", className: "bg-orange-500/10 text-orange-700 border-orange-500/25 dark:text-orange-400" },
-  PREFERENCE: { label: "Preference", className: "bg-violet-500/10 text-violet-700 border-violet-500/25 dark:text-violet-400" },
+  PREFERENCE: { label: "Preference", className: "bg-primary/10 text-primary border-primary/25" },
 };
 
 export function uid(prefix = "") {

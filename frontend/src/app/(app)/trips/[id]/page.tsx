@@ -177,7 +177,7 @@ export default function TripDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-primary">{t.code}</span>
             <TripStatusBadge trip={t} />
-            {it?.edited && <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:text-violet-400">Edited by reviewer</span>}
+            {it?.edited && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">Edited by reviewer</span>}
           </div>
           <h1 className="text-2xl font-bold tracking-tight">{t.title}</h1>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">

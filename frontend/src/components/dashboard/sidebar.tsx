@@ -32,19 +32,19 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <Link href="/dashboard" onClick={onNavigate} className="flex h-16 shrink-0 items-center gap-2.5 px-5">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-sidebar-primary to-cyan-500 text-sidebar-primary-foreground shadow-lg shadow-sidebar-primary/30">
+        <div className="flex size-9 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_8px_24px_-6px_rgba(255,105,61,0.55)]">
           <Plane className="size-4" />
         </div>
         <div className="leading-tight">
-          <span className="block text-[15px] font-semibold text-white">AI Trip Optimizer</span>
-          <span className="block text-[11px] text-sidebar-foreground/50">Decision-support workspace</span>
+          <span className="font-display block text-[19px] font-medium text-[#f6f0e4]">Trip Optimizer</span>
+          <span className="block text-[10px] tracking-[0.16em] text-sidebar-foreground/45 uppercase">Decision workspace</span>
         </div>
       </Link>
 
       <nav className="scrollbar-thin flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {sections.map((section) => (
           <div key={section} className="space-y-1">
-            <p className="px-3 pb-1 text-[11px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">{section}</p>
+            <p className="px-3 pb-1 text-[10px] font-semibold tracking-[0.2em] text-sidebar-foreground/35 uppercase">{section}</p>
             {navItems
               .filter((i) => i.section === section)
               .map((item) => {
@@ -60,8 +60,8 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
                     className={cn(
                       "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
                       isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[0_2px_12px_rgba(37,99,235,0.35)]"
-                        : "text-sidebar-foreground/70 hover:translate-x-0.5 hover:bg-white/5 hover:text-sidebar-foreground"
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-sidebar-primary/25"
+                        : "text-sidebar-foreground/70 hover:bg-white/5 hover:text-sidebar-foreground"
                     )}
                   >
                     <Icon className="size-4.5 shrink-0" />
@@ -70,7 +70,7 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
                       <span
                         className={cn(
                           "rounded-full px-1.5 text-[11px] font-semibold tabular-nums",
-                          isActive ? "bg-white/20 text-white" : "bg-white/10 text-sidebar-foreground/80"
+                          isActive ? "bg-sidebar-primary/25 text-sidebar-accent-foreground" : "bg-white/10 text-sidebar-foreground/80"
                         )}
                         title={item.href === "/trips" ? "Awaiting review" : "Drafts to optimize"}
                       >
@@ -84,9 +84,9 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
           </div>
         ))}
 
-        <div className="mx-1 rounded-xl border border-white/10 bg-gradient-to-br from-white/[0.07] to-white/[0.02] p-4">
+        <div className="mx-1 rounded-2xl border border-white/10 bg-gradient-to-br from-[#ff693d]/[0.10] to-white/[0.02] p-4">
           <div className="flex items-center gap-2 text-sm font-medium text-white">
-            <Sparkles className="size-4 text-cyan-300" />
+            <Sparkles className="size-4 text-sidebar-primary" />
             Human-in-the-loop
           </div>
           <p className="mt-1.5 text-xs leading-relaxed text-sidebar-foreground/60">
@@ -102,7 +102,7 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
               {initials(s.session?.name ?? "U")}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-white">{s.session?.name}</p>
+              <p className="truncate text-sm font-medium text-[#f6f0e4]">{s.session?.name}</p>
               <p className="truncate text-xs text-sidebar-foreground/60 capitalize">
                 {s.session?.role} · {s.session?.mode === "api" ? "Connected" : "Workspace"}
               </p>
