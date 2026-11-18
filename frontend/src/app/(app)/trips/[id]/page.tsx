@@ -309,7 +309,11 @@ export default function TripDetailPage() {
               {(() => {
                 const ev = events.find((e) => e.type === "DECISION");
                 const r = t.decisionReason ?? (ev?.payload?.reason as string | null | undefined);
-                return `${ev?.actor ?? "Reviewer"} recorded this decision${r ? `: “${r}”` : "."} Approved itineraries are final — duplicate the trip to request changes.`;
+                return `${ev?.actor ?? "Reviewer"} recorded this decision${r ? `: “${r}”` : "."} ${
+                  t.outcome === "APPROVED"
+                    ? "Approved itineraries are final — duplicate the trip to request changes."
+                    : "Rejected trips can't be edited — duplicate the trip to plan a new version."
+                }`;
               })()}
             </p>
           </div>
