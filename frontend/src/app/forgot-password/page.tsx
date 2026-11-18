@@ -6,7 +6,7 @@ export default function ForgotPasswordPage() {
     <AuthPlaceholder
       icon={KeyRound}
       title="Reset your password"
-      description="Password reset isn't wired up yet — contact your admin to regain access to your account."
+      description="Password reset isn't wired up yet. Contact your admin to regain access to your account."
     />
   );
 }
