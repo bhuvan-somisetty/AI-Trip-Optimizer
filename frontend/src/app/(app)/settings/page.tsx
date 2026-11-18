@@ -12,16 +12,55 @@ import { PageHeader } from "@/components/app/common";
 import { actions, defaultPolicy, useStore } from "@/lib/store";
 import { airlines } from "@/lib/catalog";
 import { API_URL } from "@/lib/api";
+import { formatDate } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import type { Policy } from "@/lib/types";
 
 export default function SettingsPage() {
   const s = useStore();
-  const [name, setName] = useState(s.session?.name ?? "");
-  const [email, setEmail] = useState(s.session?.email ?? "");
-  const [policy, setPolicy] = useState<Policy>(s.policy);
+  const apiMode = s.session?.mode === "api";
+  const canEditPolicy = !apiMode || s.session?.role === "admin";
+  // Edits are kept as drafts so the saved values (which load after sign-in) show until the user types.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [emailDraft, setEmailDraft] = useState<string | null>(null);
+  const [policyDraft, setPolicyDraft] = useState<Policy | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingPolicy, setSavingPolicy] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const name = nameDraft ?? s.session?.name ?? "";
+  const email = emailDraft ?? s.session?.email ?? "";
+  const policy = policyDraft ?? s.policy;
+  const setPolicy = (next: Policy | ((p: Policy) => Policy)) => setPolicyDraft(typeof next === "function" ? next(policy) : next);
+  const setName = setNameDraft;
+  const setEmail = setEmailDraft;
   const dirtyPolicy = JSON.stringify(policy) !== JSON.stringify(s.policy);
+
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    try {
+      await actions.updateProfile({ name: name.trim(), email: email.trim() });
+      setNameDraft(null);
+      setEmailDraft(null);
+      toast("Profile saved");
+    } catch (e) {
+      toast("Couldn't save your profile", { description: (e as Error).message, variant: "error" });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const savePolicy = async () => {
+    setSavingPolicy(true);
+    try {
+      await actions.updatePolicy(policy);
+      setPolicyDraft(null);
+      toast("Travel policy updated", { description: "Re-run the optimizer on open trips to apply it." });
+    } catch (e) {
+      toast("Couldn't save the policy", { description: (e as Error).message, variant: "error" });
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
 
   const num = (k: keyof Policy) => (e: React.ChangeEvent<HTMLInputElement>) => setPolicy((p) => ({ ...p, [k]: Number(e.target.value.replace(/\D/g, "")) || 0 }));
 
@@ -39,21 +78,20 @@ export default function SettingsPage() {
             className="grid gap-4 sm:grid-cols-2"
             onSubmit={(e) => {
               e.preventDefault();
-              actions.updateProfile({ name: name.trim(), email: email.trim() });
-              toast("Profile saved");
+              void saveProfile();
             }}
           >
             <div className="space-y-2">
               <Label htmlFor="p-name">Full name</Label>
-              <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} required />
+              <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="p-email">Email</Label>
-              <Input id="p-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <Input id="p-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={apiMode} required />
             </div>
             <div className="flex items-center justify-between gap-3 sm:col-span-2">
               <p className="text-xs text-muted-foreground capitalize">Role: {s.session?.role}</p>
-              <Button type="submit" disabled={name === s.session?.name && email === s.session?.email}>
+              <Button type="submit" disabled={savingProfile || !name.trim() || (name.trim() === s.session?.name && email === s.session?.email)}>
                 <Save />
                 Save profile
               </Button>
@@ -68,6 +106,8 @@ export default function SettingsPage() {
           <CardDescription>Rules the constraint check enforces on every itinerary. Changes apply to the next optimizer run.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          {!canEditPolicy && <p className="text-sm text-muted-foreground">Only admins can change the company policy.</p>}
+          <fieldset disabled={!canEditPolicy} className="space-y-5 disabled:opacity-80">
           <div className="grid gap-4 sm:grid-cols-2">
             <PolicyField label="Manager approval for flights over" prefix="₹" value={policy.managerApprovalFlightOver} onChange={num("managerApprovalFlightOver")} />
             <PolicyField label="Advance booking (days)" value={policy.advanceBookingDays} onChange={num("advanceBookingDays")} />
@@ -79,22 +119,31 @@ export default function SettingsPage() {
             <Label>Preferred-vendor airlines</Label>
             <ChipToggle selected={policy.preferredAirlines} onChange={(v) => setPolicy((p) => ({ ...p, preferredAirlines: v }))} options={airlines.map((a) => ({ value: a, label: a }))} />
           </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="ghost" onClick={() => setPolicy(defaultPolicy)}>
-              <RotateCcw />
-              Restore defaults
-            </Button>
-            <Button
-              disabled={!dirtyPolicy}
-              onClick={() => {
-                actions.updatePolicy(policy);
-                toast("Travel policy updated", { description: "Re-run the optimizer on open trips to apply it." });
-              }}
-            >
-              <Save />
-              Save policy
-            </Button>
-          </div>
+          </fieldset>
+          {canEditPolicy && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {apiMode && s.policy.updatedBy && (
+                <p className="mr-auto text-xs text-muted-foreground">
+                  Last changed by {s.policy.updatedBy}
+                  {s.policy.updatedAt && ` on ${formatDate(s.policy.updatedAt)}`}
+                </p>
+              )}
+              <Button variant="ghost" onClick={() => setPolicy({ ...defaultPolicy, updatedAt: s.policy.updatedAt, updatedBy: s.policy.updatedBy })}>
+                <RotateCcw />
+                Restore defaults
+              </Button>
+              <Button disabled={!dirtyPolicy || savingPolicy} onClick={() => void savePolicy()}>
+                <Save />
+                Save policy
+              </Button>
+            </div>
+          )}
+          {!canEditPolicy && s.policy.updatedBy && (
+            <p className="text-xs text-muted-foreground">
+              Last changed by {s.policy.updatedBy}
+              {s.policy.updatedAt && ` on ${formatDate(s.policy.updatedAt)}`}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -162,7 +211,7 @@ export default function SettingsPage() {
               className="bg-destructive text-white hover:bg-destructive/90"
               onClick={() => {
                 actions.resetWorkspace();
-                setPolicy(defaultPolicy);
+                setPolicyDraft(null);
                 setResetOpen(false);
                 toast("Workspace reset");
               }}
