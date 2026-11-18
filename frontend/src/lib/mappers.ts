@@ -1,6 +1,6 @@
-import type { AuditEventResponse, FlightResponse, LedgerEntryResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
+import type { AuditEventResponse, FlightResponse, LedgerEntryResponse, PolicyBody, PolicyResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
 import { formatInr } from "./format";
-import type { AuditEvent, CabinClass, ConstraintIssue, Flight, Hotel, Itinerary, LedgerEntry, Traveler, Trip, TripFilters } from "./types";
+import type { AuditEvent, CabinClass, ConstraintIssue, Flight, Hotel, Itinerary, LedgerEntry, Policy, Traveler, Trip, TripFilters } from "./types";
 
 /**
  * Converts between the frontend's Traveler/Trip and the backend's smaller shapes.
@@ -230,6 +230,35 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
     runMs: opts.runMs ?? 0,
     edited: (it.picked?.length ?? 0) > 0,
     locked: it.editable === false,
+  };
+}
+
+// ---------------------------------------------------------------- policy
+
+/** The backend's snake_case policy as the Settings page and the optimizer use it. */
+export function toPolicy(r: PolicyResponse): Policy {
+  return {
+    currency: "INR",
+    managerApprovalFlightOver: r.manager_approval_flight_over,
+    maxNightlyRate: r.max_nightly_rate,
+    maxNightlyRateIntl: r.max_nightly_rate_intl,
+    businessClassMinHours: r.business_class_min_hours,
+    advanceBookingDays: r.advance_booking_days,
+    preferredAirlines: r.preferred_airlines,
+    updatedAt: r.updated_at ?? undefined,
+    updatedBy: r.updated_by ?? undefined,
+  };
+}
+
+/** The six editable fields for PUT /policy. */
+export function fromPolicy(p: Policy): PolicyBody {
+  return {
+    manager_approval_flight_over: p.managerApprovalFlightOver,
+    max_nightly_rate: p.maxNightlyRate,
+    max_nightly_rate_intl: p.maxNightlyRateIntl,
+    business_class_min_hours: p.businessClassMinHours,
+    advance_booking_days: p.advanceBookingDays,
+    preferred_airlines: p.preferredAirlines,
   };
 }
 
