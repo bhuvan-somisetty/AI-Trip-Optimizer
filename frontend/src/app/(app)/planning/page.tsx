@@ -133,7 +133,7 @@ export default function PlanningPage() {
   function validate(i: number): string[] {
     const e: string[] = [];
     if (i === 0 && !d.travelerIds.length) e.push("Select at least one traveler.");
-    if (i === 0 && apiMode && d.travelerIds.length > 1) e.push("Select one traveler — trips saved to the server have a single traveler.");
+    if (i === 0 && apiMode && d.travelerIds.length > 1) e.push("Select one traveler: trips saved to the server have a single traveler.");
     if (i === 1) {
       if (!d.title.trim()) e.push("Give the trip a title.");
       if (d.origin === d.destination) e.push("Origin and destination must differ.");
@@ -188,7 +188,7 @@ export default function PlanningPage() {
     setSaving(true);
     try {
       const trip = await actions.createTrip(effective);
-      toast(`${trip.code} created`, { description: run ? "Optimizer is composing your itinerary…" : "Saved as draft — run the optimizer when ready." });
+      toast(`${trip.code} created`, { description: run ? "Optimizer is composing your itinerary…" : "Saved as draft. Run the optimizer when ready." });
       router.push(`/trips/${trip.id}${run ? "?run=1" : ""}`);
     } catch (e) {
       toast("Couldn't create trip", { description: (e as Error).message, variant: "error" });
@@ -330,7 +330,7 @@ export default function PlanningPage() {
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2 sm:col-span-2">
                         <Label htmlFor="title">Trip title *</Label>
-                        <Input id="title" value={d.title} onChange={(e) => up({ title: e.target.value })} placeholder="e.g. Q4 client review — Mumbai" />
+                        <Input id="title" value={d.title} onChange={(e) => up({ title: e.target.value })} placeholder="e.g. Q4 client review, Mumbai" />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="purpose">Purpose</Label>
@@ -416,7 +416,7 @@ export default function PlanningPage() {
 
                     <div className="space-y-2">
                       <Label htmlFor="notes">Notes for the reviewer</Label>
-                      <Textarea id="notes" value={d.notes} onChange={(e) => up({ notes: e.target.value })} placeholder="Context the approver should know — meeting agenda, flexibility, etc." />
+                      <Textarea id="notes" value={d.notes} onChange={(e) => up({ notes: e.target.value })} placeholder="Context the approver should know: meeting agenda, flexibility, etc." />
                     </div>
                   </CardContent>
                 </Card>
@@ -462,14 +462,14 @@ export default function PlanningPage() {
                       </div>
                       <Switch checked={d.filters.avoidRedEye} onCheckedChange={(v) => upF({ avoidRedEye: v })} aria-label="Avoid red-eye flights" />
                     </div>
-                    <Field label="Preferred airlines" hint="Scoring boost — not a hard rule.">
+                    <Field label="Preferred airlines" hint="Scoring boost, not a hard rule.">
                       <ChipToggle
                         selected={d.filters.preferredAirlines}
                         onChange={(v) => upF({ preferredAirlines: v, excludedAirlines: d.filters.excludedAirlines.filter((x) => !v.includes(x)) })}
                         options={airlines.map((a) => ({ value: a, label: a }))}
                       />
                     </Field>
-                    <Field label="Exclude airlines" hint="Hard rule — these carriers are never selected.">
+                    <Field label="Exclude airlines" hint="Hard rule: these carriers are never selected.">
                       <ChipToggle
                         selected={d.filters.excludedAirlines}
                         onChange={(v) => upF({ excludedAirlines: v, preferredAirlines: d.filters.preferredAirlines.filter((x) => !v.includes(x)) })}
@@ -519,7 +519,7 @@ export default function PlanningPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Budget & optimization priority</CardTitle>
-                    <CardDescription>The optimizer only picks combinations inside this budget — or flags the overrun if none fit.</CardDescription>
+                    <CardDescription>The optimizer only picks combinations inside this budget, or flags the overrun if none fit.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <Field label="Approved budget (total, all travelers)">
@@ -544,7 +544,7 @@ export default function PlanningPage() {
                       {preview?.ok && d.budget > 0 && (
                         <p className={cn("mt-2 text-xs", d.budget < preview.cost ? "text-destructive" : "text-muted-foreground")}>
                           Best-scoring itinerary with these filters costs about {formatInr(preview.cost)}
-                          {d.budget < preview.cost ? " — the optimizer will pick cheaper options or flag an overrun." : ` — ${formatInr(d.budget - preview.cost)} headroom.`}
+                          {d.budget < preview.cost ? ". The optimizer will pick cheaper options or flag an overrun." : `. ${formatInr(d.budget - preview.cost)} headroom.`}
                         </p>
                       )}
                     </Field>
@@ -722,7 +722,7 @@ function ReviewRow({ label, value, onEdit }: { label: string; value: string; onE
     <div className="flex items-start justify-between gap-4 border-b pb-3 last:border-0 last:pb-0">
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium break-words">{value || "—"}</p>
+        <p className="text-sm font-medium break-words">{value || "-"}</p>
       </div>
       <button onClick={onEdit} className="shrink-0 text-xs font-medium text-primary hover:underline">
         Edit
