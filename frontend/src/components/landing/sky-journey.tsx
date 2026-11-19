@@ -191,7 +191,7 @@ function Statement({ y }: { y: MotionValue<number> }) {
 // the camera turns to the airliner flying alongside and follows it down through the cloud; the
 // ground leg (the landing, the train at the falls, then the coach on the highway) starts at
 // GROUND_START.
-const TOTAL = 2170;
+const TOTAL = 2370;
 const SKY = 660;
 const GROUND_START = 950;
 
@@ -272,13 +272,13 @@ export function SkyJourney({ sound }: { sound: boolean }) {
   // waterfall spray between the gorge and the highway.
   const cloudMist = useScrollRange(y, [890, 945, 962, 1000], [0, 1, 1, 0]);
   const skyMist = useScrollRange(y, [1285, 1340, 1356, 1410], [0, 1, 1, 0]);
-  const sprayMist = useScrollRange(y, [1750, 1812, 1828, 1890], [0, 1, 1, 0]);
+  const sprayMist = useScrollRange(y, [1950, 2012, 2028, 2090], [0, 1, 1, 0]);
   const mist = useTransform(() => Math.max(cloudMist.get(), skyMist.get(), sprayMist.get()));
   const groundOpacity = useScrollRange(y, [940, 955], [0, 1]);
-  const haze = useScrollRange(y, [2090, 2170], [0, 1]);
+  const haze = useScrollRange(y, [2290, 2370], [0, 1]);
 
   return (
-    <section id="story" ref={ref} data-nav="light" className="relative h-[2270vh]">
+    <section id="story" ref={ref} data-nav="light" className="relative h-[2470vh]">
       <div className="sticky top-0 h-dvh overflow-hidden bg-[linear-gradient(180deg,#5d8fd6_0%,#c9d8ee_50%,#f1dcd6_100%)]">
         {stage.cloud && (
           <motion.div style={{ scale: cloudScale }} className="absolute inset-0">
@@ -345,7 +345,7 @@ export function SkyJourney({ sound }: { sound: boolean }) {
         />
         <Caption
           y={y}
-          range={[1595, 1635, 1720, 1750]}
+          range={[1595, 1635, 1920, 1950]}
           label="Every leg of the way"
           title={
             <>
@@ -358,7 +358,7 @@ export function SkyJourney({ sound }: { sound: boolean }) {
         />
         <Caption
           y={y}
-          range={[1900, 1940, 2040, 2075]}
+          range={[2100, 2140, 2240, 2275]}
           label="Arrive informed"
           title={
             <>

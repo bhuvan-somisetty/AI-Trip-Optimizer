@@ -20,8 +20,8 @@ import { Bus } from "./vehicles";
 // RUNWAY_END the hand-over to the gorge. The gorge and highway paths below are measured from there:
 // SWITCH is the hand-over inside the spray, END the hand-off to the next section.
 
-const SWITCH = 470;
-const END = 820;
+const SWITCH = 670;
+const END = 1020;
 
 const TRAIN_SPEED = 5.5; // m/s, about 20 km/h: trains crawl across the gorge
 const BUS_SPEED = 22; // m/s, about 80 km/h
@@ -52,7 +52,7 @@ const FALLS: Path = {
     [0, 0],
     [150, 1],
     [240, 2],
-    [400, 3],
+    [600, 3],
     [SWITCH, 4],
   ],
 };
@@ -65,8 +65,8 @@ const ROAD: Path = {
   ],
   knots: [
     [SWITCH, 0],
-    [540, 1],
-    [720, 2],
+    [740, 1],
+    [920, 2],
     [END, 3],
   ],
 };
