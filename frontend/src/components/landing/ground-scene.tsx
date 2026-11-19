@@ -108,10 +108,10 @@ function Rig({ progress, reduce }: { progress: MotionValue<number>; reduce: bool
       world.set = set;
       k.current = -1;
     }
-    world.g = g;
     world.d += (reduce ? 0 : set === "falls" ? TRAIN_SPEED : set === "road" ? BUS_SPEED : 0) * dt;
-    // Until the camera settles on the bridge the train is placed by scroll; from then on it runs on.
-    if (set === "falls" && g < 240) world.trainStart = world.d;
+    // Hold the train at its start while the gorge is still inside the cloud; it sets off as the
+    // view clears, so it is already moving when it first comes into sight.
+    if (set === "falls" && g < 40) world.trainStart = world.d;
 
     // The landing is driven straight from scroll, smoothed a little; the other sets follow paths.
     const ease = 1 - Math.exp(-dt * 5);

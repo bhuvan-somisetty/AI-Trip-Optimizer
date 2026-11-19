@@ -8,10 +8,9 @@ export const PERIOD = 1024;
 
 // Shared state of the ground scene, advanced by the camera rig every frame. One landing page
 // renders one ground scene, so a module-level object is enough.
-//   d: distance travelled in metres, u: scroll inside the leg in vh, g: scroll inside the gorge
-//   and highway part in vh, set: which location is on screen, trainStart: d when the gorge view
-//   last opened.
-export const world = { d: 0, u: 0, g: 0, set: "runway" as "runway" | "falls" | "road", trainStart: 0 };
+//   d: distance travelled in metres, u: scroll inside the leg in vh, set: which location is on
+//   screen, trainStart: d when the train last set off across the gorge.
+export const world = { d: 0, u: 0, set: "runway" as "runway" | "falls" | "road", trainStart: 0 };
 
 // Centre line of the highway in the road set.
 export const ROAD_Z = 0;
