@@ -312,7 +312,7 @@ export default function TripsPage() {
           <EmptyState
             icon={Plane}
             title="No trips match these filters"
-            description="Try widening the date range or clearing filters — or plan a new trip."
+            description="Try widening the date range or clearing filters, or plan a new trip."
             action={
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => { setF(blank); setTab("all"); }}>
@@ -359,7 +359,7 @@ export default function TripsPage() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{formatInr(t.budget)}</TableCell>
                       <TableCell className={cn("text-right font-medium tabular-nums", over && "text-destructive")}>
-                        {t.itinerary ? formatInr(t.itinerary.totalCost) : <span className="text-muted-foreground">—</span>}
+                        {t.itinerary ? formatInr(t.itinerary.totalCost) : <span className="text-muted-foreground">-</span>}
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <RowMenu trip={t} onOptimize={() => optimizeNow(t)} onRemove={canDelete ? () => remove(t) : undefined} />
