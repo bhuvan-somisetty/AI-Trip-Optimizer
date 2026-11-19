@@ -15,18 +15,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SidebarBody } from "@/components/dashboard/sidebar";
+import { LogoutDialog } from "@/components/app/logout-dialog";
 import { actions, routeLabel, useStore } from "@/lib/store";
 import { initials, timeAgo } from "@/lib/format";
 import { cityByCode } from "@/lib/catalog";
@@ -90,11 +81,6 @@ export function Topbar() {
     setFocused(false);
     inputRef.current?.blur();
     router.push(href);
-  }
-
-  function handleLogout() {
-    actions.logout();
-    router.push("/login");
   }
 
   const dark = s.settings.theme === "dark";
@@ -281,18 +267,7 @@ export function Topbar() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={confirmLogoutOpen} onOpenChange={setConfirmLogoutOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Log out?</AlertDialogTitle>
-            <AlertDialogDescription>Are you sure you want to log out of AI Trip Optimizer?</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleLogout}>Log out</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <LogoutDialog open={confirmLogoutOpen} onOpenChange={setConfirmLogoutOpen} />
     </header>
   );
 }
