@@ -11,6 +11,7 @@ import { TripsByStatusChart } from "@/components/dashboard/trips-by-status-chart
 import { SpendChart } from "@/components/dashboard/spend-chart";
 import { Reveal } from "@/components/motion/reveal";
 import { AuditTimeline } from "@/components/app/audit-timeline";
+import { MiniWindow } from "@/components/app/mini-window";
 import { TripStatusBadge } from "@/components/app/common";
 import { routeLabel, useStore } from "@/lib/store";
 import { formatCompactInr, formatDateRange, formatInr } from "@/lib/format";
@@ -59,22 +60,53 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <Reveal className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {greeting()}, {first}!
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {m.pending.length > 0 ? `${m.pending.length} itinerar${m.pending.length === 1 ? "y is" : "ies are"} waiting for your review.` : "Everything is reviewed — nice work."}
-          </p>
-        </div>
-        <Link
-          href="/planning"
-          className={cn(buttonVariants({ size: "lg" }), "w-fit shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98]")}
-        >
-          <Plus />
-          Create New Trip
-        </Link>
+      <Reveal>
+        <section className="grain relative isolate overflow-hidden rounded-[1.75rem] bg-[radial-gradient(120%_120%_at_85%_10%,#c99d71_0%,#7d5539_30%,#2b1a10_62%,#120a06_100%)] p-6 text-[#f6efe3] shadow-[0_30px_60px_-30px_rgba(20,10,4,0.6)] sm:p-9">
+          <div className="pointer-events-none absolute -top-24 -left-24 size-72 rounded-full bg-[#ff693d]/20 blur-3xl" />
+          <div className="relative z-10 grid items-center gap-8 md:grid-cols-[1fr_auto]">
+            <div>
+              <p className="text-[11px] font-medium tracking-[0.28em] text-[#f6efe3]/60 uppercase">
+                {new Date(now).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+              </p>
+              <h1 className="mt-3 text-4xl leading-[1.02] font-normal text-[#f6efe3] sm:text-6xl">
+                {greeting()},
+                <br />
+                <em className="text-[#ffb08f]">{first}.</em>
+              </h1>
+              <p className="mt-4 max-w-md text-sm leading-relaxed text-[#f6efe3]/70">
+                {m.pending.length > 0 ? `${m.pending.length} itinerar${m.pending.length === 1 ? "y is" : "ies are"} waiting for your review.` : "Everything is reviewed, nice work."}
+              </p>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <Link
+                  href="/planning"
+                  className={cn(buttonVariants({ size: "lg" }), "h-11 rounded-full px-5 shadow-[0_14px_30px_-12px_rgba(255,105,61,0.8)] active:scale-[0.98]")}
+                >
+                  <Plus />
+                  Create New Trip
+                </Link>
+                {m.pending.length > 0 && (
+                  <Link href="/trips" className="inline-flex h-11 items-center gap-2 rounded-full border border-white/20 bg-white/[0.06] px-5 text-sm font-medium backdrop-blur transition-colors hover:bg-white/10">
+                    Open review queue
+                    <ArrowRight className="size-4" />
+                  </Link>
+                )}
+              </div>
+            </div>
+            <div className="hidden md:block">
+              <MiniWindow className="w-40">
+                {m.upcoming[0] ? (
+                  <>
+                    <span className="text-[9px] tracking-[0.25em] uppercase opacity-80">Next trip</span>
+                    <span className="mt-1 font-heading text-lg leading-tight [text-shadow:0_1px_8px_rgba(20,40,80,0.4)]">{routeLabel(m.upcoming[0])}</span>
+                    <span className="mt-1 text-[10px] opacity-90">{formatDateRange(m.upcoming[0].departDate, m.upcoming[0].returnDate)}</span>
+                  </>
+                ) : (
+                  <span className="text-[9px] tracking-[0.25em] uppercase opacity-90">Clear skies</span>
+                )}
+              </MiniWindow>
+            </div>
+          </div>
+        </section>
       </Reveal>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -82,13 +114,13 @@ export default function DashboardPage() {
           <StatCard label="Total Trips" value={String(m.total)} icon={Plane} trend={{ value: `${Math.abs(m.tripTrend)}%`, direction: m.tripTrend >= 0 ? "up" : "down" }} />
         </Reveal>
         <Reveal delay={0.1}>
-          <StatCard label="Awaiting Review" value={String(m.pending.length)} icon={Clock} iconClassName="bg-warning/15 text-amber-600 dark:text-warning" hint="Optimized or under review" />
+          <StatCard label="Awaiting Review" value={String(m.pending.length)} icon={Clock} iconClassName="bg-[#172c45]/8 text-[#172c45] dark:bg-white/10 dark:text-[#e9f0f5]" hint="Optimized or under review" />
         </Reveal>
         <Reveal delay={0.15}>
           <StatCard label="Approved Spend" value={formatCompactInr(m.spend)} icon={IndianRupee} trend={{ value: `${Math.abs(m.spendTrend)}%`, direction: m.spendTrend >= 0 ? "up" : "down", positive: m.spendTrend <= 0 }} />
         </Reveal>
         <Reveal delay={0.2}>
-          <StatCard label="Optimizer Savings" value={formatCompactInr(m.savings)} icon={PiggyBank} iconClassName="bg-success/15 text-success" hint={`${m.savingsPct}% below ${s.session?.mode === "api" ? "a typical option that met every rule" : "typical market cost"}`} />
+          <StatCard label="Optimizer Savings" value={formatCompactInr(m.savings)} icon={PiggyBank} iconClassName="bg-[#9caf88]/20 text-[#4f6b3c] dark:text-[#b9cba6]" hint={`${m.savingsPct}% below ${s.session?.mode === "api" ? "a typical option that met every rule" : "typical market cost"}`} />
         </Reveal>
       </div>
 
@@ -108,7 +140,7 @@ export default function DashboardPage() {
                   <Link key={t.id} href={`/trips/${t.id}`} className="group flex items-center gap-3 rounded-xl border bg-background p-3 transition-all hover:border-primary/40 hover:shadow-sm">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{t.code} · {t.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">{routeLabel(t)} · {t.itinerary ? formatInr(t.itinerary.totalCost) : "—"} of {formatInr(t.budget)}</p>
+                      <p className="truncate text-xs text-muted-foreground">{routeLabel(t)} · {t.itinerary ? formatInr(t.itinerary.totalCost) : "-"} of {formatInr(t.budget)}</p>
                     </div>
                     <TripStatusBadge trip={t} />
                     <ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
