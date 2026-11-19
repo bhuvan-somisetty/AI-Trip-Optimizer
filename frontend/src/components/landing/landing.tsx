@@ -204,7 +204,6 @@ function Features() {
 function GlobalSection() {
   const { ref, p, active } = useSection();
   const textY = useScrollRange(p, [0, 1], ["8%", "-6%"]);
-  const globeProgress = useScrollRange(p, [0, 1], [0, 1]);
   const cta = useScrollRange(p, [0.55, 0.8], [0, 1]);
   const ctaY = useScrollRange(p, [0.55, 0.8], [30, 0]);
   const lede = useScrollRange(p, [0.1, 0.25, 0.45, 0.55], [0, 1, 1, 0]);
@@ -219,9 +218,12 @@ function GlobalSection() {
           Global
         </motion.p>
         <motion.div style={{ y: globeY }} className="absolute inset-0 z-10">
-          <GlobeScene progress={globeProgress} active={active} />
+          <GlobeScene active={active} />
         </motion.div>
-        <motion.p style={{ opacity: lede }} className="font-display absolute top-1/2 left-[6%] z-20 max-w-[14rem] text-xl leading-snug text-[#f6efe3]/85">
+        <motion.p style={{ opacity: lede }} className="pointer-events-none absolute inset-x-0 bottom-[12%] z-20 text-center text-[11px] tracking-[0.28em] text-[#f6efe3]/55 uppercase">
+          Drag to turn the globe · click anywhere to see where it is
+        </motion.p>
+        <motion.p style={{ opacity: lede }} className="font-display pointer-events-none absolute top-1/2 left-[6%] z-20 max-w-[14rem] text-xl leading-snug text-[#f6efe3]/85">
           Plan anywhere with total clarity and control.
         </motion.p>
         <motion.div style={{ opacity: cta, y: ctaY }} className="absolute inset-x-0 bottom-[17%] z-20 flex flex-col items-center gap-5 px-6 text-center">
