@@ -104,16 +104,14 @@ function Rig({ progress, reduce }: { progress: MotionValue<number>; reduce: bool
     const g = raw - RUNWAY_END; // scroll into the gorge and highway part
     const set = raw < RUNWAY_END ? "runway" : g < SWITCH ? "falls" : "road";
     if (set !== world.set) {
-      // Hand-overs happen inside a white-out: snap the camera to the other path, and bring the
-      // train back across the bridge for the next time the gorge is shown.
+      // Hand-overs happen inside a white-out: snap the camera to the other path.
       world.set = set;
       k.current = -1;
-      if (set === "falls") world.trainStart = world.d;
     }
+    world.g = g;
     world.d += (reduce ? 0 : set === "falls" ? TRAIN_SPEED : set === "road" ? BUS_SPEED : 0) * dt;
-    // While the gorge is still hidden in cloud, hold the train with its coaches across the bridge so it
-    // is crossing when the view opens up.
-    if (set === "falls" && g < 60) world.trainStart = world.d;
+    // Until the camera settles on the bridge the train is placed by scroll; from then on it runs on.
+    if (set === "falls" && g < 240) world.trainStart = world.d;
 
     // The landing is driven straight from scroll, smoothed a little; the other sets follow paths.
     const ease = 1 - Math.exp(-dt * 5);

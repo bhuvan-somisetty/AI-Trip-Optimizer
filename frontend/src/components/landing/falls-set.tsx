@@ -619,11 +619,13 @@ export function FallsSet({ reduce }: { reduce: boolean }) {
   useFrame((state) => {
     if (root.current) root.current.visible = world.set === "falls";
     for (const m of waterMeshes.current) (m.material as THREE.ShaderMaterial).uniforms.uTime.value = state.clock.elapsedTime;
-    // The train crawls across the bridge; each time the gorge comes into view its coaches already fill the span, and it
-    // wraps round well out of frame.
+    // The train rolls on to the bridge while the camera comes down, so that when the view settles
+    // its locomotive is a quarter of the way across and the coaches follow it over; then it
+    // crawls on by itself, wrapping round well out of frame.
     if (train.current) {
-      const run = world.d - world.trainStart;
-      train.current.position.x = -150 + ((((run + 195) % LOOP) + LOOP) % LOOP);
+      const enter = THREE.MathUtils.smoothstep(world.g, 60, 240);
+      const front = -SPAN - 45 + (SPAN / 2 + 45) * enter + (world.d - world.trainStart);
+      train.current.position.x = ((((front + 150) % LOOP) + LOOP) % LOOP) - 150;
     }
   });
 
