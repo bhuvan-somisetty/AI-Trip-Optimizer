@@ -47,7 +47,7 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
           <div key={section} className="space-y-1">
             <p className="px-3 pb-1 text-[10px] font-semibold tracking-[0.2em] text-sidebar-foreground/35 uppercase">{section}</p>
             {navItems
-              .filter((i) => i.section === section)
+              .filter((i) => i.section === section && (!i.adminOnly || s.session?.role === "admin"))
               .map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
                 const Icon = item.icon;

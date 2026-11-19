@@ -37,6 +37,7 @@ type Result = { id: string; href: string; title: string; sub: string; kind: "Tri
 export function Topbar() {
   const router = useRouter();
   const s = useStore();
+  const isAdmin = s.session?.role === "admin";
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -220,7 +221,7 @@ export function Topbar() {
                 <DropdownMenuItem
                   key={n.id}
                   className="items-start gap-3 rounded-lg px-2.5 py-2.5"
-                  onClick={() => router.push(n.tripId ? `/trips/${n.tripId}` : "/audit")}
+                  onClick={() => router.push(n.tripId ? `/trips/${n.tripId}` : isAdmin ? "/audit" : "/dashboard")}
                 >
                   <span
                     className={cn(
@@ -237,11 +238,13 @@ export function Topbar() {
                 </DropdownMenuItem>
               ))}
             </div>
-            <div className="border-t p-1.5">
-              <DropdownMenuItem className="justify-center text-sm font-medium text-primary" onClick={() => router.push("/audit")}>
-                View full audit trail
-              </DropdownMenuItem>
-            </div>
+            {isAdmin && (
+              <div className="border-t p-1.5">
+                <DropdownMenuItem className="justify-center text-sm font-medium text-primary" onClick={() => router.push("/audit")}>
+                  View full audit trail
+                </DropdownMenuItem>
+              </div>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 

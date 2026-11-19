@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, Download, ScrollText, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search, Download, ScrollText, X, ShieldCheck } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/fields";
@@ -66,6 +66,29 @@ export default function AuditPage() {
 
   function clear() {
     setQ(""); setType(""); setActor(""); setTrip(""); setFrom(""); setTo(""); setPage(1);
+  }
+
+  // The full trail is an admin view; members see each trip's history on the trip itself.
+  if (s.session?.role !== "admin") {
+    return (
+      <div className="mx-auto max-w-7xl space-y-6">
+        <PageHeader title="Audit trail" />
+        <Card>
+          <CardContent>
+            <EmptyState
+              icon={ShieldCheck}
+              title="Admins only"
+              description="The full audit trail is available to workspace admins. Each trip's own history is on its trip page."
+              action={
+                <Link href="/dashboard" className={buttonVariants({ variant: "outline" })}>
+                  Back to dashboard
+                </Link>
+              }
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
