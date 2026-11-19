@@ -105,7 +105,7 @@ function screenFlights(flights: DemoFlight[], trip: Trip): Screened<DemoFlight>[
         reason: `${fl.stops} stop${fl.stops > 1 ? "s" : ""} via ${fl.via} exceeds the max-stops rule (${f.maxStops === 0 ? "non-stop only" : `≤ ${f.maxStops}`}).`,
       };
     } else if (f.avoidRedEye && isRedEye(fl)) {
-      reject = { code: "PREFERENCE", reason: `Red-eye departure at ${formatTime(fl.departure)} — traveler asked to avoid red-eyes.` };
+      reject = { code: "PREFERENCE", reason: `Red-eye departure at ${formatTime(fl.departure)}, and the traveler asked to avoid red-eyes.` };
     } else if (!inWindow(fl, f.departureWindow)) {
       reject = {
         code: "PREFERENCE",
@@ -239,7 +239,7 @@ function compose(
           reason = `Would raise the trip total to ${formatInr(swapTotal)}, ${formatInr(swapTotal - trip.budget)} over budget.`;
         } else if (delta > 0) {
           code = "PRICE";
-          reason = `${formatInr(delta)} more per traveler than the chosen flight with no better overall score (${s.score} vs ${pool.find((p) => p.option.id === chosen?.id)?.score ?? "—"}).`;
+          reason = `${formatInr(delta)} more per traveler than the chosen flight with no better overall score (${s.score} vs ${pool.find((p) => p.option.id === chosen?.id)?.score ?? "-"}).`;
         } else {
           code = "PREFERENCE";
           const bits: string[] = [];
@@ -247,7 +247,7 @@ function compose(
           if (isRedEye(fl)) bits.push("red-eye timing");
           if (fl.durationMin > (chosen?.durationMin ?? 0) + 20) bits.push(`${formatDuration(fl.durationMin - (chosen?.durationMin ?? 0))} longer`);
           if (!fl.refundable && chosen?.refundable) bits.push("non-refundable fare");
-          reason = `${formatInr(Math.abs(delta))} cheaper but scored lower (${s.score}/100)${bits.length ? ` — ${bits.join(", ")}` : ""}.`;
+          reason = `${formatInr(Math.abs(delta))} cheaper but scored lower (${s.score}/100)${bits.length ? `: ${bits.join(", ")}` : ""}.`;
         }
       }
       ledger.push({
@@ -293,7 +293,7 @@ function compose(
         reason = `${formatInr(delta)}/night more than the chosen hotel without a higher score (${s.score}/100).`;
       } else {
         code = "PREFERENCE";
-        reason = `${formatInr(Math.abs(delta))}/night cheaper but scored lower (${s.score}/100) — ${h.rating}★, ${h.distanceKm} km out.`;
+        reason = `${formatInr(Math.abs(delta))}/night cheaper but scored lower (${s.score}/100): ${h.rating}★, ${h.distanceKm} km out.`;
       }
     }
     ledger.push({
@@ -372,7 +372,7 @@ export function checkConstraints(
       rule: "Trip budget",
       lineItem: "Trip total",
       severity: "warning",
-      message: `Uses ${Math.round((total / trip.budget) * 100)}% of the budget — only ${formatInr(trip.budget - total)} headroom left for incidentals.`,
+      message: `Uses ${Math.round((total / trip.budget) * 100)}% of the budget, with only ${formatInr(trip.budget - total)} headroom left for incidentals.`,
     });
   }
   for (const [label, fl] of [["Outbound flight", out], ["Return flight", ret]] as const) {
@@ -433,7 +433,7 @@ export function checkConstraints(
       rule: `Book at least ${policy.advanceBookingDays} days ahead`,
       lineItem: `Departure ${trip.departDate}`,
       severity: "warning",
-      message: `Only ${lead} day${lead === 1 ? "" : "s"} of lead time — late bookings typically cost more.`,
+      message: `Only ${lead} day${lead === 1 ? "" : "s"} of lead time. Late bookings typically cost more.`,
     });
   }
   return issues;
@@ -452,7 +452,7 @@ export function writeRationale(trip: Trip, it: Itinerary) {
   );
   if (cheaper.length) {
     parts.push(
-      `${cheaper.length} cheaper outbound option${cheaper.length > 1 ? "s were" : " was"} passed over — see the Trade-off Ledger for the specific reason on each.`
+      `${cheaper.length} cheaper outbound option${cheaper.length > 1 ? "s were" : " was"} passed over. See the Trade-off Ledger for the specific reason on each.`
     );
   }
   if (it.return) {
