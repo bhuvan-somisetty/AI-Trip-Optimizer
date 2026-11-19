@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Save, ShieldCheck, User, Bell, Palette, Database, RotateCcw, Monitor, Moon, Sun, Server } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { PageHeader } from "@/components/app/common";
 import { actions, defaultPolicy, useStore } from "@/lib/store";
 import { airlines } from "@/lib/catalog";
-import { API_URL } from "@/lib/api";
+import { API_URL, getMe } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import type { Policy } from "@/lib/types";
@@ -25,6 +25,20 @@ export default function SettingsPage() {
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
   const [policyDraft, setPolicyDraft] = useState<Policy | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
+  // The name the server has for this account: null means none saved yet, undefined means not loaded.
+  // The field can show a name from the Google token that the server doesn't have, so compare with this.
+  const [serverName, setServerName] = useState<string | null | undefined>(undefined);
+  const token = s.session?.token;
+  useEffect(() => {
+    if (!apiMode || !token) return;
+    let live = true;
+    getMe(token)
+      .then((me) => live && setServerName(me.name))
+      .catch(() => live && setServerName(undefined));
+    return () => {
+      live = false;
+    };
+  }, [apiMode, token]);
   const [savingPolicy, setSavingPolicy] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const name = nameDraft ?? s.session?.name ?? "";
@@ -39,6 +53,7 @@ export default function SettingsPage() {
     setSavingProfile(true);
     try {
       await actions.updateProfile({ name: name.trim(), email: email.trim() });
+      if (apiMode) setServerName(name.trim());
       setNameDraft(null);
       setEmailDraft(null);
       toast("Profile saved");
@@ -91,7 +106,7 @@ export default function SettingsPage() {
             </div>
             <div className="flex items-center justify-between gap-3 sm:col-span-2">
               <p className="text-xs text-muted-foreground capitalize">Role: {s.session?.role}</p>
-              <Button type="submit" disabled={savingProfile || !name.trim() || (name.trim() === s.session?.name && email === s.session?.email)}>
+              <Button type="submit" disabled={savingProfile || !name.trim() || (apiMode ? serverName === undefined || name.trim() === serverName : name.trim() === s.session?.name && email === s.session?.email)}>
                 <Save />
                 Save profile
               </Button>
@@ -111,8 +126,8 @@ export default function SettingsPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <PolicyField label="Manager approval for flights over" prefix="₹" value={policy.managerApprovalFlightOver} onChange={num("managerApprovalFlightOver")} />
             <PolicyField label="Advance booking (days)" value={policy.advanceBookingDays} onChange={num("advanceBookingDays")} />
-            <PolicyField label="Hotel cap — domestic (per night)" prefix="₹" value={policy.maxNightlyRate} onChange={num("maxNightlyRate")} />
-            <PolicyField label="Hotel cap — international (per night)" prefix="₹" value={policy.maxNightlyRateIntl} onChange={num("maxNightlyRateIntl")} />
+            <PolicyField label="Hotel cap, domestic (per night)" prefix="₹" value={policy.maxNightlyRate} onChange={num("maxNightlyRate")} />
+            <PolicyField label="Hotel cap, international (per night)" prefix="₹" value={policy.maxNightlyRateIntl} onChange={num("maxNightlyRateIntl")} />
             <PolicyField label="Business class minimum flight length (hours)" value={policy.businessClassMinHours} onChange={num("businessClassMinHours")} />
           </div>
           <div className="space-y-2">
@@ -189,7 +204,7 @@ export default function SettingsPage() {
         <CardContent className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Server className="size-4" />
-            {s.trips.length} trips · {s.travelers.length} travelers · {s.audit.length} audit events
+            {s.trips.length} {s.trips.length === 1 ? "trip" : "trips"} · {s.travelers.length} {s.travelers.length === 1 ? "traveler" : "travelers"} · {s.audit.length} audit {s.audit.length === 1 ? "event" : "events"}
           </div>
           <Button variant="destructive" onClick={() => setResetOpen(true)}>
             <RotateCcw />
