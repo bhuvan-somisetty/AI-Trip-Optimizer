@@ -121,15 +121,69 @@ function CabinWindow({ scale, closed, onToggle }: { scale: MotionValue<number>; 
 }
 
 const STATEMENT =
-  "AI Trip Optimizer is decision support for business travel. It compares real flights and hotels, checks every option against company policy and explains each choice, so reviewers can approve with confidence, every single time.";
+  "It compares real flights and hotels, checks every option against company policy and explains each choice, so reviewers can approve with confidence, every single time.";
 
-function Word({ word, range, p }: { word: string; range: [number, number]; p: MotionValue<number> }) {
-  const opacity = useScrollRange(p, range, [0.12, 1]);
-  const filter = useScrollRange(p, range, ["blur(8px)", "blur(0px)"]);
+const POINTS = [
+  ["Live fares and stays", "Real options from live search, never a canned list."],
+  ["Your policy, enforced", "Cabin rules and hotel caps are checked on every itinerary."],
+  ["A person decides", "Approve or reject with a written reason. Nothing books itself."],
+];
+
+// A word that sharpens into view as its scroll range (vh into the story) passes.
+function Word({ word, range, y, className }: { word: string; range: [number, number]; y: MotionValue<number>; className?: string }) {
+  const opacity = useScrollRange(y, range, [0.14, 1]);
+  const filter = useScrollRange(y, range, ["blur(8px)", "blur(0px)"]);
   return (
-    <motion.span style={{ opacity, filter }} className="mr-[0.28em] inline-block">
+    <motion.span style={{ opacity, filter }} className={`mr-[0.26em] inline-block ${className ?? ""}`}>
       {word}
     </motion.span>
+  );
+}
+
+function Point({ y, at, index, title, text }: { y: MotionValue<number>; at: number; index: number; title: string; text: string }) {
+  const opacity = useScrollRange(y, [at, at + 30], [0, 1]);
+  const shift = useScrollRange(y, [at, at + 30], [14, 0]);
+  return (
+    <motion.li style={{ opacity, y: shift }} className="grid grid-cols-[2.2rem_1fr] gap-x-3 border-t border-[#e9f0f5]/20 pt-3.5">
+      <span className="pt-1 font-mono text-[11px] tracking-[0.18em] text-[#ff8a62]">{String(index + 1).padStart(2, "0")}</span>
+      <div>
+        <p className="font-display text-[1.2rem] leading-snug text-[#f6efe3]">{title}</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-[#e9f0f5]/70">{text}</p>
+      </div>
+    </motion.li>
+  );
+}
+
+// The statement, set beside the airliner while it flies in formation: a dark glass panel on the
+// left of the frame, display serif headline with a tangerine accent, the detail in a clean sans.
+function Statement({ y }: { y: MotionValue<number> }) {
+  const opacity = useScrollRange(y, [395, 440, 770, 815], [0, 1, 1, 0]);
+  const shift = useScrollRange(y, [395, 440, 770, 815], [-36, 0, 0, -24]);
+  const words = STATEMENT.split(" ");
+  return (
+    <motion.aside
+      style={{ opacity, x: shift }}
+      className="pointer-events-none absolute top-1/2 left-4 w-[min(30rem,calc(100%-2rem))] -translate-y-1/2 rounded-[1.75rem] border border-[#e9f0f5]/15 bg-[#172c45]/45 p-7 shadow-[0_30px_80px_-30px_rgba(8,16,30,0.6)] backdrop-blur-xl md:left-[5%] md:p-9"
+    >
+      <p className="text-[11px] font-semibold tracking-[0.3em] text-[#ff8a62] uppercase">AI Trip Optimizer</p>
+      <h2 className="font-display mt-4 text-[clamp(2rem,3.4vw,3.1rem)] leading-[1.04] font-light text-[#f6efe3]">
+        {["Decision", "support", "for", "business"].map((w, i) => (
+          <Word key={w} word={w} y={y} range={[430 + i * 10, 470 + i * 10]} />
+        ))}
+        <Word word="travel." y={y} range={[470, 510]} className="text-[#ff8a62] italic" />
+      </h2>
+      <p className="mt-5 text-[15px] leading-relaxed text-[#e9f0f5]/85">
+        {words.map((w, i) => {
+          const a = 500 + (i / words.length) * 110;
+          return <Word key={i} word={w} y={y} range={[a, a + 25]} />;
+        })}
+      </p>
+      <ul className="mt-7 grid gap-3.5">
+        {POINTS.map(([t, d], i) => (
+          <Point key={t} y={y} at={620 + i * 25} index={i} title={t} text={d} />
+        ))}
+      </ul>
+    </motion.aside>
   );
 }
 
@@ -164,8 +218,8 @@ export function SkyJourney({ sound }: { sound: boolean }) {
   // y: scroll inside the story in vh. p: progress of the sky leg (0 to 1 over its 660vh).
   const y = useTransform(scrollYProgress, (v) => v * TOTAL);
   const p = useTransform(y, (v) => v / SKY);
-  const flight = useScrollRange(y, [620, 950], [0, 1]);
-  const level = useScrollRange(y, [630, 720], [0, 1]);
+  const flight = useScrollRange(y, [260, 950], [0, 1]);
+  const level = useScrollRange(y, [255, 400], [0, 1]);
   const descend = useScrollRange(y, [800, 950], [0, 1]);
   const ground = useTransform(y, (v) => v - GROUND_START);
   useJourneySound(y, sound);
@@ -174,7 +228,7 @@ export function SkyJourney({ sound }: { sound: boolean }) {
   // only run each canvas while it can be seen.
   const [stage, setStage] = useState<{ cloud: boolean; plane: boolean; ground: "off" | "warm" | "live" }>({ cloud: true, plane: false, ground: "off" });
   useMotionValueEvent(y, "change", (v) => {
-    const next = { cloud: v < 980, plane: v > 540 && v < 980, ground: v > 860 ? "live" : v > 640 ? "warm" : "off" } as const;
+    const next = { cloud: v < 980, plane: v > 180 && v < 980, ground: v > 860 ? "live" : v > 640 ? "warm" : "off" } as const;
     setStage((s) => (s.cloud === next.cloud && s.plane === next.plane && s.ground === next.ground ? s : next));
   });
 
@@ -213,9 +267,6 @@ export function SkyJourney({ sound }: { sound: boolean }) {
   const textOpacity = useScrollRange(p, [0.02, 0.13], [1, 0]);
   const brandScroll = useScrollRange(p, [0, 0.3, 0.42], [1, 1, 0]);
   const brand = useTransform(() => brandScroll.get() * (1 - closed.get()));
-  const statementY = useScrollRange(p, [0.42, 0.88, 0.94, 1.1], ["72vh", "16vh", "16vh", "-55vh"]);
-  const statementOpacity = useScrollRange(p, [0.42, 0.5, 0.95, 1.08], [0, 1, 1, 0]);
-  const cols = useScrollRange(p, [0.8, 0.9], [0, 1]);
   const windowOpacity = useScrollRange(p, [0.33, 0.36], [1, 0]);
   // White-outs that hide the hand-overs: inside the cloud deck on the way down, then inside the
   // waterfall spray between the gorge and the highway.
@@ -225,7 +276,6 @@ export function SkyJourney({ sound }: { sound: boolean }) {
   const mist = useTransform(() => Math.max(cloudMist.get(), skyMist.get(), sprayMist.get()));
   const groundOpacity = useScrollRange(y, [940, 955], [0, 1]);
   const haze = useScrollRange(y, [2090, 2170], [0, 1]);
-  const words = STATEMENT.split(" ");
 
   return (
     <section id="story" ref={ref} data-nav="light" className="relative h-[2270vh]">
@@ -278,26 +328,7 @@ export function SkyJourney({ sound }: { sound: boolean }) {
           </motion.div>
         </motion.div>
 
-        <motion.div style={{ y: statementY, opacity: statementOpacity }} className="pointer-events-none absolute top-0 left-0 w-full px-6 text-white md:w-[50%] md:pl-16">
-          <p className="font-display text-[clamp(1.7rem,2.9vw,3rem)] leading-[1.1] font-light [text-shadow:0_1px_2px_rgba(20,45,95,0.25),0_0_40px_rgba(20,45,95,0.25)]">
-            {words.map((w, i) => {
-              const a = 0.46 + (i / words.length) * 0.32;
-              return <Word key={i} word={w} range={[a, a + 0.05]} p={p} />;
-            })}
-          </p>
-          <motion.div style={{ opacity: cols }} className="mt-10 grid max-w-xl gap-5 text-sm">
-            {[
-              ["Live fares and stays", "Real options from live search, never a canned list."],
-              ["Your policy, enforced", "Cabin rules and hotel caps are checked on every itinerary."],
-              ["A person decides", "Approve or reject with a written reason. Nothing books itself."],
-            ].map(([t, d]) => (
-              <div key={t} className="border-t border-white/50 pt-3">
-                <p className="font-display text-xl">{t}</p>
-                <p className="mt-1 text-white/80">{d}</p>
-              </div>
-            ))}
-          </motion.div>
-        </motion.div>
+        <Statement y={y} />
 
         <Caption
           y={y}

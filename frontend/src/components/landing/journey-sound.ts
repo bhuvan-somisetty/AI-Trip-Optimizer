@@ -22,7 +22,7 @@ const span = (inA: number, inB: number, outA: number, outB: number) => (y: numbe
 const LAYERS: Layer[] = [
   { name: "cabin", level: 0.5, gain: span(-1, 0, 160, 300) },
   { name: "wind", level: 0.45, gain: span(150, 300, 900, 960) },
-  { name: "jet", level: 0.7, gain: span(640, 730, 1250, 1330) },
+  { name: "jet", level: 0.7, gain: span(260, 400, 1250, 1330) },
   { name: "waterfall", level: 0.55, gain: (y) => span(1330, 1400, 1810, 1845)(y) * (0.75 + 0.45 * ramp(1700, 1800, y)) },
   { name: "train", level: 0.55, gain: span(1400, 1520, 1760, 1820) },
   { name: "road", level: 0.55, gain: span(1820, 1890, 2090, 2170) },

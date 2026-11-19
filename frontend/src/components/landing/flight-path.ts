@@ -10,15 +10,14 @@ const lerp = THREE.MathUtils.lerp;
 
 // Pitch in radians, positive looks up.
 export function cameraPitch(p: number, cruise: number, down: number) {
-  // Horizon through the middle of the window at rest, dips as you fly out, then lifts to open sky.
+  // Horizon through the middle of the window at rest, dips as you fly out.
   const dip = lerp(-0.06, -0.09, smooth(p, 0.05, 0.3));
-  const lifted = lerp(dip, 0.42, smooth(p, 0.36, 0.7));
   // Levels out, just under the horizon, to look across at the jet; then follows it down.
-  const across = lerp(lifted, -0.1, smooth(cruise, 0, 1));
+  const across = lerp(dip, -0.1, smooth(cruise, 0, 1));
   return lerp(across, -0.62, smooth(down, 0, 0.8));
 }
 
 // Yaw in radians as three.js measures it (negative turns to the right).
 export function cameraYaw(cruise: number) {
-  return -1.05 * smooth(cruise, 0, 1);
+  return -0.8 * smooth(cruise, 0, 1);
 }

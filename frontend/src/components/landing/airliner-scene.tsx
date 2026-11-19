@@ -28,11 +28,12 @@ function Formation({ progress, sky, level, descend }: { progress: MotionValue<nu
     const time = state.clock.elapsedTime;
     state.camera.rotation.set(cameraPitch(sky.get(), level.get(), descend.get()), cameraYaw(level.get()), 0, "YXZ");
 
-    // Off the right wing, flying the same heading as the camera, so the turn reveals it.
-    const dive = smooth(t, 0.62, 1);
-    const x = 50 + Math.sin(time * 0.29) * 0.9 - dive * 4;
-    const y = -3 + Math.sin(time * 0.43) * 0.5 - dive * dive * 42;
-    const z = -30 + Math.sin(time * 0.21) * 1.5 - dive * 30;
+    // Off the right wing, flying the same heading as the camera, so the turn reveals it. The view
+    // stops short of square-on, which leaves the left of the frame for the statement.
+    const dive = smooth(t, 0.83, 1);
+    const x = 62 + Math.sin(time * 0.29) * 0.9 - dive * 4;
+    const y = -6.5 + Math.sin(time * 0.43) * 0.5 - dive * dive * 42;
+    const z = -40 + Math.sin(time * 0.21) * 1.5 - dive * 30;
     g.position.set(x, y, z);
     g.rotation.set(-dive * 0.3 + Math.sin(time * 0.5) * 0.008, 0, Math.sin(time * 0.37) * 0.03 - dive * 0.12, "YXZ");
     g.visible = t > 0.001 && t < 0.999;
