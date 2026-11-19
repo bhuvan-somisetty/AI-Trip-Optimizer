@@ -27,7 +27,7 @@ export const eventMeta: Record<AuditEvent["type"], { icon: LucideIcon; label: st
   TRIP_DELETED: { icon: Trash2, label: "Trip deleted", className: "bg-destructive/10 text-destructive" },
   PIPELINE_RUN: { icon: Sparkles, label: "Pipeline run", className: "bg-primary/10 text-primary" },
   PIPELINE_FAILED: { icon: AlertOctagon, label: "Pipeline failed", className: "bg-destructive/10 text-destructive" },
-  ITINERARY_EDITED: { icon: Pencil, label: "Itinerary edited", className: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
+  ITINERARY_EDITED: { icon: Pencil, label: "Itinerary edited", className: "bg-primary/10 text-primary" },
   REVIEW_STARTED: { icon: Eye, label: "Review started", className: "bg-warning/15 text-amber-700 dark:text-warning" },
   DECISION: { icon: Gavel, label: "Decision", className: "bg-success/15 text-emerald-700 dark:text-success" },
   DOCUMENT_UPLOAD: { icon: Upload, label: "Document uploaded", className: "bg-cyan-500/10 text-cyan-700 dark:text-cyan-400" },
