@@ -1,5 +1,5 @@
-import { PlaneIntro } from "@/components/intro/plane-intro";
+import { Landing } from "@/components/landing/landing";
 
 export default function RootPage() {
-  return <PlaneIntro />;
+  return <Landing />;
 }
