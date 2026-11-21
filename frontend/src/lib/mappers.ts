@@ -172,6 +172,17 @@ function toIssue(flag: string, i: number): ConstraintIssue {
   if (/hotel prices are unavailable/i.test(flag)) return { id: `iss_${i}`, rule: "Hotel prices", lineItem: "Stay", severity: "info", message: flag };
   // A trip with no return fare is still valid; its total just has no flight back in it.
   if (/no return flight in it/i.test(flag)) return { id: `iss_${i}`, rule: "Return flight", lineItem: "Return", severity: "warning", message: flag };
+  // Fare hints from the search data: a cheaper fare on a nearby day, or Google rating the date's fares as high.
+  const fare = /^(Flight|Return flight): (.*)$/.exec(flag);
+  if (fare && (/ on the trip's date$/.test(fare[2]) || /^Google Flights rates fares/.test(fare[2]))) {
+    return {
+      id: `iss_${i}`,
+      rule: fare[2].startsWith("Google") ? "Fare level" : "Cheaper nearby date",
+      lineItem: fare[1] === "Flight" ? "Outbound flight" : "Return flight",
+      severity: "warning",
+      message: flag,
+    };
+  }
   return {
     id: `iss_${i}`,
     rule: overBudget ? "Budget" : "Availability",
@@ -197,6 +208,14 @@ function toFlight(f: FlightResponse): Flight {
     price: f.price,
     cabin: cabins.includes(f.cabin_class as CabinClass) ? (f.cabin_class as CabinClass) : "economy",
     stops: f.stops,
+    layovers: f.layovers?.map((l) => ({
+      airport: l.airport ?? "",
+      airportName: orUndefined(l.airport_name),
+      minutes: orUndefined(l.minutes),
+      overnight: l.overnight,
+    })),
+    priceLevel: orUndefined(f.price_level),
+    typicalPriceRange: orUndefined(f.typical_price_range),
     priceStatus: f.price_status,
     bookingLink: orUndefined(f.link),
     source: f.source,
@@ -228,6 +247,9 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
         stars: orUndefined(h.stars),
         amenities: h.amenities ?? [],
         distanceKm: orUndefined(h.distance_to_center_km),
+        images: h.images?.map((img) => ({ thumbnail: orUndefined(img.thumbnail), original: orUndefined(img.original) })),
+        latitude: orUndefined(h.latitude),
+        longitude: orUndefined(h.longitude),
         priceStatus: h.price_status,
         source: h.source,
       }
