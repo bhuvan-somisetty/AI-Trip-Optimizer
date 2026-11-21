@@ -528,6 +528,8 @@ Runs the LangGraph pipeline on a saved trip: `search_node` finds real flight and
 
 A priority only spends the room the budget has above the cheapest picks, so it never takes a trip over budget that the cheapest picks would have kept within it. Ledger rows say why an option lost: `Price: ...`, `Slower: ...`, `More stops: ...`, `Lower rated: ...`, or `Budget: ranks higher but ...` when a better option didn't fit. Preferred airlines, the trip's and the company policy's, only decide between options at the same price. The company travel policy is applied on every run as well (see [Travel Policy](#travel-policy)). The web app's "Max distance from centre" filter is not applied, because the hotel data has no distance.
 
+**Flights and hotels carry more detail (2026-11-21).** Each Google Flights option keeps `layovers` (`[{airport, airport_name, minutes, overnight}]`, empty for non-stop), and, when Google sends it, `price_level` (`low`, `typical` or `high`) with `typical_price_range` (`[low, high]`); both are `null` when Google leaves them out, which is common for one-way searches. Each hotel keeps `latitude`, `longitude` and up to five `images` (`[{thumbnail, original}]`) from Google Hotels, at no extra search cost. With `preferences.flexible_days` (or `filters.flexibleDays`) set to 1 or 2, both legs are also searched that many days either side; those fares appear as `Different day` ledger rows and the trip's own dates never change. Two warning flags come from this data: `Flight: <id> on <date> costs <price>, <n> less than <chosen> on the trip's date` (flexible dates only) and `Flight: Google Flights rates fares on this date as high for the route (typical <low> to <high>)`.
+
 **Over budget is not a failure.** The cheapest itinerary that meets every preference is still returned, with `within_budget: false` and a flag naming the line items (PRD US-005). The run only fails when no flight (or, for an overnight trip, no hotel) is found or meets the preferences.
 
 **Rationale:** written by the LLM when `OPENAI_API_KEY` is set, otherwise by a fixed template from the same numbers. Every number in an LLM rationale must already appear in the itinerary's facts; if one doesn't, the run fails instead of showing it (product principle: no unsupported financial claims).
@@ -788,6 +790,92 @@ The optimizer reads the current policy on every run, line-item edit and What-If 
 **Response (403 Forbidden)**: a member tried to change it, `{ "detail": "Admin access required" }`
 
 **Response (422 Unprocessable Entity)**: an amount of zero or below, `business_class_min_hours` outside 0 to 24, or `advance_booking_days` outside 0 to 365.
+
+---
+
+## Explore and Route
+*(Built 2026-11-21: `app/routers/explore.py`, `app/places.py`, `app/dishes.py`, `app/roads.py`, `app/routing.py`; tests in `test_explore.py`, `test_dishes.py`, `test_routing.py`.)*
+
+Both endpoints are separate from the optimizer: they never change a trip's prices, budget check or Trade-off Ledger. Both require a valid JWT and that the trip belongs to the requesting user (else `404 Trip not found`). When data can't be fetched they still answer 200, with empty lists and a `notice` saying why; nothing is ever filled in with a guess. Every item carries its source and a label (`Map data`, `AI suggestion`, `Photo: Wikipedia`).
+
+### GET /trips/{id}/explore
+Tourist attractions, restaurants and famous local dishes for the trip's destination.
+
+- **Attractions and restaurants** come from [OpenTripMap](https://dev.opentripmap.org) (OpenStreetMap, Wikidata, Wikipedia; free key `OPENTRIPMAP_API_KEY`, 5,000 requests a day, non-commercial). The city is located with `geoname`, places within 10 km are listed with `radius` (heritage sites first, rating `3h`, then `3`, then `2`), and up to 30 candidates are looked up with `xid` for a description and photo. The 12 kept are ordered by OpenTripMap's own signals (heritage, Wikipedia article, photo, distance); closed and uncategorised places are dropped, and one site listed twice is kept once. Restaurants come from the `foods` category.
+- **Dishes** are named by the LLM (up to six, one plain sentence each, no numbers allowed; any line with a digit is dropped) and labelled `AI suggestion`. Each is looked up on Wikipedia for a photo and short text: the exact title first, else a page search accepted only when the title shares a specific word with the dish.
+- **Cache:** a city's places and dishes are saved in the `city_places` table for `PLACES_CACHE_DAYS` (default 30), so OpenTripMap, the LLM and Wikipedia are asked once per city. A failure is not saved, so it is retried next time.
+
+**Response (200 OK)** (shortened; one item of each list):
+```json
+{
+  "city": "GOI",
+  "city_name": "Goa",
+  "centre": {"latitude": 15.4909, "longitude": 73.8278},
+  "attractions": [
+    {"id": "W12345", "name": "Basilica of Bom Jesus", "category": "Religious site",
+     "description": "The Basilica of Bom Jesus is a Roman Catholic basilica ...",
+     "image": "https://upload.wikimedia.org/...", "wikipedia": "https://en.wikipedia.org/wiki/Basilica_of_Bom_Jesus",
+     "rating": "3h", "latitude": 15.5009, "longitude": 73.9116, "distance_m": 9117,
+     "source": "OpenTripMap (OpenStreetMap, Wikidata, Wikipedia)", "data_label": "Map data"}
+  ],
+  "restaurants": [
+    {"id": "N67890", "name": "Chai Pani", "category": "Cafe", "description": null, "image": null,
+     "latitude": 15.49, "longitude": 73.82, "distance_m": 640, "data_label": "Map data"}
+  ],
+  "dishes": [
+    {"name": "Bebinca", "ai_description": "A traditional multi-layered Indo-Portuguese pudding.",
+     "image": "https://upload.wikimedia.org/...", "wikipedia_text": "Bebinca is a type of pudding ...",
+     "wikipedia": "https://en.wikipedia.org/wiki/Bebinca",
+     "data_label": "AI suggestion", "image_label": "Photo: Wikipedia"}
+  ],
+  "source": "OpenTripMap (OpenStreetMap, Wikidata, Wikipedia)",
+  "fetched_at": "2026-11-21T10:12:00+00:00",
+  "cached": true,
+  "notice": null,
+  "dishes_notice": null
+}
+```
+*(Names and distances are from a live check on 2026-11-21; ids, coordinates and texts are shortened here.)*
+
+**Notices:** no `OPENTRIPMAP_API_KEY` on the server, a destination outside the supported cities, OpenTripMap unreachable or rate-limited; for dishes, no LLM configured or a failed LLM call.
+
+### GET /trips/{id}/route
+Shortest road routes from the trip's hotel to its top attractions, computed with **Dijkstra's algorithm** on the real road network, and a visiting order.
+
+**Query parameter (optional):** `stops`, 1 to 10, default 6 (the first attractions from `/explore` that have a location).
+
+1. **Road graph:** one [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) query (free, no key, fair use) returns the drivable OpenStreetMap roads in a box around the hotel and stops plus about 1 km. Each road point is a node; each stretch between two consecutive points is an edge weighted by its length in metres. `oneway` and roundabout tags make edges one-directional. Cached by area for 7 days in server memory.
+2. **Snapping:** the hotel and each stop attach to the nearest point on the largest connected road network (`to_road_m` says how far that was).
+3. **Dijkstra:** our own implementation with a `heapq` priority queue, run once from each stop, gives the road distance between every pair of stops (tested against Bellman-Ford on random graphs).
+4. **Order:** from the hotel, always the nearest unvisited stop by road. Stops no road reaches are listed in `unreachable`.
+
+Distances are road metres between the snapped road points; `straight_m` is the straight line between the exact places. No travel times are given, because the road data has no reliable speeds.
+
+**Response (200 OK)** (shortened; live check in Goa on 2026-11-21):
+```json
+{
+  "city": "GOI",
+  "hotel": {"name": "Whoopers Boutique Hotel, Anjuna", "latitude": 15.5759, "longitude": 73.7470, "to_road_m": 13},
+  "stops": [
+    {"order": 1, "name": "Lower Aguada Fort extension", "category": "Fort", "latitude": 15.49, "longitude": 73.77,
+     "to_road_m": 42, "road_m_from_hotel": 11300}
+  ],
+  "legs": [
+    {"from": "Whoopers Boutique Hotel, Anjuna", "to": "Lower Aguada Fort extension",
+     "road_m": 11300, "straight_m": 9000, "path": [[15.5759, 73.7470], [15.5741, 73.7488]]}
+  ],
+  "total_road_m": 40200,
+  "unreachable": [],
+  "source": "OpenStreetMap road network via the Overpass API (© OpenStreetMap contributors)",
+  "data_label": "Map data",
+  "notice": null
+}
+```
+In that run the 27,294-node road graph took 26 s to load the first time, and the seven Dijkstra runs took 0.34 s together. Reis Magos Fort to Panaji was 7.7 km by road against 2.2 km straight, because the road goes round the river.
+
+**Notices:** the trip isn't optimized yet (the route starts at its hotel), the hotel has no map location (optimize again), attractions can't be loaded, or OpenStreetMap roads are busy or unreachable.
+
+**Response (422)**: `stops` outside 1 to 10.
 
 ---
 
