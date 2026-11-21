@@ -171,29 +171,33 @@ def flight_option(flight: dict | None) -> dict | None:
 
 @router.get("/trips/{trip_id}/transport")
 def transport_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depends(get_session)):
-    """Flight, train and bus for the trip's outbound day, side by side.
+    """Flight, train, bus and ferry for the trip's outbound day, side by side.
 
-    Trains and buses come from Google Maps transit (via SerpApi): real services with times and
-    durations. A fare is shown only when Google gives one, otherwise it is null and labelled
-    "Not available". Kept apart from the optimizer: it never changes the itinerary or its total."""
+    Trains, buses and ferries come from Google Maps transit (via SerpApi), for any two cities:
+    real services with times and durations. A fare is shown only when Google gives one, otherwise
+    it is null and labelled "Not available". Kept apart from the optimizer: it never changes the
+    itinerary or its total."""
     itinerary = saved_itinerary(session, trip)
     flight = flight_option(itinerary.flight if itinerary else None)
     result = {"origin": trip.origin, "destination": trip.destination, "date": trip.start_date.isoformat(),
-              "flight": flight, "trains": [], "buses": [], "comparison": [], "notice": None}
+              "flight": flight, "trains": [], "buses": [], "ferries": [], "comparison": [],
+              "notice": None}
     try:
         options = search_ground(trip.origin, trip.destination, trip.start_date)
     except TravelDataError as e:
         options, result["notice"] = [], str(e)
     trains = [o for o in options if o["kind"] == "train"]
     buses = [o for o in options if o["kind"] == "bus"]
+    ferries = [o for o in options if o["kind"] == "ferry"]
     fastest = lambda items: min((o for o in items if o["duration_minutes"] is not None),
                                 key=lambda o: o["duration_minutes"], default=None)
-    rows = [("Flight", flight), ("Train", fastest(trains)), ("Bus", fastest(buses))]
+    rows = [("Flight", flight), ("Train", fastest(trains)), ("Bus", fastest(buses)),
+            ("Ferry", fastest(ferries))]
     result["comparison"] = [
         {"mode": mode, "service": o["service"], "departs": o["departs"], "duration_minutes": o["duration_minutes"],
          "fare": o["fare"], "currency": o["currency"], "fare_label": o["fare_label"]}
         for mode, o in rows if o
     ]
     if not options and result["notice"] is None:
-        result["notice"] = "Google Maps lists no trains or buses for this route and day"
-    return {**result, "trains": trains, "buses": buses}
+        result["notice"] = "Google Maps lists no trains, buses or ferries for this route and day"
+    return {**result, "trains": trains, "buses": buses, "ferries": ferries}
