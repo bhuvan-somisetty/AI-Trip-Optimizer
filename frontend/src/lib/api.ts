@@ -247,7 +247,12 @@ export type FlightResponse = {
   currency?: string;
   cabin_class: string;
   stops: number;
+  /** Each connection, as Google Flights lists it; empty for non-stop, missing for cached fares. */
+  layovers?: { airport: string | null; airport_name: string | null; minutes: number | null; overnight: boolean }[];
   duration_minutes?: number | null;
+  /** Google Flights' fare level for the date; null when Google gave none. */
+  price_level?: "low" | "typical" | "high" | null;
+  typical_price_range?: [number, number] | null;
   price_status?: "cached" | "live";
   link?: string | null;
   source?: string;
@@ -263,6 +268,10 @@ export type HotelResponse = {
   stars?: number | null;
   amenities?: string[];
   distance_to_center_km?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  /** Google Hotels' photos, up to 5. */
+  images?: { thumbnail: string | null; original: string | null }[];
   price_status?: "cached" | "live";
   source?: string;
 };
@@ -371,3 +380,141 @@ export const listAudit = (token: string) => call<AuditEventResponse[]>("GET", "/
 
 /** 404 when the trip hasn't been decided yet. */
 export const getDecision = (token: string, tripId: string) => call<DecisionResponse>("GET", `/trips/${id(tripId)}/decision`, { token });
+
+// ---------------------------------------------------------------- explore, route, transport
+
+// The first explore or route for a city asks OpenTripMap and OpenStreetMap live (30 to 70 s); later ones are cached.
+const PLACES_TIMEOUT_MS = 100000;
+
+/** An attraction or restaurant from OpenTripMap; fields it didn't send are null. */
+export type PlaceResponse = {
+  id: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  image: string | null;
+  wikipedia: string | null;
+  rating: number | string | null;
+  latitude: number | null;
+  longitude: number | null;
+  distance_m: number | null;
+  source: string;
+  data_label: string;
+};
+
+/** A local dish: the name and description come from the AI model, the photo and text from Wikipedia. */
+export type DishResponse = {
+  name: string;
+  ai_description: string | null;
+  image: string | null;
+  wikipedia_text: string | null;
+  wikipedia: string | null;
+  data_label: string;
+  image_label: string | null;
+};
+
+export type ExploreResponse = {
+  city: string;
+  city_name: string;
+  attractions: PlaceResponse[];
+  restaurants: PlaceResponse[];
+  dishes: DishResponse[];
+  /** why the places lists are empty; null when they loaded */
+  notice: string | null;
+  /** why the dishes list is empty; null when it loaded */
+  dishes_notice: string | null;
+  source: string | null;
+  fetched_at: string | null;
+  cached: boolean;
+};
+
+export const getExplore = (token: string, tripId: string) =>
+  call<ExploreResponse>("GET", `/trips/${id(tripId)}/explore`, { token, timeoutMs: PLACES_TIMEOUT_MS });
+
+export type RouteStopResponse = {
+  order: number;
+  name: string;
+  category: string | null;
+  latitude: number;
+  longitude: number;
+  /** metres from the place to the nearest road */
+  to_road_m: number;
+  road_m_from_hotel: number;
+};
+
+export type RouteLegResponse = {
+  from: string;
+  to: string;
+  road_m: number;
+  straight_m: number;
+  /** [lat, lon] points along the road */
+  path: [number, number][];
+};
+
+export type RouteResponse = {
+  city: string;
+  hotel: { name: string; latitude: number; longitude: number; to_road_m: number } | null;
+  stops: RouteStopResponse[];
+  legs: RouteLegResponse[];
+  total_road_m: number | null;
+  /** attractions no road from the hotel reaches */
+  unreachable: string[];
+  source: string;
+  data_label: string;
+  /** why there is no route (e.g. the trip isn't optimized yet); null when there is one */
+  notice: string | null;
+};
+
+export const getRoute = (token: string, tripId: string, stops: number) =>
+  call<RouteResponse>("GET", `/trips/${id(tripId)}/route?stops=${stops}`, { token, timeoutMs: PLACES_TIMEOUT_MS });
+
+export type TransportStop = { name: string | null; code: string | null; time: string | null };
+
+/** A train or bus from Google Maps transit. The fare is null (fare_label "Not available") unless Google gave one. */
+export type GroundOptionResponse = {
+  id: string;
+  kind: "train" | "bus";
+  service: string | null;
+  operator: string | null;
+  from: TransportStop;
+  to: TransportStop;
+  departs: string | null;
+  arrives: string | null;
+  duration_minutes: number | null;
+  distance_km: number | null;
+  changes: number;
+  legs: { service: string | null; kind: "train" | "bus" | null; from: TransportStop; to: TransportStop; duration_minutes: number | null }[];
+  fare: number | null;
+  currency: string | null;
+  fare_label: string;
+  source: string;
+  data_label: string;
+};
+
+export type TransportFlightResponse = {
+  kind: "flight";
+  service: string;
+  departs: string | null;
+  arrives: string | null;
+  duration_minutes: number | null;
+  stops: number | null;
+  fare: number | null;
+  currency: string;
+  fare_label: string;
+  source: string | null;
+  data_label: string;
+};
+
+export type TransportResponse = {
+  origin: string;
+  destination: string;
+  date: string;
+  flight: TransportFlightResponse | null;
+  trains: GroundOptionResponse[];
+  buses: GroundOptionResponse[];
+  comparison: { mode: "Flight" | "Train" | "Bus"; service: string | null; departs: string | null; duration_minutes: number | null; fare: number | null; currency: string | null; fare_label: string }[];
+  notice: string | null;
+};
+
+export const getTransport = (token: string, tripId: string) =>
+  call<TransportResponse>("GET", `/trips/${id(tripId)}/transport`, { token, timeoutMs: PLACES_TIMEOUT_MS });
