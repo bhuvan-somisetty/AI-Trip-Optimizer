@@ -16,9 +16,11 @@ Nothing in this module invents a value: a field the provider didn't send is None
 Results are cached in memory for SEARCH_CACHE_MINUTES to stay inside rate limits.
 """
 import hashlib
+import json
 import logging
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import httpx
 
@@ -35,35 +37,66 @@ FLEX_DAYS = 3
 # SerpApi answers a search that found nothing with this error instead of an empty list.
 SERPAPI_NO_RESULTS = "hasn't returned any results"
 
-# Google Hotels is searched by city name, not airport code.
-CITIES: dict[str, tuple[str, str]] = {
-    "BLR": ("Bangalore", "IN"),
-    "DEL": ("New Delhi", "IN"),
-    "BOM": ("Mumbai", "IN"),
-    "MAA": ("Chennai", "IN"),
-    "HYD": ("Hyderabad", "IN"),
-    "CCU": ("Kolkata", "IN"),
-    "PNQ": ("Pune", "IN"),
-    "GOI": ("Goa", "IN"),
-    "GOX": ("Goa", "IN"),
-    "BBI": ("Bhubaneswar", "IN"),
-    "AMD": ("Ahmedabad", "IN"),
-    "COK": ("Kochi", "IN"),
-    "JAI": ("Jaipur", "IN"),
-    "LKO": ("Lucknow", "IN"),
-    "TRV": ("Thiruvananthapuram", "IN"),
-    "IXC": ("Chandigarh", "IN"),
-    "GAU": ("Guwahati", "IN"),
-    "DXB": ("Dubai", "AE"),
-    "SIN": ("Singapore", "SG"),
-    "LHR": ("London", "GB"),
-    "JFK": ("New York", "US"),
-    "NRT": ("Tokyo", "JP"),
-    "CDG": ("Paris", "FR"),
-    "BKK": ("Bangkok", "TH"),
-    "FRA": ("Frankfurt", "DE"),
-    "SFO": ("San Francisco", "US"),
+# ---- airports and their cities -------------------------------------------------------
+# Every airport with scheduled flights (about 4,000; app/data/airports.json, built from the
+# public-domain OurAirports data by scripts/build_airports.py). Google Hotels, OpenTripMap and
+# Google Maps transit are all searched by city name, so each airport code maps to its city.
+
+AIRPORTS_FILE = Path(__file__).resolve().parent / "data" / "airports.json"
+
+# Where the airport's town isn't the city a traveller means, or a shorter name reads better.
+CITY_NAMES = {
+    "BLR": "Bangalore", "GOI": "Goa", "GOX": "Goa", "NRT": "Tokyo", "HND": "Tokyo",
+    "COK": "Kochi", "TRV": "Thiruvananthapuram", "MAA": "Chennai", "CCU": "Kolkata",
+    "BOM": "Mumbai", "DEL": "New Delhi", "EWR": "New York", "LGA": "New York",
+    "STN": "London", "LGW": "London", "LTN": "London", "ORY": "Paris", "DMK": "Bangkok",
+    "BKK": "Bangkok", "ICN": "Seoul", "KIX": "Osaka", "PVG": "Shanghai", "PEK": "Beijing",
+    "PKX": "Beijing", "DWC": "Dubai", "IAD": "Washington", "DCA": "Washington",
 }
+
+
+def _load_airports() -> tuple[dict[str, dict], dict[str, str]]:
+    data = json.loads(AIRPORTS_FILE.read_text(encoding="utf-8"))
+    airports = {}
+    for code, (city, country, name, lat, lon, size, zone) in data["airports"].items():
+        airports[code] = {"code": code, "city": CITY_NAMES.get(code, city), "country": country,
+                          "airport": name, "latitude": lat, "longitude": lon, "size": size,
+                          "timezone": zone}
+    return airports, data["countries"]
+
+
+AIRPORTS, COUNTRY_NAMES = _load_airports()
+# Airport code -> (city name, ISO country code), the shape every search here uses.
+CITIES: dict[str, tuple[str, str]] = {code: (a["city"], a["country"]) for code, a in AIRPORTS.items()}
+
+
+def country_name(code: str) -> str:
+    return COUNTRY_NAMES.get(code, code)
+
+
+def search_airports(query: str, limit: int = 10) -> list[dict]:
+    """Airports for a search box: an exact code or city first, then cities and airport names that
+    start with the text, then ones that contain it; bigger airports and India first."""
+    q = query.strip().lower()
+    if not q:
+        return []
+
+    def rank(a: dict) -> tuple | None:
+        city, name, country = a["city"].lower(), a["airport"].lower(), country_name(a["country"]).lower()
+        if a["code"].lower() == q or city == q:
+            match = 0
+        elif city.startswith(q):
+            match = 1
+        elif name.startswith(q) or any(w.startswith(q) for w in city.split() + name.split()):
+            match = 2
+        elif q in city or q in name or country.startswith(q):
+            match = 3
+        else:
+            return None
+        return (match, -a["size"], a["country"] != "IN", a["city"], a["code"])
+
+    ranked = sorted((r, a) for a in AIRPORTS.values() if (r := rank(a)) is not None)
+    return [{**a, "country_name": country_name(a["country"])} for _, a in ranked[:limit]]
 
 
 class TravelDataError(Exception):
