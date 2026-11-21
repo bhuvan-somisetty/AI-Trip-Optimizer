@@ -377,6 +377,14 @@ def search_hotels(city: str, check_in: date, check_out: date) -> list[dict]:
                 "stars": row.get("extracted_hotel_class"),
                 "amenities": row.get("amenities") or [],
                 "distance_to_center_km": None,
+                # Where the hotel is (for the route to attractions) and Google's photos of it.
+                "latitude": (row.get("gps_coordinates") or {}).get("latitude"),
+                "longitude": (row.get("gps_coordinates") or {}).get("longitude"),
+                "images": [
+                    {"thumbnail": image.get("thumbnail"), "original": image.get("original_image")}
+                    for image in (row.get("images") or [])[:5]
+                    if image.get("thumbnail") or image.get("original_image")
+                ],
                 "price_status": "live",
                 "link": row.get("link"),
                 "source": "Google Hotels via SerpApi",
