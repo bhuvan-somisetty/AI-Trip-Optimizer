@@ -15,11 +15,13 @@ import math
 import re
 from datetime import datetime, timedelta, timezone
 
+import httpx
 from sqlmodel import Session
 
 from app import config
 from app.models import CityPlaces
-from app.travel_data import CITIES, TravelDataError, _request
+from app.routing import haversine_m
+from app.travel_data import AIRPORTS, CITIES, TravelDataError, _request
 
 OTM_URL = "https://api.opentripmap.com/0.1/en/places"
 SOURCE = "OpenTripMap (OpenStreetMap, Wikidata, Wikipedia)"
@@ -64,12 +66,50 @@ def category(kinds: str | None) -> str | None:
     return next((label for kind, label in CATEGORIES if kind in found), None)
 
 
+# A city found by name further than this from its airport is a namesake elsewhere (Udaipur in
+# Tripura for Udaipur airport in Rajasthan); the airport's own location is used instead.
+MAX_CITY_FROM_AIRPORT_M = 80_000
+USER_AGENT = "AI-Trip-Optimizer/1.0 (https://github.com/bhuvan-somisetty/AI-Trip-Optimizer)"
+
+
 def city_centre(city: str) -> tuple[float, float]:
     name, country = CITIES[city]
+    airport = AIRPORTS.get(city)
     body = _otm("geoname", name=name, country=country)
-    if not isinstance(body, dict) or body.get("lat") is None or body.get("lon") is None:
-        raise TravelDataError(f"OpenTripMap doesn't know where {name} is")
-    return float(body["lat"]), float(body["lon"])
+    found = isinstance(body, dict) and body.get("lat") is not None and body.get("lon") is not None
+    if found:
+        lat, lon = float(body["lat"]), float(body["lon"])
+        if airport is None or haversine_m(lat, lon, airport["latitude"], airport["longitude"]) <= MAX_CITY_FROM_AIRPORT_M:
+            return lat, lon
+    if airport is not None:
+        return near_airport(name, country, airport) or (airport["latitude"], airport["longitude"])
+    raise TravelDataError(f"OpenTripMap doesn't know where {name} is")
+
+
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_BOX_DEG = 0.7  # about 75 km either side of the airport
+
+
+def near_airport(name: str, country: str, airport: dict) -> tuple[float, float] | None:
+    """The city named `name` within reach of its airport, from OpenStreetMap's geocoder
+    (Nominatim: free, no key, one request a second; used only when the name alone found a
+    namesake, and the result is cached with the city's places)."""
+    lat, lon = airport["latitude"], airport["longitude"]
+    box = f"{lon - NOMINATIM_BOX_DEG},{lat + NOMINATIM_BOX_DEG},{lon + NOMINATIM_BOX_DEG},{lat - NOMINATIM_BOX_DEG}"
+    try:
+        response = httpx.get(
+            NOMINATIM_URL,
+            params={"q": name, "countrycodes": country.lower(), "viewbox": box, "bounded": 1,
+                    "format": "jsonv2", "limit": 1},
+            headers={"User-Agent": USER_AGENT},
+            timeout=15,
+        )
+        rows = response.json() if response.status_code == 200 else []
+    except (httpx.HTTPError, ValueError):
+        return None
+    if not rows:
+        return None
+    return float(rows[0]["lat"]), float(rows[0]["lon"])
 
 
 def nearby(lat: float, lon: float, kinds: str, limit: int, rate: str | None = None) -> list[dict]:
