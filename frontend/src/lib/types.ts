@@ -31,6 +31,8 @@ export type Traveler = {
 export type TripFilters = {
   cabin: CabinClass;
   maxStops: 0 | 1 | 2;
+  /** Also search this many days either side of each flight date for cheaper fares (0 = off). */
+  flexibleDays: 0 | 1 | 2;
   departureWindow: TimeWindow;
   avoidRedEye: boolean;
   preferredAirlines: string[];
@@ -84,6 +86,12 @@ export type Flight = {
   cabin: CabinClass;
   stops: number;
   via?: string;
+  /** Where each connection waits, as Google Flights lists it; empty for non-stop flights. */
+  layovers?: Layover[];
+  /** Google Flights' view of fares on this date for the route; undefined when Google gave none. */
+  priceLevel?: "low" | "typical" | "high";
+  /** Google Flights' typical fare range for the route, [low, high]. */
+  typicalPriceRange?: [number, number];
   /** not in the backend's flight data, so undefined for server-optimized itineraries */
   refundable?: boolean;
   baggageKg?: number;
@@ -92,6 +100,15 @@ export type Flight = {
   bookingLink?: string;
   source?: string;
 };
+
+export type Layover = {
+  airport: string;
+  airportName?: string;
+  minutes?: number;
+  overnight: boolean;
+};
+
+export type HotelImage = { thumbnail?: string; original?: string };
 
 export type Hotel = {
   id: string;
@@ -104,6 +121,10 @@ export type Hotel = {
   amenities: string[];
   distanceKm?: number;
   freeCancellation?: boolean;
+  /** Google Hotels' photos of the hotel, up to 5. */
+  images?: HotelImage[];
+  latitude?: number;
+  longitude?: number;
   priceStatus?: "cached" | "live";
   source?: string;
 };
