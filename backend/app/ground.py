@@ -1,36 +1,47 @@
-"""Trains and buses between two Indian cities, from Google Maps transit via SerpApi.
+"""Trains, buses and ferries between any two of the app's cities, from Google Maps transit via SerpApi.
 
 SerpApi's google_maps_directions engine with travel_mode=3 (transit) returns Google Maps'
-public-transport routes: for Indian intercity trips these are real trains (number, name,
-"Indian Railways", station codes) and buses (e.g. FlixBus), with departure and arrival times,
-duration and distance. It uses the same SERPAPI_API_KEY as flights and hotels: one search per
-route and day, cached like the other searches.
+public-transport routes wherever Google has them: Indian Railways trains with number, name and
+station codes, FlixBus and state buses, Eurostar, ferries, and so on, with departure and arrival
+times, duration and distance. It uses the same SERPAPI_API_KEY as flights and hotels.
 
-What is never invented: the vehicle kind comes from Google's own icon (rail / bus), the operator
-from `service_run_by`, the fare only from Google's `cost` + `currency` on the rare routes that
+Google answers with the next few departures after a given time, so the trip's first day is
+searched from three local times (early morning, midday, evening, in the origin airport's own
+time zone) and the answers are merged without repeats: night trains and buses are included.
+That is up to three searches per route and day, each cached like the other searches.
+
+What is never invented: the vehicle kind comes from Google's own icon (rail / bus / ferry), the
+operator from `service_run_by`, the fare only from Google's `cost` + `currency` on the routes that
 carry one ("Google Maps fare"); everywhere else the fare is None and labelled "Not available".
+A route Google has no public transport for (e.g. across an ocean) comes back empty.
 """
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app import config
-from app.travel_data import CITIES, SERPAPI_NO_RESULTS, SERPAPI_URL, TravelDataError, _cached, _request
+from app.travel_data import (
+    AIRPORTS, SERPAPI_NO_RESULTS, SERPAPI_URL, TravelDataError, _cached, _request, country_name,
+)
 
-IST = timezone(timedelta(hours=5, minutes=30))
-DEPART_HOUR = 5  # search from early morning of the trip's first day, local time
+DEPART_HOURS = (5, 12, 19)  # local times the day is searched from: morning, midday, evening
 SOURCE = "Google Maps transit via SerpApi"
+KINDS = {  # Google's icon file name starts with one of these
+    "train": ("rail", "train", "subway", "metro", "tram", "monorail", "funicular"),
+    "bus": ("bus", "trolleybus", "coach"),
+    "ferry": ("ferry", "boat"),
+}
 
 
 class GroundUnavailable(TravelDataError):
-    """Trains and buses can't be searched for this trip (abroad, unknown city, no key)."""
+    """Trains and buses can't be searched for this trip (unknown city, same city, no key)."""
 
 
 def kind_of(trip: dict) -> str | None:
-    # Google's own vehicle icon for the leg: .../rail2.svg, .../bus2.svg, .../subway2.svg ...
-    icon = (trip.get("icon") or "").rsplit("/", 1)[-1]
-    if icon.startswith(("rail", "train", "subway", "tram")):
-        return "train"
-    if icon.startswith("bus"):
-        return "bus"
+    # Google's own vehicle icon for the leg: .../rail2.svg, .../bus2.svg, .../ferry2.svg ...
+    icon = (trip.get("icon") or "").rsplit("/", 1)[-1].lower()
+    for kind, prefixes in KINDS.items():
+        if icon.startswith(prefixes):
+            return kind
     return None
 
 
@@ -79,28 +90,40 @@ def option(direction: dict, index: int) -> dict | None:
     }
 
 
+def local_timestamp(day: date, hour: int, zone: str | None) -> int:
+    """Unix time of `hour`:00 on `day` in the airport's time zone (UTC if it has none)."""
+    try:
+        tz = ZoneInfo(zone) if zone else timezone.utc
+    except (ZoneInfoNotFoundError, ValueError):
+        tz = timezone.utc
+    return int(datetime(day.year, day.month, day.day, hour, tzinfo=tz).timestamp())
+
+
+def place(airport: dict) -> str:
+    return f"{airport['city']}, {country_name(airport['country'])}"
+
+
 def search_ground(origin: str, destination: str, day: date) -> list[dict]:
-    """Trains and buses from `origin` to `destination` (IATA codes of Indian cities) on `day`."""
+    """Trains, buses and ferries from `origin` to `destination` (airport codes) on `day`."""
     if not config.SERPAPI_API_KEY:
         raise GroundUnavailable("Train and bus search isn't set up on the server (no SERPAPI_API_KEY)")
-    if origin not in CITIES or destination not in CITIES:
-        raise GroundUnavailable("Trains and buses are only searched between the app's Indian cities")
-    (from_city, from_country), (to_city, to_country) = CITIES[origin], CITIES[destination]
-    if from_country != "IN" or to_country != "IN":
-        raise GroundUnavailable("Trains and buses are only searched within India")
-    depart = int(datetime(day.year, day.month, day.day, DEPART_HOUR, tzinfo=IST).timestamp())
-    params = {
-        "engine": "google_maps_directions",
-        "start_addr": f"{from_city}, India",
-        "end_addr": f"{to_city}, India",
-        "travel_mode": 3,
-        "time": f"depart_at:{depart}",
-        "hl": "en",
-        "gl": "in",
-        "api_key": config.SERPAPI_API_KEY,
-    }
+    start, end = AIRPORTS.get(origin), AIRPORTS.get(destination)
+    if start is None or end is None:
+        raise GroundUnavailable("Trains and buses can only be searched between known airport cities")
+    if place(start) == place(end):
+        raise GroundUnavailable("The origin and destination are the same city")
 
-    def fetch():
+    def fetch(hour):
+        params = {
+            "engine": "google_maps_directions",
+            "start_addr": place(start),
+            "end_addr": place(end),
+            "travel_mode": 3,
+            "time": f"depart_at:{local_timestamp(day, hour, start.get('timezone'))}",
+            "hl": "en",
+            "gl": start["country"].lower(),
+            "api_key": config.SERPAPI_API_KEY,
+        }
         body = _request("SerpApi", "GET", SERPAPI_URL, params=params)
         error = body.get("error")
         if error and SERPAPI_NO_RESULTS in error:
@@ -109,6 +132,16 @@ def search_ground(origin: str, destination: str, day: date) -> list[dict]:
             raise TravelDataError(f"Train and bus search failed: {error}")
         return body
 
-    body = _cached(("ground", origin, destination, day.isoformat()), fetch)
-    options = [option(d, i) for i, d in enumerate(body.get("directions") or [], start=1)]
-    return [o for o in options if o is not None]
+    found, seen = [], set()
+    for hour in DEPART_HOURS:
+        body = _cached(("ground", origin, destination, day.isoformat(), hour), lambda: fetch(hour))
+        for direction in body.get("directions") or []:
+            route = option(direction, 0)
+            if route is None:
+                continue
+            key = (route["service"], route["departs"], route["from"]["name"])
+            if key in seen:
+                continue  # the same departure, found again from a later search time
+            seen.add(key)
+            found.append({**route, "id": f"GT-{len(found) + 1}"})
+    return found
