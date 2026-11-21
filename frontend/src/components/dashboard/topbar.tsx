@@ -15,18 +15,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SidebarBody } from "@/components/dashboard/sidebar";
+import { LogoutDialog } from "@/components/app/logout-dialog";
 import { actions, routeLabel, useStore } from "@/lib/store";
 import { initials, timeAgo } from "@/lib/format";
 import { cityByCode } from "@/lib/catalog";
@@ -37,6 +28,7 @@ type Result = { id: string; href: string; title: string; sub: string; kind: "Tri
 export function Topbar() {
   const router = useRouter();
   const s = useStore();
+  const isAdmin = s.session?.role === "admin";
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -89,11 +81,6 @@ export function Topbar() {
     setFocused(false);
     inputRef.current?.blur();
     router.push(href);
-  }
-
-  function handleLogout() {
-    actions.logout();
-    router.push("/login");
   }
 
   const dark = s.settings.theme === "dark";
@@ -220,7 +207,7 @@ export function Topbar() {
                 <DropdownMenuItem
                   key={n.id}
                   className="items-start gap-3 rounded-lg px-2.5 py-2.5"
-                  onClick={() => router.push(n.tripId ? `/trips/${n.tripId}` : "/audit")}
+                  onClick={() => router.push(n.tripId ? `/trips/${n.tripId}` : isAdmin ? "/audit" : "/dashboard")}
                 >
                   <span
                     className={cn(
@@ -237,11 +224,13 @@ export function Topbar() {
                 </DropdownMenuItem>
               ))}
             </div>
-            <div className="border-t p-1.5">
-              <DropdownMenuItem className="justify-center text-sm font-medium text-primary" onClick={() => router.push("/audit")}>
-                View full audit trail
-              </DropdownMenuItem>
-            </div>
+            {isAdmin && (
+              <div className="border-t p-1.5">
+                <DropdownMenuItem className="justify-center text-sm font-medium text-primary" onClick={() => router.push("/audit")}>
+                  View full audit trail
+                </DropdownMenuItem>
+              </div>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -278,18 +267,7 @@ export function Topbar() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={confirmLogoutOpen} onOpenChange={setConfirmLogoutOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Log out?</AlertDialogTitle>
-            <AlertDialogDescription>Are you sure you want to log out of AI Trip Optimizer?</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleLogout}>Log out</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <LogoutDialog open={confirmLogoutOpen} onOpenChange={setConfirmLogoutOpen} />
     </header>
   );
 }
