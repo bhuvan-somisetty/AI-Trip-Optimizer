@@ -1,8 +1,10 @@
-"""Explore a trip's destination: tourist attractions and restaurants (app/places.py).
+"""Explore a trip's destination: tourist attractions and restaurants (app/places.py) and
+famous local dishes (app/dishes.py).
 
 Kept apart from the optimizer on purpose: places never change a trip's prices, budget checks
 or Trade-off Ledger.
 """
+import logging
 import math
 
 from fastapi import APIRouter, Depends, Query
@@ -10,13 +12,44 @@ from sqlmodel import Session
 
 from app import roads
 from app.database import get_session
-from app.models import Trip
+from app.dishes import DishesUnavailable, local_dishes
+from app.models import CityPlaces, Trip
 from app.places import PlacesUnavailable, explore_city
 from app.routers.trips import get_owned_trip, saved_itinerary
 from app.routing import haversine_m, path_to, road_matrix, visiting_order
 from app.travel_data import CITIES, TravelDataError
 
 router = APIRouter(tags=["explore"])
+logger = logging.getLogger(__name__)
+
+# CITIES keeps ISO country codes; the dishes prompt reads better with the country's name.
+COUNTRIES = {"IN": "India", "AE": "United Arab Emirates", "SG": "Singapore", "GB": "United Kingdom",
+             "US": "United States", "JP": "Japan", "FR": "France", "TH": "Thailand", "DE": "Germany"}
+
+
+def dishes_for(session: Session, city: str) -> tuple[list[dict], str | None]:
+    """The city's dishes and, when there are none, why. Saved with the city's places, so the
+    AI and Wikipedia are asked once per city; a failure is not saved, so it is retried."""
+    row = session.get(CityPlaces, city)
+    if row is not None and "dishes" in (row.payload or {}):
+        return row.payload["dishes"], None
+    if city not in CITIES:
+        return [], f"Local dishes don't know the city for airport {city} yet"
+    name, country = CITIES[city]
+    try:
+        found = local_dishes(name, COUNTRIES.get(country, country))
+    except DishesUnavailable as e:
+        return [], str(e)
+    except Exception:
+        logger.warning("Local dishes failed for %s", city, exc_info=True)
+        return [], "Local dishes couldn't be loaded right now, please try again"
+    if not found:
+        return [], "The AI model gave no usable dish suggestions, please try again"
+    if row is not None:
+        row.payload = {**row.payload, "dishes": found}
+        session.add(row)
+        session.commit()
+    return found, None
 
 
 @router.get("/trips/{trip_id}/explore")
@@ -35,11 +68,13 @@ def explore_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depend
         "cached": False,
     }
     try:
-        return {**explore_city(session, city), "notice": None}
+        result = {**explore_city(session, city), "notice": None}
     except PlacesUnavailable as e:
-        return {**empty, "notice": str(e)}
+        result = {**empty, "notice": str(e)}
     except TravelDataError as e:
-        return {**empty, "notice": f"Tourist places couldn't be loaded right now: {e}"}
+        result = {**empty, "notice": f"Tourist places couldn't be loaded right now: {e}"}
+    dishes, dishes_notice = dishes_for(session, city)
+    return {**result, "dishes": dishes, "dishes_notice": dishes_notice}
 
 
 MAX_PATH_POINTS = 150  # per leg, enough for a map line, small enough to send
