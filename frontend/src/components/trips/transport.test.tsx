@@ -81,9 +81,50 @@ describe("TransportTab", () => {
     expect(screen.queryByText("Buses")).not.toBeInTheDocument();
   });
 
-  it("shows the API's notice, e.g. for trips outside India", async () => {
-    getTransport.mockResolvedValue(transport({ trains: [], comparison: [transport().comparison[0]], notice: "Trains and buses are only searched within India" }));
+  it("shows the API's notice when Google has nothing for the route", async () => {
+    const notice = "Google Maps lists no trains, buses or ferries for this route and day";
+    getTransport.mockResolvedValue(transport({ trains: [], ferries: [], comparison: [transport().comparison[0]], notice }));
     render(<TransportTab tripId="t1" />);
-    expect(await screen.findByText("Trains and buses are only searched within India")).toBeInTheDocument();
+    expect(await screen.findByText(notice)).toBeInTheDocument();
+    expect(screen.queryByText("Trains")).not.toBeInTheDocument();
+  });
+
+  it("lists ferries and their comparison row, with the operator Google gives", async () => {
+    const ferry: GroundOptionResponse = {
+      ...train,
+      id: "GT-2",
+      kind: "ferry",
+      service: "Dover - Calais",
+      operator: "P&O Ferries",
+      from: { name: "Dover", code: null, time: "8:00 AM" },
+      to: { name: "Calais", code: null, time: "10:30 AM" },
+      departs: "8:00 AM",
+      arrives: "10:30 AM",
+      duration_minutes: 90,
+      distance_km: 42,
+    };
+    const eurostar: GroundOptionResponse = { ...train, service: "Eurostar 9014", operator: "Eurostar", distance_km: 492 };
+    getTransport.mockResolvedValue(
+      transport({
+        trains: [eurostar],
+        ferries: [ferry],
+        comparison: [...transport().comparison, { mode: "Ferry", service: "Dover - Calais", departs: "8:00 AM", duration_minutes: 90, fare: null, currency: null, fare_label: "Not available" }],
+      })
+    );
+    render(<TransportTab tripId="t1" />);
+    const rows = within(await screen.findByRole("table")).getAllByRole("row");
+    expect(rows[3]).toHaveTextContent("Fastest ferry");
+    expect(rows[3]).toHaveTextContent("Not available");
+    expect(screen.getByText("P&O Ferries · 42 km · Direct")).toBeInTheDocument();
+    expect(screen.getByText(/Dover 8:00 AM → Calais 10:30 AM/)).toHaveTextContent("1h 30m");
+    expect(screen.getByText("Eurostar · 492 km · Direct")).toBeInTheDocument();
+  });
+
+  it("treats a missing ferries list as empty", async () => {
+    // The default response has no `ferries` field, like an API without ferry search.
+    getTransport.mockResolvedValue(transport());
+    render(<TransportTab tripId="t1" />);
+    expect(await screen.findByText("Indian Railways · 303 km · Direct")).toBeInTheDocument();
+    expect(screen.queryByText("Ferries")).not.toBeInTheDocument();
   });
 });
