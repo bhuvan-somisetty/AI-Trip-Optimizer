@@ -219,7 +219,9 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Recent activity</CardTitle>
-            <Link href="/audit" className="text-sm font-medium text-primary hover:underline">Full audit trail</Link>
+            {s.session?.role === "admin" && (
+              <Link href="/audit" className="text-sm font-medium text-primary hover:underline">Full audit trail</Link>
+            )}
           </CardHeader>
           <CardContent>
             <AuditTimeline events={s.audit.slice(0, 6)} />
