@@ -22,7 +22,7 @@ automatically, and every step lands in an **append-only audit trail**.
 ![Gemini](https://img.shields.io/badge/Gemini-8e75b2?style=flat-square&logo=googlegemini&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169e1?style=flat-square&logo=postgresql&logoColor=white)
 ![Neon](https://img.shields.io/badge/Neon-00e599?style=flat-square&logo=neon&logoColor=black)
-![pytest](https://img.shields.io/badge/pytest-246_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-292_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
 ![Vitest](https://img.shields.io/badge/Vitest-32_passing-729b1b?style=flat-square&logo=vitest&logoColor=white)
 
 **[Open the app](https://ai-trip-optimizer.vercel.app)** · [Why](#-why-ai-trip-optimizer) · [How it works](#-how-it-works) · [Architecture](#-architecture) · [Tech stack](#-tech-stack) · [Run locally](#-run-it-locally) · [Status](#-project-status) · [Docs](docs/)
@@ -49,7 +49,7 @@ has to approve the spend, and someone will later ask *why this flight and not th
 
 <div align="center">
 
-| **9 / 9** | **25** | **246 + 32** | **7** | **13** | **5–40 s** |
+| **9 / 9** | **27** | **292 + 32** | **8** | **14** | **5–40 s** |
 | :---: | :---: | :---: | :---: | :---: | :---: |
 | PRD user stories built, stretch included | API endpoints | backend + frontend tests | database tables | migrations | optimizer run, live (cached vs fresh search) |
 
@@ -126,7 +126,9 @@ flowchart LR
 - Travelers with saved preferences
 - Trip requests with route, dates, budget, rules and a priority, editable until review
 - Company travel policy, set by admins and applied on every run
-- Real fares and live hotel prices
+- Real fares and live hotel prices, with layovers, price level and optional flexible dates
+- Explore: famous places, restaurants and local dishes with photos
+- Shortest road routes from the hotel to attractions (Dijkstra on OpenStreetMap roads)
 - Sign in with Google, or email and password
 
 </td>
@@ -163,7 +165,7 @@ flowchart LR
 | **API** | FastAPI, SQLModel, Alembic, Pydantic, `python-jose` JWT + `passlib` bcrypt, `google-auth` |
 | **AI** | LangGraph (`search → check → compose`), `langchain-openai` against Gemini's OpenAI-compatible endpoint (`gemini-3.5-flash-lite`) |
 | **Data** | PostgreSQL 16 (Neon in production), Google Flights and Google Hotels via SerpApi, Travelpayouts fares as the flight fallback |
-| **Quality** | pytest (246 tests, no network or keys needed), Vitest + Testing Library (32 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
+| **Quality** | pytest (292 tests, no network or keys needed), Vitest + Testing Library (32 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
 | **Delivery** | Frontend and API as two Vercel projects (API in `sin1`), Neon Postgres, Docker Compose for local dev |
 
 ## ✦ Architecture
@@ -177,7 +179,7 @@ flowchart LR
         direction TB
         AU[auth · travelers · trips · what-if · settings · dashboard · audit] --> PL[LangGraph pipeline<br/>search · check · compose]
     end
-    API --> PG[(PostgreSQL · Neon<br/>7 tables)]
+    API --> PG[(PostgreSQL · Neon<br/>8 tables)]
     PL --> SA[SerpApi<br/>Google Flights + Hotels]
     PL --> TP[Travelpayouts<br/>fallback flight fares]
     PL --> GM[Gemini<br/>rationale only]
@@ -195,6 +197,7 @@ flowchart LR
 | What-if | `POST /trips/{id}/preview` · `POST /trips/{id}/preview/apply` |
 | Review | `POST /trips/{id}/review` · `POST /trips/{id}/decision` · `GET /trips/{id}/decision` |
 | Settings | `GET /me` · `PATCH /me` · `GET /policy` · `PUT /policy` (admins) |
+| Explore & route | `GET /trips/{id}/explore` (places, restaurants, dishes) · `GET /trips/{id}/route` (`stops`: 1 to 10) |
 | Dashboard & audit | `GET /dashboard` (`period`: `2026`, `2026-Q4`, `2026-11`) · `GET /audit` (filters: `trip_id`, `event_type`, `limit`) |
 
 Full request and response examples: [`docs/07_API_Specification.md`](docs/07_API_Specification.md) · live Swagger: [ai-trip-optimizer-api.vercel.app/docs](https://ai-trip-optimizer-api.vercel.app/docs)
@@ -221,6 +224,7 @@ Every key except `JWT_SECRET` and `DATABASE_URL` switches on one feature and can
 | Key | Turns on |
 | :--- | :--- |
 | `SERPAPI_API_KEY` | live flights (Google Flights) and hotel prices (free: 250 searches a month; one trip uses about 3) |
+| `OPENTRIPMAP_API_KEY` | tourist attractions and restaurants on the Explore tab (free: 5,000 requests a day, non-commercial) |
 | `TRAVELPAYOUTS_TOKEN` | cached flight fares, used when Google Flights is off or finds nothing |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | LLM rationale (Gemini or any OpenAI-compatible model); otherwise a template |
 | `GOOGLE_CLIENT_ID` / `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Sign in with Google |
@@ -228,7 +232,7 @@ Every key except `JWT_SECRET` and `DATABASE_URL` switches on one feature and can
 
 | Command | What it does |
 | :--- | :--- |
-| `cd backend && python -m pytest -q` | 246 backend tests on in-memory SQLite, with fixture fares and no LLM |
+| `cd backend && python -m pytest -q` | 292 backend tests on in-memory SQLite, with fixture fares and no LLM |
 | `cd frontend && npm run lint && npm test && npm run build` | the frontend checks CI runs (Vitest in jsdom, no backend needed) |
 | `cd backend && alembic upgrade head` | apply migrations when running the API outside Docker |
 
@@ -245,8 +249,8 @@ AI-Trip-Optimizer/
 │   │   ├── travel_data.py    # SerpApi (Google Flights, Hotels) and Travelpayouts clients, with caching
 │   │   ├── audit.py          # writes audit events in the caller's transaction
 │   │   └── models.py         # 7 SQLModel tables
-│   ├── alembic/versions/     # 13 migrations
-│   └── tests/                # 246 tests, fixture fares in tests/fixtures
+│   ├── alembic/versions/     # 14 migrations
+│   └── tests/                # 292 tests, fixture fares in tests/fixtures
 ├── frontend/                 # Next.js 16 app
 │   └── src/
 │       ├── app/              # dashboard, planning, trips, analytics, audit, travelers, settings
