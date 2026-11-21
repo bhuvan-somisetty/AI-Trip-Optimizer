@@ -1,4 +1,5 @@
 """Provider parsing and error handling, against canned HTTP responses (never the real APIs)."""
+import copy
 from datetime import date
 
 import httpx
@@ -393,3 +394,25 @@ def test_no_google_flights_and_no_fallback_is_an_empty_list(google, monkeypatch)
         {"error": "Google Flights hasn't returned any results for this query."}
     )
     assert search_flights("BLR", "BOM", date(2026, 12, 4)) == []
+
+
+def test_google_flights_keep_layovers_and_no_price_level_when_google_sends_none(google):
+    one_stop = search_flights("BLR", "BOM", date(2026, 12, 4))[1]
+    assert one_stop["layovers"] == []  # this fixture's row has no layovers block
+    assert one_stop["price_level"] is None and one_stop["typical_price_range"] is None
+
+
+def test_google_flights_layovers_and_price_level_are_read_from_real_fields(google):
+    body = copy.deepcopy(GOOGLE_FLIGHTS_BODY)
+    body["other_flights"][0]["layovers"] = [
+        {"duration": 80, "name": "Rajiv Gandhi International Airport", "id": "HYD"}
+    ]
+    body["price_insights"] = {"lowest_price": 4300, "price_level": "high", "typical_price_range": [3200, 4100]}
+    google.responses[travel_data.SERPAPI_URL] = FakeResponse(body)
+    direct, one_stop = search_flights("BLR", "BOM", date(2026, 12, 4))
+    assert one_stop["layovers"] == [
+        {"airport": "HYD", "airport_name": "Rajiv Gandhi International Airport", "minutes": 80, "overnight": False}
+    ]
+    assert direct["layovers"] == []
+    assert direct["price_level"] == one_stop["price_level"] == "high"
+    assert one_stop["typical_price_range"] == [3200, 4100]
