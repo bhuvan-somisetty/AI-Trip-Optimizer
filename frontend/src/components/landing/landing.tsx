@@ -7,7 +7,7 @@ import Lenis from "lenis";
 import { motion, useInView, useReducedMotion, useScroll } from "framer-motion";
 import { SkyJourney } from "./sky-journey";
 import { useScrollRange } from "./scroll-range";
-import { ArrowRight, ArrowUpRight, BadgeCheck, BarChart3, FileCheck2, History, Plane, ShieldCheck } from "lucide-react";
+import { ArrowRight, ArrowUpRight, BadgeCheck, BarChart3, FileCheck2, History, Plane, ShieldCheck, Volume2, VolumeX } from "lucide-react";
 
 const JetScene = dynamic(() => import("./jet-scene"), { ssr: false });
 const GlobeScene = dynamic(() => import("./globe-scene"), { ssr: false });
@@ -56,7 +56,7 @@ function useNavTone() {
   return dark;
 }
 
-function Chrome() {
+function Chrome({ sound, onSound }: { sound: boolean; onSound: () => void }) {
   const dark = useNavTone();
   return (
     <>
@@ -72,9 +72,21 @@ function Chrome() {
         <Link href="/" className="font-display text-xl tracking-tight md:absolute md:left-1/2 md:-translate-x-1/2">
           Trip Optimizer
         </Link>
-        <Link href="/login" className="text-[13px] tracking-wide">
-          Sign in
-        </Link>
+        <div className="flex items-center gap-5">
+          <button
+            type="button"
+            onClick={onSound}
+            aria-pressed={sound}
+            aria-label={sound ? "Turn sound off" : "Turn sound on"}
+            className="flex items-center gap-1.5 text-[13px] tracking-wide"
+          >
+            {sound ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+            <span className="hidden sm:inline">Sound {sound ? "on" : "off"}</span>
+          </button>
+          <Link href="/login" className="text-[13px] tracking-wide">
+            Sign in
+          </Link>
+        </div>
       </header>
       <Link
         href="/signup"
@@ -192,7 +204,6 @@ function Features() {
 function GlobalSection() {
   const { ref, p, active } = useSection();
   const textY = useScrollRange(p, [0, 1], ["8%", "-6%"]);
-  const globeProgress = useScrollRange(p, [0, 1], [0, 1]);
   const cta = useScrollRange(p, [0.55, 0.8], [0, 1]);
   const ctaY = useScrollRange(p, [0.55, 0.8], [30, 0]);
   const lede = useScrollRange(p, [0.1, 0.25, 0.45, 0.55], [0, 1, 1, 0]);
@@ -207,9 +218,12 @@ function GlobalSection() {
           Global
         </motion.p>
         <motion.div style={{ y: globeY }} className="absolute inset-0 z-10">
-          <GlobeScene progress={globeProgress} active={active} />
+          <GlobeScene active={active} />
         </motion.div>
-        <motion.p style={{ opacity: lede }} className="font-display absolute top-1/2 left-[6%] z-20 max-w-[14rem] text-xl leading-snug text-[#f6efe3]/85">
+        <motion.p style={{ opacity: lede }} className="pointer-events-none absolute inset-x-0 bottom-[12%] z-20 text-center text-[11px] tracking-[0.28em] text-[#f6efe3]/55 uppercase">
+          Drag to turn the globe · click anywhere to see where it is
+        </motion.p>
+        <motion.p style={{ opacity: lede }} className="font-display pointer-events-none absolute top-1/2 left-[6%] z-20 max-w-[14rem] text-xl leading-snug text-[#f6efe3]/85">
           Plan anywhere with total clarity and control.
         </motion.p>
         <motion.div style={{ opacity: cta, y: ctaY }} className="absolute inset-x-0 bottom-[17%] z-20 flex flex-col items-center gap-5 px-6 text-center">
@@ -232,10 +246,11 @@ function GlobalSection() {
 
 export function Landing() {
   useSmoothScroll();
+  const [sound, setSound] = useState(false);
   return (
     <div className="bg-[#07090d] text-foreground">
-      <Chrome />
-      <SkyJourney />
+      <Chrome sound={sound} onSound={() => setSound((s) => !s)} />
+      <SkyJourney sound={sound} />
       <JetSection />
       <Features />
       <GlobalSection />
