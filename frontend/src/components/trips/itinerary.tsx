@@ -1,12 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { AlertOctagon, AlertTriangle, Info, Plane, Hotel as HotelIcon, Star, MapPin, Luggage, RotateCcw, Sparkles, Pencil, BadgeCheck, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { amenityLabel, cabinLabel, cityByCode } from "@/lib/catalog";
 import { formatDate, formatDuration, formatInr, formatTime } from "@/lib/format";
-import type { Flight, Hotel, Itinerary, Trip } from "@/lib/types";
+import type { Flight, Hotel, Itinerary, Layover, Trip } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function CostSummary({ trip, it }: { trip: Trip; it: Itinerary }) {
@@ -96,6 +98,7 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
             <p className="text-sm text-muted-foreground">{flight.destination} · {cityByCode[flight.destination]?.name}</p>
           </div>
         </div>
+        {!!flight.layovers?.length && <p className="text-xs text-muted-foreground">{layoverText(flight.layovers)}</p>}
         <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs">
           <Badge variant="outline">{cabinLabel[flight.cabin]}</Badge>
           {flight.baggageKg !== undefined && <Badge variant="outline" className="gap-1"><Luggage className="size-3" />{flight.baggageKg} kg</Badge>}
@@ -103,6 +106,17 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
             <Badge variant="outline" className={cn("gap-1", flight.refundable ? "text-emerald-700 dark:text-success" : "text-muted-foreground")}>
               <RotateCcw className="size-3" />
               {flight.refundable ? "Refundable" : "Non-refundable"}
+            </Badge>
+          )}
+          {flight.priceStatus === "live" && (
+            <Badge variant="outline" title={flight.source ? `Quoted now by ${flight.source}` : "Quoted now"}>
+              Live fare
+            </Badge>
+          )}
+          {flight.priceLevel === "high" && (
+            <Badge variant="outline" className="text-amber-700 dark:text-warning" title="Google Flights' own rating of fares on this date for the route">
+              Fares: high for this date
+              {flight.typicalPriceRange && ` (typical ${formatInr(flight.typicalPriceRange[0])} to ${formatInr(flight.typicalPriceRange[1])})`}
             </Badge>
           )}
           {flight.priceStatus === "cached" && (
@@ -125,6 +139,15 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
   );
 }
 
+/** "1 stop via MAA (Chennai International Airport), 1h 00m", one part per connection, as Google Flights lists them. */
+export function layoverText(layovers: Layover[]) {
+  const parts = layovers.map((l) => {
+    const place = [l.airport, l.airportName && (l.airport ? `(${l.airportName})` : l.airportName)].filter(Boolean).join(" ");
+    return [place || "an unnamed airport", l.minutes !== undefined ? formatDuration(l.minutes) : null, l.overnight ? "overnight" : null].filter(Boolean).join(", ");
+  });
+  return `${layovers.length} stop${layovers.length > 1 ? "s" : ""} via ${parts.join("; ")}`;
+}
+
 export function StayCard({ hotel, nights, rooms, onChange, editable }: { hotel: Hotel; nights: number; rooms: number; onChange?: () => void; editable?: boolean }) {
   return (
     <Card className="gap-4">
@@ -144,6 +167,7 @@ export function StayCard({ hotel, nights, rooms, onChange, editable }: { hotel: 
         )}
       </CardHeader>
       <CardContent className="space-y-3">
+        <HotelPhoto hotel={hotel} />
         <div className="flex flex-wrap items-center gap-3 text-sm">
           {!!hotel.stars && (
             <span className="flex items-center gap-1 font-medium">
@@ -177,6 +201,32 @@ export function StayCard({ hotel, nights, rooms, onChange, editable }: { hotel: 
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** The first of Google Hotels' photos; a click opens the full-size one. Nothing is shown when Google sent none. */
+function HotelPhoto({ hotel }: { hotel: Hotel }) {
+  const [open, setOpen] = useState(false);
+  const photo = hotel.images?.find((img) => img.thumbnail || img.original);
+  if (!photo) return null;
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="group relative block w-full overflow-hidden rounded-xl border sm:w-56" aria-label={`Enlarge photo of ${hotel.name}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- Google's photo hosts vary, so next/image can't list them */}
+        <img src={photo.thumbnail ?? photo.original} alt={hotel.name} loading="lazy" className="aspect-[4/3] w-full object-cover transition-transform group-hover:scale-[1.03]" />
+        <span className="absolute right-1.5 bottom-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">Photo: Google</span>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{hotel.name}</DialogTitle>
+            <DialogDescription>Photo: Google</DialogDescription>
+          </DialogHeader>
+          {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
+          <img src={photo.original ?? photo.thumbnail} alt={hotel.name} className="max-h-[70dvh] w-full rounded-xl object-contain" />
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
