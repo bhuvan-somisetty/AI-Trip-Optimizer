@@ -35,6 +35,9 @@ import { PipelineProgress } from "@/components/trips/pipeline";
 import { ConstraintFlags, CostSummary, FlightCard, Rationale, StayCard } from "@/components/trips/itinerary";
 import { TradeoffLedger } from "@/components/trips/ledger";
 import { ServerWhatIf, WhatIf } from "@/components/trips/whatif";
+import { ExploreTab } from "@/components/trips/explore";
+import { RouteTab } from "@/components/trips/route";
+import { TransportTab } from "@/components/trips/transport";
 import { actions, getState, routeLabel, travelerNames, useStore } from "@/lib/store";
 import { amenityLabel, cabinLabel } from "@/lib/catalog";
 import { priorityLabel, windowLabel } from "@/lib/optimizer";
@@ -43,7 +46,7 @@ import { toast } from "@/lib/toast";
 import type { LedgerEntry, TripStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type Tab = "itinerary" | "ledger" | "whatif" | "activity" | "request";
+type Tab = "itinerary" | "ledger" | "whatif" | "explore" | "route" | "transport" | "activity" | "request";
 
 const flow: TripStatus[] = ["DRAFT", "OPTIMIZING", "OPTIMIZED", "UNDER_REVIEW", "DECIDED"];
 
@@ -158,6 +161,14 @@ export default function TripDetailPage() {
     { value: "ledger", label: "Trade-off Ledger", disabled: !it, count: it?.ledger.length },
     // Server itineraries saved before search results were kept can't be rerun until optimized again.
     { value: "whatif" as Tab, label: "What-if", disabled: !it || it.locked },
+    // Places, routes and trains come from the server only; none of them change the itinerary.
+    ...(apiMode
+      ? [
+          { value: "explore" as Tab, label: "Explore" },
+          { value: "route" as Tab, label: "Route" },
+          { value: "transport" as Tab, label: "Transport" },
+        ]
+      : []),
     { value: "activity", label: "Activity", count: events.length },
     { value: "request", label: "Request details" },
   ];
@@ -419,6 +430,12 @@ export default function TripDetailPage() {
 
       {tab === "whatif" && it && (apiMode ? <ServerWhatIf trip={t} editable={!decided} /> : <WhatIf trip={t} editable={!decided} />)}
 
+      {tab === "explore" && <ExploreTab tripId={t.id} />}
+
+      {tab === "route" && <RouteTab tripId={t.id} />}
+
+      {tab === "transport" && <TransportTab tripId={t.id} />}
+
       {tab === "activity" && (
         <Card>
           <CardHeader>
@@ -457,6 +474,7 @@ export default function TripDetailPage() {
               <Detail label="Priority" value={priorityLabel[t.filters.priority]} />
               <Detail label="Cabin" value={cabinLabel[t.filters.cabin]} />
               <Detail label="Max stops" value={t.filters.maxStops === 0 ? "Non-stop only" : `Up to ${t.filters.maxStops}`} />
+              <Detail label="Flexible dates" value={t.filters.flexibleDays ? `±${t.filters.flexibleDays} day${t.filters.flexibleDays > 1 ? "s" : ""}` : "Off"} />
               <Detail label="Departure window" value={windowLabel[t.filters.departureWindow]} />
               <Detail label="Red-eyes" value={t.filters.avoidRedEye ? "Avoid" : "Allowed"} />
               <Detail label="Preferred airlines" value={t.filters.preferredAirlines.join(", ") || "None"} />
