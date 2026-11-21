@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import audit, auth, dashboard, explore, settings, travelers, trips
+from app.routers import airports, audit, auth, dashboard, explore, settings, travelers, trips
 
 app = FastAPI(title="AI Trip Optimizer API")
 
@@ -24,6 +24,7 @@ app.include_router(audit.router)
 app.include_router(dashboard.router)
 app.include_router(settings.router)
 app.include_router(explore.router)
+app.include_router(airports.router)
 
 
 @app.get("/health")
