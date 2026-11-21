@@ -14,6 +14,8 @@ export type NavItem = {
   href: string;
   icon: LucideIcon;
   section: "Workspace" | "Insights" | "Admin";
+  /** Only shown to admins. */
+  adminOnly?: boolean;
 };
 
 export const navItems: NavItem[] = [
@@ -21,7 +23,7 @@ export const navItems: NavItem[] = [
   { label: "Trips", href: "/trips", icon: Plane, section: "Workspace" },
   { label: "Plan a Trip", href: "/planning", icon: PlusCircle, section: "Workspace" },
   { label: "Analytics", href: "/analytics", icon: BarChart3, section: "Insights" },
-  { label: "Audit Trail", href: "/audit", icon: ScrollText, section: "Insights" },
   { label: "Travelers", href: "/users", icon: Users, section: "Admin" },
+  { label: "Audit Trail", href: "/audit", icon: ScrollText, section: "Admin", adminOnly: true },
   { label: "Settings", href: "/settings", icon: Settings, section: "Admin" },
 ];
