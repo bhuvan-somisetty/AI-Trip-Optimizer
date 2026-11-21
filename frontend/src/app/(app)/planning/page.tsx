@@ -447,6 +447,17 @@ export default function PlanningPage() {
                         ]}
                       />
                     </Field>
+                    <Field label="Flexible dates" hint="Also searches nearby days for cheaper fares; uses more searches.">
+                      <Segmented
+                        value={d.filters.flexibleDays}
+                        onChange={(v) => upF({ flexibleDays: v as 0 | 1 | 2 })}
+                        options={[
+                          { value: 0, label: "Off" },
+                          { value: 1, label: "±1 day" },
+                          { value: 2, label: "±2 days" },
+                        ]}
+                      />
+                    </Field>
                     <Field label="Preferred departure time">
                       <Segmented
                         size="sm"
@@ -592,7 +603,7 @@ export default function PlanningPage() {
                     <ReviewRow label="Dates" value={formatDateRange(d.departDate, roundTrip ? d.returnDate : null)} onEdit={() => go(1)} />
                     <ReviewRow
                       label="Flights"
-                      value={`${cabinLabel[d.filters.cabin]} · ${d.filters.maxStops === 0 ? "non-stop" : `≤ ${d.filters.maxStops} stop`} · ${windowLabel[d.filters.departureWindow]}${d.filters.avoidRedEye ? " · no red-eyes" : ""}${d.filters.excludedAirlines.length ? ` · excl. ${d.filters.excludedAirlines.join(", ")}` : ""}`}
+                      value={`${cabinLabel[d.filters.cabin]} · ${d.filters.maxStops === 0 ? "non-stop" : `≤ ${d.filters.maxStops} stop`} · ${windowLabel[d.filters.departureWindow]}${d.filters.flexibleDays ? ` · ±${d.filters.flexibleDays} day${d.filters.flexibleDays > 1 ? "s" : ""}` : ""}${d.filters.avoidRedEye ? " · no red-eyes" : ""}${d.filters.excludedAirlines.length ? ` · excl. ${d.filters.excludedAirlines.join(", ")}` : ""}`}
                       onEdit={() => go(2)}
                     />
                     <ReviewRow
