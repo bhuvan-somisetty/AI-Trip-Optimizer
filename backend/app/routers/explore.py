@@ -3,13 +3,17 @@
 Kept apart from the optimizer on purpose: places never change a trip's prices, budget checks
 or Trade-off Ledger.
 """
-from fastapi import APIRouter, Depends
+import math
+
+from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
+from app import roads
 from app.database import get_session
 from app.models import Trip
 from app.places import PlacesUnavailable, explore_city
-from app.routers.trips import get_owned_trip
+from app.routers.trips import get_owned_trip, saved_itinerary
+from app.routing import haversine_m, path_to, road_matrix, visiting_order
 from app.travel_data import CITIES, TravelDataError
 
 router = APIRouter(tags=["explore"])
@@ -36,3 +40,79 @@ def explore_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depend
         return {**empty, "notice": str(e)}
     except TravelDataError as e:
         return {**empty, "notice": f"Tourist places couldn't be loaded right now: {e}"}
+
+
+MAX_PATH_POINTS = 150  # per leg, enough for a map line, small enough to send
+
+
+def thin(points: list[list[float]]) -> list[list[float]]:
+    if len(points) <= MAX_PATH_POINTS:
+        return points
+    step = math.ceil(len(points) / MAX_PATH_POINTS)
+    return points[::step] + [points[-1]]
+
+
+@router.get("/trips/{trip_id}/route")
+def route_trip(
+    stops: int = Query(default=6, ge=1, le=10),
+    trip: Trip = Depends(get_owned_trip),
+    session: Session = Depends(get_session),
+):
+    """Shortest road routes from the trip's hotel to its top attractions (Dijkstra on the real
+    OpenStreetMap road network), and a visiting order: the nearest attraction by road next.
+
+    Distances are road metres; no travel times are given, since the road data has no reliable
+    speeds. When a route can't be built, `notice` says why and nothing is made up."""
+    result = {"city": trip.destination, "hotel": None, "stops": [], "legs": [], "total_road_m": None,
+              "unreachable": [], "source": roads.SOURCE, "data_label": "Map data", "notice": None}
+    itinerary = saved_itinerary(session, trip)
+    hotel = itinerary.hotel if itinerary else None
+    if not hotel:
+        return {**result, "notice": "Optimize the trip first: the route starts at its hotel"}
+    if hotel.get("latitude") is None or hotel.get("longitude") is None:
+        return {**result, "notice": "This trip's hotel has no map location; optimize the trip again"}
+    try:
+        places = explore_city(session, trip.destination)
+    except TravelDataError as e:
+        return {**result, "notice": f"Attractions couldn't be loaded: {e}"}
+    sights = [a for a in places["attractions"] if a.get("latitude") is not None][:stops]
+    if not sights:
+        return {**result, "notice": "No attractions with a map location were found for this city"}
+
+    points = [(hotel["latitude"], hotel["longitude"])] + [(a["latitude"], a["longitude"]) for a in sights]
+    names = [hotel["name"]] + [a["name"] for a in sights]
+    try:
+        graph = roads.road_graph(points)
+    except TravelDataError as e:
+        return {**result, "notice": str(e)}
+    snapped = [graph.nearest(lat, lon) for lat, lon in points]
+    nodes = [node for node, _ in snapped]
+    matrix, prevs = road_matrix(graph.graph, nodes)
+    order = visiting_order(matrix)
+
+    legs = []
+    for a, b in zip(order, order[1:]):
+        path = path_to(prevs[a], nodes[a], nodes[b])
+        legs.append({
+            "from": names[a],
+            "to": names[b],
+            "road_m": round(matrix[a][b]),
+            "straight_m": round(haversine_m(*points[a], *points[b])),
+            "path": thin([list(graph.coords[n]) for n in path]),
+        })
+    hotel_out = {"name": hotel["name"], "latitude": hotel["latitude"], "longitude": hotel["longitude"],
+                 "to_road_m": round(snapped[0][1])}
+    stops_out = [
+        {"order": position, "name": sights[i - 1]["name"], "category": sights[i - 1].get("category"),
+         "latitude": points[i][0], "longitude": points[i][1], "to_road_m": round(snapped[i][1]),
+         "road_m_from_hotel": round(matrix[0][i])}
+        for position, i in enumerate(order[1:], start=1)
+    ]
+    return {
+        **result,
+        "hotel": hotel_out,
+        "stops": stops_out,
+        "legs": legs,
+        "total_road_m": round(sum(leg["road_m"] for leg in legs)),
+        "unreachable": [names[i] for i in range(1, len(names)) if i not in order],
+    }
