@@ -18,15 +18,10 @@ from app.models import CityPlaces, Trip
 from app.places import PlacesUnavailable, explore_city
 from app.routers.trips import get_owned_trip, saved_itinerary
 from app.routing import haversine_m, path_to, road_matrix, visiting_order
-from app.travel_data import CITIES, TravelDataError
+from app.travel_data import CITIES, TravelDataError, country_name
 
 router = APIRouter(tags=["explore"])
 logger = logging.getLogger(__name__)
-
-# CITIES keeps ISO country codes; the dishes prompt reads better with the country's name.
-COUNTRIES = {"IN": "India", "AE": "United Arab Emirates", "SG": "Singapore", "GB": "United Kingdom",
-             "US": "United States", "JP": "Japan", "FR": "France", "TH": "Thailand", "DE": "Germany"}
-
 
 def dishes_for(session: Session, city: str) -> tuple[list[dict], str | None]:
     """The city's dishes and, when there are none, why. Saved with the city's places, so the
@@ -38,7 +33,7 @@ def dishes_for(session: Session, city: str) -> tuple[list[dict], str | None]:
         return [], f"Local dishes don't know the city for airport {city} yet"
     name, country = CITIES[city]
     try:
-        found = local_dishes(name, COUNTRIES.get(country, country))
+        found = local_dishes(name, country_name(country))
     except DishesUnavailable as e:
         return [], str(e)
     except Exception:
