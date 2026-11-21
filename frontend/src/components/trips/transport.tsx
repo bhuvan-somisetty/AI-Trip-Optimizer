@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bus, Loader2, Plane, RefreshCw, TrainFront } from "lucide-react";
+import { Bus, Loader2, Plane, RefreshCw, Ship, TrainFront } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { formatDate, formatDuration, formatInr } from "@/lib/format";
 import { useStore } from "@/lib/store";
 
 /**
- * Flight, trains and buses for the trip's outbound day, side by side (GET /trips/{id}/transport).
+ * Flight, trains, buses and ferries for the trip's outbound day, side by side (GET /trips/{id}/transport).
  * A fare is shown only when the API has one; otherwise its label ("Not available"). Nothing here
  * changes the trip's prices, budget check or Trade-off Ledger.
  */
@@ -38,14 +38,14 @@ export function TransportTab({ tripId }: { tripId: string }) {
   if (!token) {
     return (
       <Card>
-        <EmptyState icon={TrainFront} title="Transport needs the server" description="Train and bus schedules come from the API. Sign in with your account to see them." />
+        <EmptyState icon={TrainFront} title="Transport needs the server" description="Train, bus and ferry schedules come from the API. Sign in with your account to see them." />
       </Card>
     );
   }
   if (result?.key !== key) {
     return (
       <Card>
-        <EmptyState icon={Loader2} className="[&_svg]:animate-spin" title="Looking up trains and buses…" description="Searching Google Maps schedules for the trip's first day." />
+        <EmptyState icon={Loader2} className="[&_svg]:animate-spin" title="Looking up trains, buses and ferries…" description="Searching Google Maps schedules for the trip's first day, morning to night." />
       </Card>
     );
   }
@@ -68,6 +68,7 @@ export function TransportTab({ tripId }: { tripId: string }) {
   }
 
   const x = result.data;
+  const ferries = x.ferries ?? [];
   return (
     <div className="space-y-6">
       <Card>
@@ -76,7 +77,7 @@ export function TransportTab({ tripId }: { tripId: string }) {
             {x.origin} to {x.destination} on {formatDate(x.date, { weekday: "short", day: "numeric", month: "short" })}
           </CardTitle>
           <CardDescription>
-            The fastest of each way to travel. Trains and buses are searched within India only. A fare is shown only when it is known.
+            The fastest of each way to travel. A fare is shown only when it is known.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -120,6 +121,7 @@ export function TransportTab({ tripId }: { tripId: string }) {
 
       <OptionList icon={TrainFront} title="Trains" options={x.trains} />
       <OptionList icon={Bus} title="Buses" options={x.buses} />
+      <OptionList icon={Ship} title="Ferries" options={ferries} />
     </div>
   );
 }
@@ -132,6 +134,7 @@ function OptionList({ icon: Icon, title, options }: { icon: typeof Bus; title: s
         <CardTitle className="flex items-center gap-2">
           <Icon className="size-4 text-primary" />
           {title}
+          <span className="text-sm font-normal text-muted-foreground">({options.length})</span>
         </CardTitle>
         <CardDescription>
           Schedules from Google Maps. <Badge variant="outline" className="ml-1 font-normal">{options[0].data_label}</Badge>
@@ -170,7 +173,7 @@ function OptionList({ icon: Icon, title, options }: { icon: typeof Bus; title: s
 }
 
 function ModeIcon({ mode }: { mode: string }) {
-  const Icon = mode === "Flight" ? Plane : mode === "Train" ? TrainFront : Bus;
+  const Icon = mode === "Flight" ? Plane : mode === "Train" ? TrainFront : mode === "Ferry" ? Ship : Bus;
   return <Icon className="size-4 text-muted-foreground" />;
 }
 
