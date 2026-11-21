@@ -11,7 +11,7 @@ import json
 import logging
 import re
 import statistics
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from langgraph.graph import END, START, StateGraph
 
@@ -22,20 +22,53 @@ from app.pipeline.state import PipelineState
 logger = logging.getLogger(__name__)
 
 
+def flexible_days(preferences: dict) -> int:
+    # "Flexible dates": also search this many days either side (0, 1 or 2). Off by default
+    # because each extra day is one more live search per leg.
+    try:
+        return max(0, min(2, int(preference(preferences, "flexible_days", "flexibleDays") or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def nearby_flights(origin: str, destination: str, day, cabin: str | None, days: int, seen: set) -> list[dict]:
+    """Flights up to `days` either side of `day`, for the ledger's "Different day" rows.
+
+    A nearby day that fails or finds nothing is skipped: the trip's own day already worked.
+    """
+    extra = []
+    for offset in [d for k in range(1, days + 1) for d in (-k, k)]:
+        try:
+            for flight in travel_data.search_flights(origin, destination, day + timedelta(days=offset), cabin):
+                if flight["id"] not in seen:
+                    seen.add(flight["id"])
+                    extra.append(flight)
+        except travel_data.TravelDataError:
+            continue
+    return extra
+
+
 def search_node(state: PipelineState) -> dict:
     # Pure lookup, no LLM: every option the later nodes see came from a real provider.
     request = state["request"]
+    cabin = request["preferences"].get("cabin_class")
+    flex = flexible_days(request["preferences"])
     found: dict = {"flight_options": [], "hotel_options": []}
     try:
         found["flight_options"] = travel_data.search_flights(
             request["origin"],
             request["destination"],
             request["start_date"],
-            request["preferences"].get("cabin_class"),
+            cabin,
         )
     except travel_data.TravelDataError as e:
         found["search_error"] = str(e)
         return found
+    if flex:
+        seen = {f["id"] for f in found["flight_options"]}
+        found["flight_options"] += nearby_flights(
+            request["origin"], request["destination"], request["start_date"], cabin, flex, seen
+        )
     # The return leg is searched like the outbound one. If it can't be found the trip is still
     # built, with a flag saying the total has no return flight in it.
     try:
@@ -43,8 +76,13 @@ def search_node(state: PipelineState) -> dict:
             request["destination"],
             request["origin"],
             request["end_date"],
-            request["preferences"].get("cabin_class"),
+            cabin,
         )
+        if flex:
+            seen = {f["id"] for f in found["return_options"]}
+            found["return_options"] += nearby_flights(
+                request["destination"], request["origin"], request["end_date"], cabin, flex, seen
+            )
     except travel_data.TravelDataError as e:
         found["return_options"] = []
         found["return_unavailable"] = f"Return flight search failed: {e}"
@@ -423,6 +461,30 @@ def policy_flags(request: dict, flight: dict | None, return_flight: dict | None)
     return flags
 
 
+def fare_flags(state: PipelineState, request: dict, flight: dict | None, return_flight: dict | None) -> list[str]:
+    """Hints about the fare itself, all from real search data: a cheaper fare on a nearby day
+    (only when the trip asked for flexible dates) and Google's "prices are high" level."""
+    flags = []
+    legs = (("Flight", flight, state.get("flight_options") or [], request["start_date"]),
+            ("Return flight", return_flight, state.get("return_options") or [], request["end_date"]))
+    for name, chosen, options, day in legs:
+        if chosen is None:
+            continue
+        if flexible_days(request["preferences"]):
+            cheaper = [o for o in options if days_off(o, day) != 0 and o["price"] < chosen["price"]]
+            best = min(cheaper, key=lambda o: o["price"], default=None)
+            if best:
+                flags.append(
+                    f"{name}: {best['id']} on {best['departure_time'][:10]} costs {best['price']:,.0f}, "
+                    f"{chosen['price'] - best['price']:,.0f} less than {chosen['id']} on the trip's date"
+                )
+        if chosen.get("price_level") == "high":
+            low_high = chosen.get("typical_price_range")
+            typical = f" (typical {low_high[0]:,.0f} to {low_high[1]:,.0f})" if low_high else ""
+            flags.append(f"{name}: Google Flights rates fares on this date as high for the route{typical}")
+    return flags
+
+
 def with_policy_preferences(request: dict) -> dict:
     # The policy's preferred vendors join the trip's preferred airlines: both only break price ties.
     preferences = request["preferences"]
@@ -553,6 +615,7 @@ def check_node(state: PipelineState) -> dict:
     if budget_flag:
         flags.append(budget_flag)
     flags += policy_flags(request, flight, return_flight)
+    flags += fare_flags(state, request, flight, return_flight)
 
     return {
         "check": {
@@ -923,12 +986,17 @@ def edit_itinerary(state: PipelineState, current: dict, kind: str, option_id: st
     _, _, own_budget_flag = price_check(
         request, check["flight"], check["hotel"], check["nights"], check.get("return_flight")
     )
-    own = {own_budget_flag, *policy_flags(request, check["flight"], check.get("return_flight"))}
+    own = {
+        own_budget_flag,
+        *policy_flags(request, check["flight"], check.get("return_flight")),
+        *fare_flags(state, request, check["flight"], check.get("return_flight")),
+    }
     flags = [f for f in check["flags"] if f not in own]
     total_cost, within_budget, budget_flag = price_check(request, flight, hotel, check["nights"], return_flight)
     if budget_flag:
         flags.append(budget_flag)
     flags += policy_flags(request, flight, return_flight)
+    flags += fare_flags(state, request, flight, return_flight)
     saved = savings(check["typical"], chosen_prices(flight, return_flight, hotel, check["nights"]))
 
     edited: PipelineState = {
