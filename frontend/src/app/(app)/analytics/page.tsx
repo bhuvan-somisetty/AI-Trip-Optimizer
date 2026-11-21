@@ -24,6 +24,7 @@ const tooltipStyle = { background: "var(--color-popover)", border: "1px solid va
 
 export default function AnalyticsPage() {
   const s = useStore();
+  const isAdmin = s.session?.role === "admin";
   const [period, setPeriod] = useState<Period>("180");
   const [now] = useState(() => Date.now());
 
@@ -105,13 +106,15 @@ export default function AnalyticsPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
         title="Analytics"
-        description="Spend, savings and decision turnaround for the selected period. Full event history lives in the audit trail."
+        description={`Spend, savings and decision turnaround for the selected period.${isAdmin ? " Full event history lives in the audit trail." : ""}`}
         actions={
           <>
-            <Link href="/audit" className={buttonVariants({ variant: "outline", size: "lg" })}>
-              <ScrollText />
-              Audit trail
-            </Link>
+            {isAdmin && (
+              <Link href="/audit" className={buttonVariants({ variant: "outline", size: "lg" })}>
+                <ScrollText />
+                Audit trail
+              </Link>
+            )}
             <Button variant="outline" size="lg" onClick={exportCsv} disabled={!d.decided.length}>
               <Download />
               Export
