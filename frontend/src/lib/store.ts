@@ -56,7 +56,9 @@ export const defaultPolicy: Policy = {
 
 export const defaultFilters: TripFilters = {
   cabin: "economy",
-  maxStops: 1,
+  // Up to 2 stops, so cheaper connecting flights are compared too.
+  maxStops: 2,
+  flexibleDays: 0,
   departureWindow: "any",
   avoidRedEye: true,
   preferredAirlines: [],
