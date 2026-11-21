@@ -194,13 +194,34 @@ function DishCard({ dish: d }: { dish: DishResponse }) {
 }
 
 function Photo({ src, alt, label }: { src: string; alt: string; label?: string }) {
+  const thumb = wikimediaThumb(src);
+  const [failed, setFailed] = useState(false);
   return (
     <div className="relative">
       {/* eslint-disable-next-line @next/next/no-img-element -- Wikipedia and OpenTripMap image hosts vary, so next/image can't list them */}
-      <img src={src} alt={alt} loading="lazy" className="aspect-[16/10] w-full object-cover" />
+      <img
+        src={failed ? thumb.original : thumb.src}
+        alt={alt}
+        loading="lazy"
+        onError={() => thumb.original && setFailed(true)}
+        className="aspect-[16/10] w-full object-cover"
+      />
       {label && <span className="absolute right-1.5 bottom-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">{label}</span>}
     </div>
   );
+}
+
+// Wikimedia only serves thumbnails at its standard widths (https://w.wiki/GHai) and answers 400 for
+// others, such as the 400px previews OpenTripMap gives.
+const THUMB_WIDTH = 330;
+const WIKIMEDIA_THUMB = /^(https:\/\/upload\.wikimedia\.org\/[^?#]+?)\/thumb\/([^?#]+)\/\d+px-([^/?#]+)$/;
+
+/** A Wikimedia thumbnail at a standard width, and the original file to fall back to; other URLs unchanged. */
+export function wikimediaThumb(url: string): { src: string; original?: string } {
+  const m = url.match(WIKIMEDIA_THUMB);
+  if (!m) return { src: url };
+  const [, base, file, name] = m;
+  return { src: `${base}/thumb/${file}/${THUMB_WIDTH}px-${name}`, original: `${base}/${file}` };
 }
 
 function WikiLink({ href }: { href: string }) {
