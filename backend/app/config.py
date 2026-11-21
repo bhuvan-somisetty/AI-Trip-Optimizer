@@ -24,6 +24,12 @@ TRAVELPAYOUTS_TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN", "")
 # Without one, hotel prices are shown as unavailable.
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
 SEARCH_CACHE_MINUTES = int(os.getenv("SEARCH_CACHE_MINUTES") or "30")
+# Tourist attractions and restaurants (app/places.py): a free OpenTripMap key from
+# https://dev.opentripmap.org (5,000 requests a day, non-commercial). Without one, the
+# Explore view says it isn't set up instead of showing anything made up.
+OPENTRIPMAP_API_KEY = os.getenv("OPENTRIPMAP_API_KEY", "")
+# A city's places are fetched once and kept this many days in the city_places table.
+PLACES_CACHE_DAYS = int(os.getenv("PLACES_CACHE_DAYS") or "30")
 # Where flights come from: "google" (Google Flights via SerpApi, live, needs SERPAPI_API_KEY;
 # falls back to Travelpayouts when it fails or finds nothing) or "travelpayouts" (cached fares only).
 FLIGHT_SOURCE = (os.getenv("FLIGHT_SOURCE") or "google").strip().lower()
