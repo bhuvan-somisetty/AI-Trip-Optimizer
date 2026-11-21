@@ -277,6 +277,21 @@ def test_unavailable_hotels_still_give_a_flight_only_itinerary(monkeypatch):
     assert all(e["alternative"].startswith("FL-") for e in itinerary["tradeoff_ledger"])
 
 
+def test_hotels_keep_location_and_up_to_five_photos(api):
+    body = copy.deepcopy(HOTELS_BODY)
+    lalit_row = body["properties"][0]
+    lalit_row["gps_coordinates"] = {"latitude": 28.6328, "longitude": 77.2197}
+    lalit_row["images"] = [{"thumbnail": f"https://img.example/{i}-s.jpg", "original_image": f"https://img.example/{i}.jpg"}
+                           for i in range(7)] + [{}]
+    api.responses[travel_data.SERPAPI_URL] = FakeResponse(body)
+    lalit, unrated = search_hotels("DEL", DAY, date(2026, 11, 3))
+    assert (lalit["latitude"], lalit["longitude"]) == (28.6328, 77.2197)
+    assert len(lalit["images"]) == 5
+    assert lalit["images"][0] == {"thumbnail": "https://img.example/0-s.jpg", "original": "https://img.example/0.jpg"}
+    # Google sent neither for this one: left empty, never guessed.
+    assert unrated["latitude"] is None and unrated["longitude"] is None and unrated["images"] == []
+
+
 # ---- Google Flights (via SerpApi) -------------------------------------------
 
 GOOGLE_FLIGHTS_BODY = {
