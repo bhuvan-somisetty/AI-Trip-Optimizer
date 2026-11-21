@@ -177,6 +177,11 @@ def _google_flights(origin: str, destination: str, day: date, cabin_class: str |
 
     body = _cached(("google_flights", origin, destination, day.isoformat(), params["travel_class"]), fetch)
     link = (body.get("search_metadata") or {}).get("google_flights_url")
+    # Google's own view of this route's prices for the day ("low", "typical", "high"). It is often
+    # missing for one-way searches; when it is, the fields stay None rather than being guessed.
+    insights = body.get("price_insights") or {}
+    typical = insights.get("typical_price_range")
+    typical = typical if isinstance(typical, list) and len(typical) == 2 else None
     flights, seen = [], set()
     for row in (body.get("best_flights") or []) + (body.get("other_flights") or []):
         legs = row.get("flights") or []
@@ -210,7 +215,19 @@ def _google_flights(origin: str, destination: str, day: date, cabin_class: str |
                 "currency": "INR",
                 "cabin_class": cabin,
                 "stops": len(legs) - 1,
+                # Where and how long each connection waits, as Google lists them.
+                "layovers": [
+                    {
+                        "airport": stop.get("id"),
+                        "airport_name": stop.get("name"),
+                        "minutes": stop.get("duration"),
+                        "overnight": bool(stop.get("overnight")),
+                    }
+                    for stop in row.get("layovers") or []
+                ],
                 "duration_minutes": row.get("total_duration"),
+                "price_level": insights.get("price_level"),
+                "typical_price_range": typical,
                 "price_status": "live",
                 "link": link,
                 "source": "Google Flights via SerpApi",
