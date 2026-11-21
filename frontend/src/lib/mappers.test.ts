@@ -102,6 +102,51 @@ describe("toItinerary", () => {
     ]);
   });
 
+  it("keeps layovers, Google's fare level and the hotel's photos and location", () => {
+    const it = toItinerary(
+      result({
+        flight: {
+          ...flight("FL-AI501", "BOM", "GOI", 4200, "2026-12-22"),
+          stops: 1,
+          layovers: [{ airport: "MAA", airport_name: "Chennai International Airport", minutes: 60, overnight: false }],
+          price_level: "high",
+          typical_price_range: [3000, 4000],
+        },
+        hotel: {
+          id: "HT-abc",
+          city: "GOI",
+          name: "Sea View",
+          price_per_night: 3000,
+          latitude: 15.5,
+          longitude: 73.8,
+          images: [{ thumbnail: "https://example.org/t.jpg", original: null }],
+        },
+      }),
+      trip
+    )!;
+    expect(it.outbound.layovers).toEqual([{ airport: "MAA", airportName: "Chennai International Airport", minutes: 60, overnight: false }]);
+    expect(it.outbound.priceLevel).toBe("high");
+    expect(it.outbound.typicalPriceRange).toEqual([3000, 4000]);
+    expect(it.return?.priceLevel).toBeUndefined();
+    expect(it.stay).toMatchObject({ latitude: 15.5, longitude: 73.8, images: [{ thumbnail: "https://example.org/t.jpg", original: undefined }] });
+  });
+
+  it("shows the fare hints as warnings on the right flight", () => {
+    const it = toItinerary(
+      result({
+        flags: [
+          "Flight: FL-6E5 on 2026-12-21 costs 4,500, 1,500 less than FL-6E101 on the trip's date",
+          "Return flight: Google Flights rates fares on this date as high for the route (typical 3,000 to 4,000)",
+        ],
+      }),
+      trip
+    )!;
+    expect(it.issues.map((i) => [i.rule, i.lineItem, i.severity])).toEqual([
+      ["Cheaper nearby date", "Outbound flight", "warning"],
+      ["Fare level", "Return flight", "warning"],
+    ]);
+  });
+
   it("returns undefined when optimization failed", () => {
     expect(toItinerary({ status: "OPTIMIZATION_FAILED", itinerary: null, tradeoff_ledger: [], reason: "No flights" }, trip)).toBeUndefined();
   });
@@ -126,6 +171,11 @@ describe("trip form mapping", () => {
     const body = fromTrip(input, "2026-11-12T10:00:00Z");
     expect(body).toMatchObject({ traveler_id: "trv_1", origin: "DEL", destination: "BOM", dates: ["2026-12-22", "2026-12-25"], budget: 30000 });
     expect(body.preferences).toMatchObject({ cabin_class: "economy", max_stops: 0, min_hotel_rating: 4, title: "Investor day" });
+  });
+
+  it("sends flexible dates inside the filters, where the optimizer reads them", () => {
+    const body = fromTrip({ ...input, filters: { ...input.filters, flexibleDays: 2 } }, "");
+    expect((body.preferences.filters as { flexibleDays: number }).flexibleDays).toBe(2);
   });
 
   it("refuses a trip with no traveler or no return date", () => {
