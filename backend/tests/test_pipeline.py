@@ -469,3 +469,57 @@ def test_llm_amounts_with_thousands_separators_pass_the_guardrail(monkeypatch):
     result = graph.compose(state)
     assert result["itinerary"]["rationale"] == fake.text
     assert "whole numbers with thousands separators" in fake.prompt
+
+
+# ---- flexible dates and fare flags ----------------------------------------------
+
+def dated(fid, day, price, airline="IndiGo"):
+    return {"id": fid, "price": price, "cabin_class": "economy", "stops": 0, "airline": airline,
+            "departure_time": f"{day}T09:00:00", "arrival_time": f"{day}T11:00:00"}
+
+
+def test_flexible_dates_search_nearby_days_both_ways(monkeypatch):
+    asked = []
+
+    def fake_search(origin, destination, day, cabin_class=None):
+        asked.append((origin, day.isoformat()))
+        return [dated(f"FL-{origin}-{day.isoformat()}", day.isoformat(), 5000)]
+
+    monkeypatch.setattr(graph.travel_data, "search_flights", fake_search)
+    monkeypatch.setattr(graph.travel_data, "search_hotels", lambda *a: [])
+    request = {**REQUEST, "preferences": {"flexible_days": 1}}
+    found = graph.search_node({"request": request})
+    assert sorted(asked) == sorted([
+        ("BLR", "2026-11-01"), ("BLR", "2026-10-31"), ("BLR", "2026-11-02"),
+        ("DEL", "2026-11-03"), ("DEL", "2026-11-02"), ("DEL", "2026-11-04"),
+    ])
+    assert len(found["flight_options"]) == 3 and len(found["return_options"]) == 3
+
+
+def test_without_flexible_dates_only_the_trip_days_are_searched(monkeypatch):
+    asked = []
+    monkeypatch.setattr(graph.travel_data, "search_flights",
+                        lambda o, d, day, c=None: asked.append(day) or [dated("FL-X", day.isoformat(), 5000)])
+    monkeypatch.setattr(graph.travel_data, "search_hotels", lambda *a: [])
+    graph.search_node({"request": REQUEST})
+    assert asked == [REQUEST["start_date"], REQUEST["end_date"]]
+
+
+def test_flexible_dates_flag_a_cheaper_nearby_fare():
+    flights = [dated("FL-ON", "2026-11-01", 6000), dated("FL-EARLY", "2026-10-31", 4500)]
+    check = run_check({"flexible_days": 1}, flights=flights)
+    assert check["flight"]["id"] == "FL-ON"  # the trip's dates stay fixed
+    assert "Flight: FL-EARLY on 2026-10-31 costs 4,500, 1,500 less than FL-ON on the trip's date" in check["flags"]
+
+
+def test_cheaper_nearby_fare_is_not_flagged_without_flexible_dates():
+    flights = [dated("FL-ON", "2026-11-01", 6000), dated("FL-EARLY", "2026-10-31", 4500)]
+    assert not any("less than FL-ON" in f for f in run_check(flights=flights)["flags"])
+
+
+def test_high_price_level_is_flagged_with_the_typical_range():
+    high = {**dated("FL-HI", "2026-11-01", 9000), "price_level": "high", "typical_price_range": [5000, 7000]}
+    check = run_check(flights=[high])
+    assert "Flight: Google Flights rates fares on this date as high for the route (typical 5,000 to 7,000)" in check["flags"]
+    typical = {**high, "price_level": "typical"}
+    assert not any("rates fares" in f for f in run_check(flights=[typical])["flags"])
