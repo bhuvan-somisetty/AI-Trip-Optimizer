@@ -470,10 +470,10 @@ export const getRoute = (token: string, tripId: string, stops: number) =>
 
 export type TransportStop = { name: string | null; code: string | null; time: string | null };
 
-/** A train or bus from Google Maps transit. The fare is null (fare_label "Not available") unless Google gave one. */
+/** A train, bus or ferry from Google Maps transit. The fare is null (fare_label "Not available") unless Google gave one. */
 export type GroundOptionResponse = {
   id: string;
-  kind: "train" | "bus";
+  kind: "train" | "bus" | "ferry";
   service: string | null;
   operator: string | null;
   from: TransportStop;
@@ -483,7 +483,7 @@ export type GroundOptionResponse = {
   duration_minutes: number | null;
   distance_km: number | null;
   changes: number;
-  legs: { service: string | null; kind: "train" | "bus" | null; from: TransportStop; to: TransportStop; duration_minutes: number | null }[];
+  legs: { service: string | null; kind: "train" | "bus" | "ferry" | null; from: TransportStop; to: TransportStop; duration_minutes: number | null }[];
   fare: number | null;
   currency: string | null;
   fare_label: string;
@@ -512,7 +512,9 @@ export type TransportResponse = {
   flight: TransportFlightResponse | null;
   trains: GroundOptionResponse[];
   buses: GroundOptionResponse[];
-  comparison: { mode: "Flight" | "Train" | "Bus"; service: string | null; departs: string | null; duration_minutes: number | null; fare: number | null; currency: string | null; fare_label: string }[];
+  /** Missing from an API without ferry search; treat that as an empty list. */
+  ferries?: GroundOptionResponse[];
+  comparison: { mode: "Flight" | "Train" | "Bus" | "Ferry"; service: string | null; departs: string | null; duration_minutes: number | null; fare: number | null; currency: string | null; fare_label: string }[];
   notice: string | null;
 };
 
