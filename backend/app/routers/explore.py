@@ -13,6 +13,7 @@ from sqlmodel import Session
 from app import roads
 from app.database import get_session
 from app.dishes import DishesUnavailable, local_dishes
+from app.ground import search_ground
 from app.models import CityPlaces, Trip
 from app.places import PlacesUnavailable, explore_city
 from app.routers.trips import get_owned_trip, saved_itinerary
@@ -151,3 +152,53 @@ def route_trip(
         "total_road_m": round(sum(leg["road_m"] for leg in legs)),
         "unreachable": [names[i] for i in range(1, len(names)) if i not in order],
     }
+
+
+def flight_option(flight: dict | None) -> dict | None:
+    if not flight:
+        return None
+    departs = (flight.get("departure_time") or "")[11:16] or None
+    arrives = (flight.get("arrival_time") or "")[11:16] or None
+    return {
+        "kind": "flight",
+        "service": " ".join(x for x in (flight.get("airline"), flight.get("flight_number")) if x) or flight.get("id"),
+        "departs": departs,
+        "arrives": arrives,
+        "duration_minutes": flight.get("duration_minutes"),
+        "stops": flight.get("stops"),
+        "fare": flight.get("price"),
+        "currency": flight.get("currency") or "INR",
+        "fare_label": "Flight fare used by the optimizer",
+        "source": flight.get("source"),
+        "data_label": "Live" if flight.get("price_status") == "live" else "Cached",
+    }
+
+
+@router.get("/trips/{trip_id}/transport")
+def transport_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depends(get_session)):
+    """Flight, train and bus for the trip's outbound day, side by side.
+
+    Trains and buses come from Google Maps transit (via SerpApi): real services with times and
+    durations. A fare is shown only when Google gives one, otherwise it is null and labelled
+    "Not available". Kept apart from the optimizer: it never changes the itinerary or its total."""
+    itinerary = saved_itinerary(session, trip)
+    flight = flight_option(itinerary.flight if itinerary else None)
+    result = {"origin": trip.origin, "destination": trip.destination, "date": trip.start_date.isoformat(),
+              "flight": flight, "trains": [], "buses": [], "comparison": [], "notice": None}
+    try:
+        options = search_ground(trip.origin, trip.destination, trip.start_date)
+    except TravelDataError as e:
+        options, result["notice"] = [], str(e)
+    trains = [o for o in options if o["kind"] == "train"]
+    buses = [o for o in options if o["kind"] == "bus"]
+    fastest = lambda items: min((o for o in items if o["duration_minutes"] is not None),
+                                key=lambda o: o["duration_minutes"], default=None)
+    rows = [("Flight", flight), ("Train", fastest(trains)), ("Bus", fastest(buses))]
+    result["comparison"] = [
+        {"mode": mode, "service": o["service"], "departs": o["departs"], "duration_minutes": o["duration_minutes"],
+         "fare": o["fare"], "currency": o["currency"], "fare_label": o["fare_label"]}
+        for mode, o in rows if o
+    ]
+    if not options and result["notice"] is None:
+        result["notice"] = "Google Maps lists no trains or buses for this route and day"
+    return {**result, "trains": trains, "buses": buses}
