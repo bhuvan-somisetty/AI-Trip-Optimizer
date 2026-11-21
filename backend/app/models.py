@@ -163,3 +163,16 @@ class TravelPolicy(SQLModel, table=True):
     preferred_airlines: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     updated_by: uuid.UUID | None = Field(default=None, foreign_key="users.id")
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class CityPlaces(SQLModel, table=True):
+    """Attractions and restaurants for one destination city, as OpenTripMap returned them.
+
+    Kept for PLACES_CACHE_DAYS so each city costs OpenTripMap requests once a month, not per trip.
+    """
+
+    __tablename__ = "city_places"
+
+    city: str = Field(primary_key=True, max_length=3)  # IATA code of the destination, e.g. "GOI"
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
