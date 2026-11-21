@@ -1,16 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Plane, ChevronsUpDown, Settings, LogOut, Sparkles } from "lucide-react";
 import { navItems } from "@/lib/nav";
 import { MiniWindow } from "@/components/app/mini-window";
 import { cn } from "@/lib/utils";
-import { actions, useStore } from "@/lib/store";
+import { useStore } from "@/lib/store";
+import { LogoutDialog } from "@/components/app/logout-dialog";
 import { initials } from "@/lib/format";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -25,10 +28,7 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const drafts = s.trips.filter((t) => t.status === "DRAFT" || t.status === "OPTIMIZATION_FAILED").length;
   const sections = ["Workspace", "Insights", "Admin"] as const;
 
-  function handleLogout() {
-    actions.logout();
-    router.push("/login");
-  }
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
 
   return (
     <div className="grain relative flex h-full flex-col bg-sidebar bg-[radial-gradient(120%_60%_at_0%_100%,rgba(255,105,61,0.12),transparent_60%)] text-sidebar-foreground">
@@ -47,7 +47,7 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
           <div key={section} className="space-y-1">
             <p className="px-3 pb-1 text-[10px] font-semibold tracking-[0.2em] text-sidebar-foreground/35 uppercase">{section}</p>
             {navItems
-              .filter((i) => i.section === section)
+              .filter((i) => i.section === section && (!i.adminOnly || s.session?.role === "admin"))
               .map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
                 const Icon = item.icon;
@@ -114,8 +114,10 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
             <ChevronsUpDown className="size-4 shrink-0 text-sidebar-foreground/50" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-60">
-            <DropdownMenuLabel>Signed in as</DropdownMenuLabel>
-            <div className="truncate px-1.5 pb-1.5 text-sm font-medium">{s.session?.email}</div>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Signed in as</DropdownMenuLabel>
+              <div className="truncate px-1.5 pb-1.5 text-sm font-medium">{s.session?.email}</div>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => {
@@ -127,13 +129,14 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={handleLogout}>
+            <DropdownMenuItem variant="destructive" onClick={() => setConfirmLogoutOpen(true)}>
               <LogOut />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <LogoutDialog open={confirmLogoutOpen} onOpenChange={setConfirmLogoutOpen} />
     </div>
   );
 }
