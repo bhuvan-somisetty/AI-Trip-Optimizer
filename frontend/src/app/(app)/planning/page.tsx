@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   Info,
   Loader2,
+  CalendarHeart,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +40,7 @@ import { addDays, formatDateRange, formatInr, initials, toIsoDate } from "@/lib/
 import { toast } from "@/lib/toast";
 import type { CabinClass, Priority, TimeWindow, TransportMode, Trip, TripFilters } from "@/lib/types";
 import { metresBetween } from "@/lib/geo";
+import { festivalDuring } from "@/lib/festivals";
 import { cn } from "@/lib/utils";
 
 const steps = [
@@ -125,6 +127,8 @@ export default function PlanningPage() {
     return metres < 500_000 ? metres / 1000 : null;
   })();
   const effective: Draft = { ...d, returnDate: roundTrip ? d.returnDate : null };
+  // Festival and holiday rush (Diwali, Christmas...): direct fares climb, so point at cheaper routes.
+  const rush = d.departDate ? festivalDuring(d.departDate, effective.returnDate) : null;
 
   // A trip being edited can be to any airport: look up a city the built-in list doesn't have.
   useEffect(() => {
@@ -511,6 +515,22 @@ export default function PlanningPage() {
                             className="font-medium text-primary underline"
                           >
                             compare on the results page
+                          </Link>
+                          .
+                        </p>
+                      </div>
+                    )}
+                    {rush && d.origin && d.destination && d.origin !== d.destination && (
+                      <div role="note" className="flex gap-3 rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm">
+                        <CalendarHeart className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-warning" />
+                        <p>
+                          These dates fall in the {rush.name} rush, when direct flights cost much more. Flying through one or two other cities on separate tickets
+                          is often cheaper:{" "}
+                          <Link
+                            href={`/search?from=${d.origin}&to=${d.destination}&date=${d.departDate}${effective.returnDate ? `&return=${effective.returnDate}` : ""}&mode=cheaper`}
+                            className="font-medium text-primary underline"
+                          >
+                            find cheaper routes
                           </Link>
                           .
                         </p>
