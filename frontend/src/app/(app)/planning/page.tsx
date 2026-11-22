@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -36,13 +37,14 @@ import { airlines, amenityLabel, amenityOptions, cabinLabel, cities } from "@/li
 import { OptimizationError, nightsBetween, optimize, optionsFor, priorityLabel, windowLabel } from "@/lib/optimizer";
 import { addDays, formatDateRange, formatInr, initials, toIsoDate } from "@/lib/format";
 import { toast } from "@/lib/toast";
-import type { CabinClass, Priority, TimeWindow, Trip, TripFilters } from "@/lib/types";
+import type { CabinClass, Priority, TimeWindow, TransportMode, Trip, TripFilters } from "@/lib/types";
+import { metresBetween } from "@/lib/geo";
 import { cn } from "@/lib/utils";
 
 const steps = [
   { id: "travelers", label: "Travelers", icon: Users },
   { id: "trip", label: "Trip details", icon: MapPin },
-  { id: "flights", label: "Flight filters", icon: Plane },
+  { id: "flights", label: "Transport", icon: Plane },
   { id: "stay", label: "Stay filters", icon: Hotel },
   { id: "budget", label: "Budget & priority", icon: Wallet },
   { id: "review", label: "Review", icon: ClipboardCheck },
@@ -86,14 +88,21 @@ export default function PlanningPage() {
         notes: editing.notes,
       };
     }
-    const depart = addDays(new Date(), 21);
+    // From the dashboard search or a destination page: ?from=BOM&to=GOI&date=2026-12-12&return=2026-12-15
+    const asked = (key: string) => (params.get(key) ?? "").toUpperCase();
+    const isDate = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= toIsoDate(new Date());
+    const askedDate = params.get("date");
+    const depart = isDate(askedDate) ? new Date(`${askedDate}T00:00:00`) : addDays(new Date(), 21);
+    const askedReturn = params.get("return");
+    const to = /^[A-Z]{3}$/.test(asked("to")) ? asked("to") : "DEL";
+    const fromCode = /^[A-Z]{3}$/.test(asked("from")) && asked("from") !== to ? asked("from") : to === "BLR" ? "DEL" : "BLR";
     return {
       title: "",
       travelerIds: [],
-      origin: "BLR",
-      destination: "DEL",
+      origin: fromCode,
+      destination: to,
       departDate: toIsoDate(depart),
-      returnDate: toIsoDate(addDays(depart, 3)),
+      returnDate: isDate(askedReturn) && askedReturn! > toIsoDate(depart) ? askedReturn! : toIsoDate(addDays(depart, 3)),
       purpose: "Client meeting",
       budget: 0,
       rooms: 1,
@@ -106,6 +115,15 @@ export default function PlanningPage() {
   const upF = (patch: Partial<TripFilters>) => setD((p) => ({ ...p, filters: { ...p.filters, ...patch } }));
 
   const selected = s.travelers.filter((t) => d.travelerIds.includes(t.id));
+  const modes: TransportMode[] = d.filters.modes?.length ? d.filters.modes : ["flight", "train", "bus"];
+  // Under 500 km a train or bus is often cheaper than flying: say so, without guessing a price.
+  const shortTrip = (() => {
+    const a = cityOf(d.origin);
+    const b = cityOf(d.destination);
+    if (!a || !b || d.origin === d.destination) return null;
+    const metres = metresBetween({ latitude: a.lat, longitude: a.lon }, { latitude: b.lat, longitude: b.lon });
+    return metres < 500_000 ? metres / 1000 : null;
+  })();
   const effective: Draft = { ...d, returnDate: roundTrip ? d.returnDate : null };
 
   // A trip being edited can be to any airport: look up a city the built-in list doesn't have.
@@ -439,10 +457,68 @@ export default function PlanningPage() {
               {step === 2 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Flight filters</CardTitle>
-                    <CardDescription>Hard rules remove options; preferences explain why an option lost in the ledger.</CardDescription>
+                    <CardTitle>Transport</CardTitle>
+                    <CardDescription>
+                      How the traveller is willing to go. The optimizer prices flights and hotels; trains and buses are compared on the results page and the trip&apos;s
+                      Transport tab, with real schedules.
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
+                    <Field label="Travel by" hint="Pick one or more. Leave all on to compare everything.">
+                      <ChipToggle
+                        selected={modes}
+                        onChange={(v) => upF({ modes: (v.length ? v : ["flight"]) as TransportMode[] })}
+                        options={[
+                          { value: "flight", label: "Flights" },
+                          { value: "train", label: "Trains" },
+                          { value: "bus", label: "Buses" },
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Journeys">
+                      <Segmented
+                        value={d.filters.maxStops}
+                        onChange={(v) => upF({ maxStops: v as 0 | 1 | 2 })}
+                        options={[
+                          { value: 0, label: "Direct only" },
+                          { value: 1, label: "Up to 1 change" },
+                          { value: 2, label: "Up to 2 changes" },
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Longest journey" hint="Used to filter results; the optimizer also prefers shorter flights.">
+                      <Segmented
+                        size="sm"
+                        value={d.filters.maxDurationHours ?? 0}
+                        onChange={(v) => upF({ maxDurationHours: v ? Number(v) : null })}
+                        options={[
+                          { value: 0, label: "Any" },
+                          { value: 4, label: "4 h" },
+                          { value: 8, label: "8 h" },
+                          { value: 12, label: "12 h" },
+                          { value: 24, label: "24 h" },
+                        ]}
+                      />
+                    </Field>
+                    {shortTrip && (
+                      <div className="flex gap-3 rounded-xl border border-primary/30 bg-primary/5 p-3 text-sm">
+                        <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+                        <p>
+                          {cityName(d.origin)} to {cityName(d.destination)} is about {Math.round(shortTrip)} km. A train or bus may be cheaper than flying for this
+                          distance:{" "}
+                          <Link
+                            href={`/search?from=${d.origin}&to=${d.destination}&date=${d.departDate}&mode=all`}
+                            className="font-medium text-primary underline"
+                          >
+                            compare on the results page
+                          </Link>
+                          .
+                        </p>
+                      </div>
+                    )}
+                    {modes.includes("flight") && <p className="border-t pt-4 text-sm font-semibold">Flight preferences</p>}
+                    {modes.includes("flight") && (
+                    <>
                     <Field label="Cabin class">
                       <Segmented
                         value={d.filters.cabin}
@@ -501,6 +577,8 @@ export default function PlanningPage() {
                         options={airlines.map((a) => ({ value: a, label: a }))}
                       />
                     </Field>
+                    </>
+                    )}
                   </CardContent>
                 </Card>
               )}
