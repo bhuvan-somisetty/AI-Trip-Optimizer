@@ -28,7 +28,14 @@ export type Traveler = {
   createdAt: string;
 };
 
+/** How the traveller is willing to go; the optimizer prices flights, the results page compares all three. */
+export type TransportMode = "flight" | "train" | "bus";
+
 export type TripFilters = {
+  /** Missing on trips saved before transport modes existed: treat that as all three. */
+  modes?: TransportMode[];
+  /** Longest acceptable journey in hours; null or missing = no limit. */
+  maxDurationHours?: number | null;
   cabin: CabinClass;
   maxStops: 0 | 1 | 2;
   /** Also search this many days either side of each flight date for cheaper fares (0 = off). */
