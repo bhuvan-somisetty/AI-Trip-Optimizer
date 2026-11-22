@@ -11,8 +11,7 @@ import { NativeSelect } from "@/components/ui/fields";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState, PageHeader } from "@/components/app/common";
 import { TravelerDialog } from "@/components/travelers/traveler-form";
-import { actions, useStore } from "@/lib/store";
-import { cityByCode } from "@/lib/catalog";
+import { actions, cityName, useStore } from "@/lib/store";
 import { formatCompactInr, initials } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import type { Traveler } from "@/lib/types";
@@ -100,7 +99,7 @@ export default function TravelersPage() {
                     <Badge variant="secondary">{t.department}</Badge>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1.5"><MapPin className="size-3.5" />{cityByCode[t.homeCity]?.name ?? t.homeCity}</span>
+                    <span className="flex items-center gap-1.5"><MapPin className="size-3.5" />{cityName(t.homeCity)}</span>
                     <span className="flex items-center gap-1.5"><Armchair className="size-3.5" />{t.preferences.seat || "No preference"}</span>
                     <span className="col-span-2 flex items-center gap-1.5"><Utensils className="size-3.5" />{t.preferences.dietary || "No dietary notes"}</span>
                   </div>
