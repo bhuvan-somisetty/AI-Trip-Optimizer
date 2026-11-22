@@ -203,7 +203,8 @@ class LedgerEntryResponse(BaseModel):
     # "flight", "return" or "stay"; None for itineraries saved before the pipeline recorded it.
     kind: str | None = None
     alternative: str
-    price: float
+    # None for a train or bus whose fare isn't published (a trip by train or bus).
+    price: float | None = None
     won: bool
     reason: str
 
