@@ -30,7 +30,7 @@ def saved(client, headers, trip_id):
     return client.get(f"/trips/{trip_id}/itinerary", headers=headers).json()
 
 
-def test_preview_shows_what_changes_without_saving(client, auth_headers, trip_payload):
+def test_preview_shows_what_changes_without_saving(client, auth_headers, trip_payload, read_audit):
     trip_id = optimized_trip(client, auth_headers, trip_payload)
     response = preview(client, auth_headers, trip_id, max_stops=0)
     assert response.status_code == 200
@@ -47,7 +47,7 @@ def test_preview_shows_what_changes_without_saving(client, auth_headers, trip_pa
     # Nothing was saved: the trip and its itinerary are as they were.
     assert saved(client, auth_headers, trip_id)["itinerary"]["total_cost"] == 13300
     assert client.get(f"/trips/{trip_id}", headers=auth_headers).json()["status"] == "OPTIMIZED"
-    assert client.get(f"/audit?trip_id={trip_id}&event_type=ITINERARY_EDITED", headers=auth_headers).json() == []
+    assert read_audit(trip_id=trip_id, event_type="ITINERARY_EDITED") == []
 
 
 def test_preview_does_not_search_again(client, auth_headers, trip_payload, monkeypatch):
@@ -102,7 +102,7 @@ def test_preview_null_removes_a_preference(client, auth_headers, trip_payload):
     assert body["preview"]["itinerary"]["flight"]["id"] == "FL-1004"  # the 1-stop fare is allowed again
 
 
-def test_apply_saves_inputs_and_itinerary_and_logs_it(client, auth_headers, trip_payload):
+def test_apply_saves_inputs_and_itinerary_and_logs_it(client, auth_headers, trip_payload, read_audit):
     trip_id = optimized_trip(client, auth_headers, trip_payload)
     expected = preview(client, auth_headers, trip_id, max_stops=0, budget=70000).json()["preview"]["itinerary"]
 
@@ -119,7 +119,7 @@ def test_apply_saves_inputs_and_itinerary_and_logs_it(client, auth_headers, trip
     assert trip["status"] == "UNDER_REVIEW"
     assert saved(client, auth_headers, trip_id)["itinerary"]["total_cost"] == expected["total_cost"]
 
-    events = client.get(f"/audit?trip_id={trip_id}&event_type=ITINERARY_EDITED", headers=auth_headers).json()
+    events = read_audit(trip_id=trip_id, event_type="ITINERARY_EDITED")
     assert len(events) == 1
     assert events[0]["summary"].startswith("Applied what-if (budget 60000.0 -> 70000.0, max_stops None -> 0); total 13,300 -> ")
     assert events[0]["payload"]["what_if"] is True
