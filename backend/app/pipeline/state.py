@@ -40,7 +40,7 @@ class CheckResult(TypedDict):
 class LedgerEntry(TypedDict):
     kind: str  # "flight", "return" or "stay"
     alternative: str
-    price: float
+    price: float | None  # None for a train or bus whose fare isn't published
     won: bool
     reason: str
 
@@ -63,6 +63,10 @@ class PipelineState(TypedDict, total=False):
     hotel_options: list[dict]  # written by search_node
     search_error: str  # written by search_node when a live search couldn't run
     hotels_unavailable: str  # written by search_node when no live hotel provider is configured
+    # A trip by train or bus (the trip form's Trains or Buses), written by search_node:
+    ground_mode: list[str]  # "train" and/or "bus"
+    ground_options: list[dict]  # trains or buses on the start date (app/ground.py search_ground)
+    ground_return_options: list[dict]  # and back on the end date
     check: CheckResult  # written by check_node
     itinerary: Itinerary  # written by compose_node
     failure_reason: str  # written by compose_node instead of `itinerary` when none can be built
