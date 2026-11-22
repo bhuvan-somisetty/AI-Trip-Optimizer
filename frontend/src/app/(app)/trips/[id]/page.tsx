@@ -38,6 +38,7 @@ import { ServerWhatIf, WhatIf } from "@/components/trips/whatif";
 import { ExploreTab } from "@/components/trips/explore";
 import { RouteTab } from "@/components/trips/route";
 import { TransportTab } from "@/components/trips/transport";
+import { DayPlanTab } from "@/components/trips/day-plan";
 import { actions, getState, routeLabel, travelerNames, useStore } from "@/lib/store";
 import { amenityLabel, cabinLabel } from "@/lib/catalog";
 import { priorityLabel, windowLabel } from "@/lib/optimizer";
@@ -46,7 +47,7 @@ import { toast } from "@/lib/toast";
 import type { LedgerEntry, TripStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type Tab = "itinerary" | "ledger" | "whatif" | "explore" | "route" | "transport" | "activity" | "request";
+type Tab = "itinerary" | "ledger" | "whatif" | "explore" | "route" | "transport" | "dayplan" | "activity" | "request";
 
 const flow: TripStatus[] = ["DRAFT", "OPTIMIZING", "OPTIMIZED", "UNDER_REVIEW", "DECIDED"];
 
@@ -167,9 +168,11 @@ export default function TripDetailPage() {
           { value: "explore" as Tab, label: "Explore" },
           { value: "route" as Tab, label: "Route" },
           { value: "transport" as Tab, label: "Transport" },
+          { value: "dayplan" as Tab, label: "Day by day" },
         ]
       : []),
-    { value: "activity", label: "Activity", count: events.length },
+    // The audit trail is admin-only on the server; members have no events to show.
+    ...(!apiMode || s.session?.role === "admin" ? [{ value: "activity" as Tab, label: "Activity", count: events.length }] : []),
     { value: "request", label: "Request details" },
   ];
 
@@ -435,6 +438,8 @@ export default function TripDetailPage() {
       {tab === "route" && <RouteTab tripId={t.id} />}
 
       {tab === "transport" && <TransportTab tripId={t.id} />}
+
+      {tab === "dayplan" && <DayPlanTab trip={t} />}
 
       {tab === "activity" && (
         <Card>
