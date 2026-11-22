@@ -18,9 +18,8 @@ import {
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SidebarBody } from "@/components/dashboard/sidebar";
 import { LogoutDialog } from "@/components/app/logout-dialog";
-import { actions, routeLabel, useStore } from "@/lib/store";
+import { actions, cityName, routeLabel, useStore } from "@/lib/store";
 import { initials, timeAgo } from "@/lib/format";
-import { cityByCode } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
 
 type Result = { id: string; href: string; title: string; sub: string; kind: "Trip" | "Traveler" | "Document" };
@@ -52,7 +51,7 @@ export function Topbar() {
     if (!q) return [];
     const trips = s.trips
       .filter((t) =>
-        [t.code, t.title, t.purpose, t.origin, t.destination, cityByCode[t.destination]?.name, cityByCode[t.origin]?.name]
+        [t.code, t.title, t.purpose, t.origin, t.destination, cityName(t.destination), cityName(t.origin)]
           .join(" ")
           .toLowerCase()
           .includes(q)
