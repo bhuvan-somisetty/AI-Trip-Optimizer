@@ -163,8 +163,8 @@ def update_trip(client, headers, trip_id, changes):
     return client.patch(f"/trips/{trip_id}", json=changes, headers=headers)
 
 
-def audit_types(client, headers):
-    return [e["event_type"] for e in client.get("/audit", headers=headers).json()]
+def audit_types(read_audit):
+    return [e["event_type"] for e in read_audit()]
 
 
 def test_update_trip_changes_only_sent_fields(client, auth_headers, trip_payload):
@@ -181,23 +181,23 @@ def test_update_trip_changes_only_sent_fields(client, auth_headers, trip_payload
     assert client.get(f"/trips/{trip_id}", headers=auth_headers).json()["budget"] == 5000
 
 
-def test_update_trip_is_audited_with_before_and_after(client, auth_headers, trip_payload):
+def test_update_trip_is_audited_with_before_and_after(client, auth_headers, trip_payload, read_audit):
     trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
     update_trip(client, auth_headers, trip_id, {"budget": 5000})
-    event = client.get("/audit", headers=auth_headers).json()[0]
+    event = read_audit()[0]
     assert event["event_type"] == "TRIP_UPDATED"
     assert event["payload"]["changes"] == {"budget": {"before": 60000.0, "after": 5000.0}}
     assert event["payload"]["itinerary_dropped"] is False
 
 
-def test_update_trip_without_changes_writes_no_event(client, auth_headers, trip_payload):
+def test_update_trip_without_changes_writes_no_event(client, auth_headers, trip_payload, read_audit):
     trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
     response = update_trip(client, auth_headers, trip_id, {"budget": 60000, "origin": "blr"})
     assert response.status_code == 200
-    assert "TRIP_UPDATED" not in audit_types(client, auth_headers)
+    assert "TRIP_UPDATED" not in audit_types(read_audit)
 
 
-def test_update_optimized_trip_drops_itinerary_and_returns_to_draft(client, auth_headers, trip_payload):
+def test_update_optimized_trip_drops_itinerary_and_returns_to_draft(client, auth_headers, trip_payload, read_audit):
     trip_id = create_trip(client, auth_headers, trip_payload).json()["id"]
     assert client.post(f"/trips/{trip_id}/optimize", headers=auth_headers).json()["status"] == "OPTIMIZED"
 
@@ -205,7 +205,7 @@ def test_update_optimized_trip_drops_itinerary_and_returns_to_draft(client, auth
     assert response.status_code == 200
     assert response.json()["status"] == "DRAFT"
     assert client.get(f"/trips/{trip_id}/itinerary", headers=auth_headers).status_code == 404
-    assert client.get("/audit", headers=auth_headers).json()[0]["payload"]["itinerary_dropped"] is True
+    assert read_audit()[0]["payload"]["itinerary_dropped"] is True
 
     # The next run uses the new budget.
     rerun = client.post(f"/trips/{trip_id}/optimize", headers=auth_headers).json()
