@@ -91,6 +91,37 @@ describe("FlightCard", () => {
     render(<FlightCard flight={flight({ priceLevel: "typical" })} label="Outbound" pax={1} />);
     expect(screen.queryByText(/Fares: high/)).not.toBeInTheDocument();
   });
+
+  it("shows a train of a trip by train, with its typical fare when none is published", () => {
+    const train = flight({
+      mode: "train",
+      airline: "Indian Railways",
+      flightNo: "22691 Rajdhani Express",
+      fromStation: "KSR Bengaluru",
+      toStation: "New Delhi",
+      price: 0,
+      priceKnown: false,
+      fareEstimate: { low: 1200, high: 4900, label: "Estimate from about 2,150 km (sleeper to AC 2-tier)" },
+      bookingLink: "https://www.irctc.co.in",
+      bookingLabel: "Book on IRCTC",
+    });
+    render(<FlightCard flight={train} label="Outbound" pax={1} />);
+    expect(screen.getByText(/Outbound train/)).toBeInTheDocument();
+    expect(screen.getByText("KSR Bengaluru")).toBeInTheDocument();
+    expect(screen.getByText("Fare not published")).toBeInTheDocument();
+    expect(screen.getByText(/Typically ₹1,200 – ₹4,900 \/traveler \(estimate, not in the total\)/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Book on IRCTC/ })).toHaveAttribute("href", "https://www.irctc.co.in");
+    expect(screen.queryByText("Economy")).not.toBeInTheDocument();
+    expect(screen.queryByText("₹0")).not.toBeInTheDocument();
+  });
+});
+
+describe("CostSummary for a trip by train", () => {
+  it("names trains and says an unpublished fare isn't in the total", () => {
+    const train = flight({ mode: "train", price: 0, priceKnown: false });
+    render(<CostSummary trip={trip} it={it_({ outbound: train, return: null, flightCost: 0 })} />);
+    expect(screen.getByText(/Trains ₹0 \(fare not published, not in the total\)/)).toBeInTheDocument();
+  });
 });
 
 describe("StayCard", () => {
