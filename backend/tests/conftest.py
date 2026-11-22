@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, Session, create_engine, select
 
 import app.models  # noqa: F401  (registers models on SQLModel.metadata)
-from app import policy, travel_data
+from app import policy, travel_data, wikidata
 from app.database import get_session
 from app.main import app
 from app.models import User, UserRole
@@ -57,6 +57,14 @@ def offline_search(monkeypatch):
 
     monkeypatch.setattr(travel_data, "search_flights", search_flights)
     monkeypatch.setattr(travel_data, "search_hotels", lambda city, check_in, check_out: [h for h in hotels if h["city"] == city])
+
+
+@pytest.fixture(autouse=True)
+def offline_wikidata(monkeypatch):
+    # Day trips and famous hotels come from Wikidata's public query service; tests never call it.
+    # Tests of app/wikidata.py patch _query with canned rows.
+    monkeypatch.setattr(wikidata, "_query", lambda sparql: [])
+    monkeypatch.setattr(wikidata, "_cache", {})
 
 
 @pytest.fixture
