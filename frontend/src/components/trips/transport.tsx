@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bus, Loader2, Plane, RefreshCw, Ship, TrainFront } from "lucide-react";
+import { Bus, ExternalLink, Loader2, Plane, RefreshCw, Ship, TrainFront } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -161,8 +161,13 @@ function OptionList({ icon: Icon, title, options }: { icon: typeof Bus; title: s
                   </p>
                 )}
               </div>
-              <div className="shrink-0 sm:text-right">
+              <div className="shrink-0 space-y-1 sm:text-right">
                 <Fare fare={o.fare} currency={o.currency} label={o.fare_label} />
+                {o.link && (
+                  <a href={o.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                    {o.link_label ?? "Provider site"} <ExternalLink className="size-3" />
+                  </a>
+                )}
               </div>
             </li>
           ))}
