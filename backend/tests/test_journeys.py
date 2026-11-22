@@ -172,6 +172,39 @@ def test_flights_only_through_two_cities(canned, monkeypatch):
     assert "₹12,000 cheaper than the cheapest direct option" in pick["reason"]
 
 
+def test_through_the_cities_the_traveller_names(canned, monkeypatch):
+    # Bengaluru -> Goa -> Bhubaneswar -> Jaipur: a zigzag no automatic pick would try.
+    fares = {
+        ("BLR", "JAI"): [flight("BLR", "JAI", "06:00", "08:40", 30000, "6E101")],
+        ("BLR", "GOI"): [flight("BLR", "GOI", "05:30", "06:45", 3000, "6E201")],
+        ("GOI", "BBI"): [flight("GOI", "BBI", "09:00", "11:20", 5000, "6E501")],
+        ("BBI", "JAI"): [flight("BBI", "JAI", "14:00", "16:10", 10000, "6E601")],
+    }
+    asked = []
+
+    def search_flights(frm, to, day, cabin_class=None):
+        asked.append((frm, to))
+        return fares.get((frm, to), [])
+
+    monkeypatch.setattr(journeys, "search_flights", search_flights)
+    result = find_journeys("BLR", "JAI", DAY, modes={"flight"}, via=["goi", "BBI"])
+    assert result["via_chosen"] and [v["code"] for v in result["via_cities"]] == ["GOI", "BBI"]
+    assert ("GOI", "BBI") in asked and ("BBI", "GOI") not in asked  # only in the order named
+    pick = result["recommendations"]["cheapest_connecting"]
+    best = next(j for j in result["journeys"] if j["id"] == pick["journey"])
+    assert [v["code"] for v in best["via"]] == ["GOI", "BBI"] and best["fare"] == 18000
+    assert "₹12,000 cheaper than the cheapest direct option, 8h 00m longer." in pick["reason"]
+
+
+def test_named_cities_must_be_real_and_different(canned):
+    with pytest.raises(journeys.TravelDataError, match="Unknown airport code: ZZZ"):
+        find_journeys("BLR", "JAI", DAY, via=["GOI", "ZZZ"])
+    with pytest.raises(journeys.TravelDataError, match="once"):
+        find_journeys("BLR", "JAI", DAY, via=["GOI", "JAI"])
+    with pytest.raises(journeys.TravelDataError, match="at most 3"):
+        find_journeys("BLR", "JAI", DAY, via=["GOI", "BBI", "HYD", "BOM"])
+
+
 def test_only_the_chosen_modes_are_searched(canned):
     result = find_journeys("BBI", "BLR", DAY, modes={"train"}, vias=0)
     assert all(a[0] == "ground" for a in canned)
