@@ -65,13 +65,17 @@ export function Topbar() {
     return [...trips, ...travelers];
   }, [query, s.trips, s.travelers]);
 
+  // Notifications come from the audit trail, which the server shows to admins only.
+  const auditVisible = s.session?.mode !== "api" || s.session?.role === "admin";
   const notifications = useMemo(
     () =>
-      s.audit
-        .filter((a) => ["DECISION", "PIPELINE_RUN", "PIPELINE_FAILED", "ITINERARY_EDITED"].includes(a.type))
-        .filter((a) => (a.type === "DECISION" ? s.settings.notifyDecisions : a.type.startsWith("PIPELINE") ? s.settings.notifyPipeline : true))
-        .slice(0, 8),
-    [s.audit, s.settings]
+      auditVisible
+        ? s.audit
+            .filter((a) => ["DECISION", "PIPELINE_RUN", "PIPELINE_FAILED", "ITINERARY_EDITED"].includes(a.type))
+            .filter((a) => (a.type === "DECISION" ? s.settings.notifyDecisions : a.type.startsWith("PIPELINE") ? s.settings.notifyPipeline : true))
+            .slice(0, 8)
+        : [],
+    [s.audit, s.settings, auditVisible]
   );
   const unread = notifications.filter((n) => n.createdAt > s.readNotificationsAt).length;
 
