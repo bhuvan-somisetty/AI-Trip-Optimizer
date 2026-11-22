@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertOctagon, AlertTriangle, Info, Plane, Hotel as HotelIcon, Star, MapPin, Luggage, RotateCcw, Sparkles, Pencil, BadgeCheck, ExternalLink } from "lucide-react";
+import { AlertOctagon, AlertTriangle, Bus, Info, Plane, TrainFront, Hotel as HotelIcon, Star, MapPin, Luggage, RotateCcw, Sparkles, Pencil, BadgeCheck, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,10 @@ import { cn } from "@/lib/utils";
 export function CostSummary({ trip, it }: { trip: Trip; it: Itinerary }) {
   const pct = Math.round((it.totalCost / trip.budget) * 100);
   const over = it.totalCost > trip.budget;
+  // A trip by train or bus: its fares are often unpublished, so they may not be in the total.
+  const mode = it.outbound?.mode;
+  const travel = mode === "train" ? "Trains" : mode === "bus" ? "Buses" : "Flights";
+  const unpublished = [it.outbound, it.return].some((f) => f && f.priceKnown === false);
   return (
     <Card className="overflow-hidden py-0">
       <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
@@ -33,17 +37,18 @@ export function CostSummary({ trip, it }: { trip: Trip; it: Itinerary }) {
       <div className="border-t px-5 py-4">
         <div className="mb-2 flex items-center justify-between text-xs">
           <span className="text-muted-foreground">
-            Flights {formatInr(it.flightCost)} · Stay {formatInr(it.stayCost)}
+            {travel} {formatInr(it.flightCost)}
+            {unpublished ? " (fare not published, not in the total)" : ""} · Stay {formatInr(it.stayCost)}
           </span>
           <span className={cn("font-medium", over ? "text-destructive" : pct > 90 ? "text-amber-600" : "text-muted-foreground")}>{pct}% of budget</span>
         </div>
         <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
-          <div className="h-full bg-primary" style={{ width: `${Math.min(100, (it.flightCost / Math.max(trip.budget, it.totalCost)) * 100)}%` }} title="Flights" />
+          <div className="h-full bg-primary" style={{ width: `${Math.min(100, (it.flightCost / Math.max(trip.budget, it.totalCost)) * 100)}%` }} title={travel} />
           <div className="h-full bg-cyan-500" style={{ width: `${Math.min(100, (it.stayCost / Math.max(trip.budget, it.totalCost)) * 100)}%` }} title="Stay" />
           {over && <div className="h-full flex-1 bg-destructive/30" />}
         </div>
         <div className="mt-2 flex gap-4 text-[11px] text-muted-foreground">
-          <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-primary" />Flights</span>
+          <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-primary" />{travel}</span>
           <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-cyan-500" />Stay</span>
         </div>
       </div>
@@ -62,12 +67,15 @@ function Metric({ label, value, sub, strong, tone }: { label: string; value: str
 }
 
 export function FlightCard({ flight, label, pax, onChange, editable }: { flight: Flight; label: string; pax: number; onChange?: () => void; editable?: boolean }) {
+  // A trip by train or bus books one of them here; its fare may be unpublished.
+  const ModeIcon = flight.mode === "train" ? TrainFront : flight.mode === "bus" ? Bus : Plane;
   return (
     <Card className="gap-4">
       <CardHeader>
         <CardDescription className="flex items-center gap-1.5">
-          <Plane className="size-3.5" />
-          {label} · {formatDate(flight.departure.slice(0, 10), { weekday: "short", day: "numeric", month: "short" })}
+          <ModeIcon className="size-3.5" />
+          {label}
+          {flight.mode && ` ${flight.mode}`} · {formatDate(flight.departure.slice(0, 10), { weekday: "short", day: "numeric", month: "short" })}
         </CardDescription>
         <CardTitle>
           {flight.airline} <span className="font-normal text-muted-foreground">{flight.flightNo}</span>
@@ -85,23 +93,25 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
         <div className="flex items-center gap-4">
           <div>
             <p className="text-2xl font-semibold tabular-nums">{formatTime(flight.departure)}</p>
-            <p className="text-sm text-muted-foreground">{flight.origin} · {cityName(flight.origin)}</p>
+            <p className="text-sm text-muted-foreground">{flight.fromStation ?? `${flight.origin} · ${cityName(flight.origin)}`}</p>
           </div>
           <div className="flex flex-1 flex-col items-center gap-1">
             <span className="text-xs text-muted-foreground">{flight.durationMin ? formatDuration(flight.durationMin) : "Duration not given"}</span>
             <div className="relative h-px w-full bg-border">
               {flight.stops > 0 && <span className="absolute top-1/2 left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-warning" />}
             </div>
-            <span className={cn("text-xs font-medium", flight.stops === 0 ? "text-emerald-600 dark:text-success" : "text-amber-600")}>{flight.stops === 0 ? "Non-stop" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}${flight.via ? ` · ${flight.via}` : ""}`}</span>
+            <span className={cn("text-xs font-medium", flight.stops === 0 ? "text-emerald-600 dark:text-success" : "text-amber-600")}>
+              {flight.stops === 0 ? (flight.mode ? "Direct" : "Non-stop") : `${flight.stops} ${flight.mode ? "change" : "stop"}${flight.stops > 1 ? "s" : ""}${flight.via ? ` · ${flight.via}` : ""}`}
+            </span>
           </div>
           <div className="text-right">
             <p className="text-2xl font-semibold tabular-nums">{flight.arrival ? formatTime(flight.arrival) : "-"}</p>
-            <p className="text-sm text-muted-foreground">{flight.destination} · {cityName(flight.destination)}</p>
+            <p className="text-sm text-muted-foreground">{flight.toStation ?? `${flight.destination} · ${cityName(flight.destination)}`}</p>
           </div>
         </div>
         {!!flight.layovers?.length && <p className="text-xs text-muted-foreground">{layoverText(flight.layovers)}</p>}
         <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs">
-          <Badge variant="outline">{cabinLabel[flight.cabin]}</Badge>
+          {!flight.mode && <Badge variant="outline">{cabinLabel[flight.cabin]}</Badge>}
           {flight.baggageKg !== undefined && <Badge variant="outline" className="gap-1"><Luggage className="size-3" />{flight.baggageKg} kg</Badge>}
           {flight.refundable !== undefined && (
             <Badge variant="outline" className={cn("gap-1", flight.refundable ? "text-emerald-700 dark:text-success" : "text-muted-foreground")}>
@@ -127,13 +137,24 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
           )}
           {flight.bookingLink && (
             <a href={flight.bookingLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-              Check live price <ExternalLink className="size-3" />
+              {flight.bookingLabel ?? "Check live price"} <ExternalLink className="size-3" />
             </a>
           )}
-          <span className="ml-auto text-right">
-            <span className="text-base font-semibold tabular-nums">{formatInr(flight.price)}</span>
-            <span className="text-muted-foreground"> /traveler{pax > 1 ? ` · ${formatInr(flight.price * pax)} total` : ""}</span>
-          </span>
+          {flight.priceKnown === false ? (
+            <span className="ml-auto max-w-[16rem] text-right">
+              <span className="block font-medium">Fare not published</span>
+              {flight.fareEstimate && (
+                <span className="text-muted-foreground" title={flight.fareEstimate.label}>
+                  Typically {formatInr(flight.fareEstimate.low)} – {formatInr(flight.fareEstimate.high)} /traveler (estimate, not in the total)
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="ml-auto text-right">
+              <span className="text-base font-semibold tabular-nums">{formatInr(flight.price)}</span>
+              <span className="text-muted-foreground"> /traveler{pax > 1 ? ` · ${formatInr(flight.price * pax)} total` : ""}</span>
+            </span>
+          )}
         </div>
       </CardContent>
     </Card>
