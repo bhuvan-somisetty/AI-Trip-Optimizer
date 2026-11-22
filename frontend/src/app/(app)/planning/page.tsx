@@ -34,6 +34,7 @@ import { PageHeader } from "@/components/app/common";
 import { TravelerDialog } from "@/components/travelers/traveler-form";
 import { actions, cityName, cityOf, defaultFilters, useStore } from "@/lib/store";
 import { AirportPicker } from "@/components/trips/airport-picker";
+import { ModePicker, choiceOf, isTravelChoice, modesOf, type TravelChoice } from "@/components/trips/mode-picker";
 import { airlines, amenityLabel, amenityOptions, cabinLabel, cities } from "@/lib/catalog";
 import { OptimizationError, nightsBetween, optimize, optionsFor, priorityLabel, windowLabel } from "@/lib/optimizer";
 import { addDays, formatDateRange, formatInr, initials, toIsoDate } from "@/lib/format";
@@ -55,6 +56,20 @@ const steps = [
 const purposes = ["Client meeting", "Conference", "Internal", "Recruitment", "Vendor review", "Audit", "Training", "Marketing event", "Leadership offsite", "Investor relations", "Partnership"];
 
 type Draft = Omit<Trip, "id" | "code" | "status" | "createdAt" | "createdBy">;
+
+// What the optimizer books for each choice (backend/app/pipeline/graph.py: ground_check for trains and buses).
+const TRAVEL_NOTE: Record<TravelChoice, (api: boolean) => string> = {
+  flight: () => "The optimizer books the flights and hotel that fit every rule and the budget.",
+  train: (api) =>
+    api
+      ? "No flight is booked: the optimizer picks the hotel and the train each way (the cheapest published fare, else the fastest of the day). Most train fares aren't published, so the trip shows their typical range as an estimate."
+      : "Demo data has flights only: sign in to book trains with real schedules.",
+  bus: (api) =>
+    api
+      ? "No flight is booked: the optimizer picks the hotel and the bus each way (the cheapest published fare, else the fastest of the day). Bus fares are often unpublished, so the trip shows their typical range as an estimate."
+      : "Demo data has flights only: sign in to book buses with real schedules.",
+  all: () => "The optimizer books the flights and hotel; trains and buses are compared on the trip's Transport tab, with cheaper routes through other cities.",
+};
 
 export default function PlanningPage() {
   const s = useStore();
@@ -108,7 +123,8 @@ export default function PlanningPage() {
       purpose: "Client meeting",
       budget: 0,
       rooms: 1,
-      filters: { ...defaultFilters },
+      // ?mode=train from the dashboard's or a page's "Plan this trip".
+      filters: { ...defaultFilters, ...(isTravelChoice(params.get("mode")) ? { modes: modesOf(params.get("mode") as TravelChoice) } : {}) },
       notes: "",
     };
   });
@@ -234,6 +250,13 @@ export default function PlanningPage() {
         title={editing ? "Update trip request" : "Plan a trip"}
         description="Tell the optimizer who's travelling, where, and what matters. Every filter below becomes a rule in the Trade-off Ledger."
       />
+
+      {/* How the trip travels: decides what the optimizer books (see TRAVEL_NOTE). */}
+      <section aria-label="How do you want to travel?" className="space-y-2">
+        <p className="text-sm font-semibold">How do you want to travel?</p>
+        <ModePicker value={choiceOf(d.filters.modes)} onChange={(c) => upF({ modes: modesOf(c) })} />
+        <p className="text-xs text-muted-foreground">{TRAVEL_NOTE[choiceOf(d.filters.modes)](apiMode)}</p>
+      </section>
 
       {/* Stepper */}
       <nav aria-label="Progress" className="scrollbar-thin -mx-1 overflow-x-auto px-1">
