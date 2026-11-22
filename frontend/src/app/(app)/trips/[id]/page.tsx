@@ -437,7 +437,7 @@ export default function TripDetailPage() {
 
       {tab === "route" && <RouteTab tripId={t.id} />}
 
-      {tab === "transport" && <TransportTab tripId={t.id} />}
+      {tab === "transport" && <TransportTab tripId={t.id} search={{ from: t.origin, to: t.destination, date: t.departDate, back: t.returnDate }} />}
 
       {tab === "dayplan" && <DayPlanTab trip={t} />}
 
