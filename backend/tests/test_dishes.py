@@ -123,7 +123,7 @@ def test_explore_includes_dishes_even_without_places(client, auth_headers, trip_
 
 
 def test_dishes_are_saved_with_the_citys_places(client, db, auth_headers, trip_payload, llm, wiki, monkeypatch):
-    monkeypatch.setattr(places, "fetch_city", lambda city: {"city": city, "attractions": [], "restaurants": []})
+    monkeypatch.setattr(places, "fetch_city", lambda city: {"version": places.PAYLOAD_VERSION, "city": city, "attractions": [], "restaurants": []})
     monkeypatch.setattr(config, "OPENTRIPMAP_API_KEY", "key")
     trip_id = trip_to_delhi(client, auth_headers, trip_payload)
     client.get(f"/trips/{trip_id}/explore", headers=auth_headers)
