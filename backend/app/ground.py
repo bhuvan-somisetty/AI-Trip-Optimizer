@@ -15,7 +15,7 @@ operator from `service_run_by`, the fare only from Google's `cost` + `currency` 
 carry one ("Google Maps fare"); everywhere else the fare is None and labelled "Not available".
 A route Google has no public transport for (e.g. across an ocean) comes back empty.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app import config
@@ -99,12 +99,61 @@ def local_timestamp(day: date, hour: int, zone: str | None) -> int:
     return int(datetime(day.year, day.month, day.day, hour, tzinfo=tz).timestamp())
 
 
+def clock(text: str | None) -> time | None:
+    """Google's "6:40 AM" as a time of day; None when it isn't one."""
+    try:
+        return datetime.strptime((text or "").strip().upper(), "%I:%M %p").time()
+    except ValueError:
+        return None
+
+
+def scheduled(route: dict, day: date, from_hour: int) -> dict:
+    """Adds the local departure and arrival date-times, so connections can be checked.
+
+    Google answers with departures after the searched time, so one earlier in the day than
+    that (by more than half an hour) is the next morning's. Arrival is departure + duration."""
+    start = clock(route.get("departs"))
+    if start is None or route.get("duration_minutes") is None:
+        return {**route, "departure_time": None, "arrival_time": None}
+    departure = datetime.combine(day, start)
+    if start.hour * 60 + start.minute < from_hour * 60 - 30:
+        departure += timedelta(days=1)
+    arrival = departure + timedelta(minutes=route["duration_minutes"])
+    return {**route, "departure_time": departure.isoformat(), "arrival_time": arrival.isoformat()}
+
+
+# Where a traveller can check fares and book. Plain links to the provider's own site: no booking,
+# availability or price is read from them, and none is shown for operators we don't know.
+PROVIDERS = (
+    ("indian railways", "https://www.irctc.co.in/nget/train-search", "Check fares on IRCTC"),
+    ("flixbus", "https://www.flixbus.com", "Check fares on FlixBus"),
+    ("eurostar", "https://www.eurostar.com", "Check fares on Eurostar"),
+)
+REDBUS = ("https://www.redbus.in", "Check buses on redBus")
+
+
+def provider_link(route: dict, country: str) -> dict:
+    """The operator's booking site when we know it (IRCTC, FlixBus, Eurostar; redBus for other
+    buses in India), else no link."""
+    text = f"{route.get('operator') or ''} {route.get('service') or ''}".lower()
+    for name, url, label in PROVIDERS:
+        if name in text:
+            return {"link": url, "link_label": label}
+    if route.get("kind") == "train" and country == "IN":
+        return {"link": PROVIDERS[0][1], "link_label": PROVIDERS[0][2]}
+    if route.get("kind") == "bus" and country == "IN":
+        return {"link": REDBUS[0], "link_label": REDBUS[1]}
+    return {"link": None, "link_label": None}
+
+
 def place(airport: dict) -> str:
     return f"{airport['city']}, {country_name(airport['country'])}"
 
 
-def search_ground(origin: str, destination: str, day: date) -> list[dict]:
-    """Trains, buses and ferries from `origin` to `destination` (airport codes) on `day`."""
+def search_ground(origin: str, destination: str, day: date, hours: tuple[int, ...] = DEPART_HOURS) -> list[dict]:
+    """Trains, buses and ferries from `origin` to `destination` (airport codes) on `day`.
+
+    `hours` are the local times the day is searched from (one SerpApi search each)."""
     if not config.SERPAPI_API_KEY:
         raise GroundUnavailable("Train and bus search isn't set up on the server (no SERPAPI_API_KEY)")
     start, end = AIRPORTS.get(origin), AIRPORTS.get(destination)
@@ -133,15 +182,16 @@ def search_ground(origin: str, destination: str, day: date) -> list[dict]:
         return body
 
     found, seen = [], set()
-    for hour in DEPART_HOURS:
+    for hour in hours:
         body = _cached(("ground", origin, destination, day.isoformat(), hour), lambda: fetch(hour))
         for direction in body.get("directions") or []:
             route = option(direction, 0)
             if route is None:
                 continue
+            route = scheduled(route, day, hour)
             key = (route["service"], route["departs"], route["from"]["name"])
             if key in seen:
                 continue  # the same departure, found again from a later search time
             seen.add(key)
-            found.append({**route, "id": f"GT-{len(found) + 1}"})
+            found.append({**route, **provider_link(route, start["country"]), "id": f"GT-{len(found) + 1}"})
     return found
