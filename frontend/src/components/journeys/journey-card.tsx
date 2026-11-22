@@ -5,6 +5,7 @@ import { AlertTriangle, Bus, ChevronDown, Clock, ExternalLink, Plane, Ship, Trai
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { JourneyLegResponse, JourneyMode, JourneyResponse } from "@/lib/api";
+import type { BudgetFit } from "@/lib/budget";
 import { formatInr } from "@/lib/format";
 import { minutesLabel } from "@/lib/geo";
 import { cn } from "@/lib/utils";
@@ -24,12 +25,20 @@ export function money(amount: number, currency: string | null) {
   return !currency || currency === "INR" ? formatInr(amount) : `${currency} ${amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
+const FIT_STYLE: Record<BudgetFit["status"], string> = {
+  within: "border-success/40 bg-success/10 text-success",
+  likely: "border-success/40 bg-success/10 text-success",
+  partly: "border-warning/40 bg-warning/10 text-amber-700 dark:text-warning",
+  over: "border-destructive/30 bg-destructive/10 text-destructive",
+  unknown: "text-muted-foreground",
+};
+
 /**
  * One journey from GET /journeys: times, duration, changes and waits, the fare or why there is
  * none, a warning for separately booked legs, and every leg with its provider link.
- * A null fare is never shown as a price.
+ * A null fare is never shown as a price: a train or bus may show a typical range, marked as an estimate.
  */
-export function JourneyCard({ journey: j, badge }: { journey: JourneyResponse; badge?: string }) {
+export function JourneyCard({ journey: j, badge, fit }: { journey: JourneyResponse; badge?: string; fit?: BudgetFit | null }) {
   const [open, setOpen] = useState(false);
   const first = j.legs[0];
   const last = j.legs[j.legs.length - 1];
@@ -54,6 +63,11 @@ export function JourneyCard({ journey: j, badge }: { journey: JourneyResponse; b
               {badge && <Badge className="font-normal">{badge}</Badge>}
               <Badge variant="secondary" className="font-normal">{j.kind === "direct" ? "Direct" : j.transfers === 1 ? "1 change" : `${j.transfers} changes`}</Badge>
               {j.legs.map((l, i) => l.data_label && <Badge key={i} variant="outline" className="font-normal">{l.data_label}</Badge>)}
+              {fit && (
+                <Badge variant="outline" className={cn("font-normal", FIT_STYLE[fit.status])}>
+                  {fit.label}
+                </Badge>
+              )}
             </div>
             <p className="mt-1 truncate font-medium">{services}</p>
             <p className="text-xs text-muted-foreground">{route}</p>
@@ -65,6 +79,13 @@ export function JourneyCard({ journey: j, badge }: { journey: JourneyResponse; b
                 {j.travellers && j.travellers > 1 && j.fare_per_person != null && (
                   <p className="text-[11px] text-muted-foreground">{money(j.fare_per_person, j.currency)} each · {j.travellers} travellers</p>
                 )}
+              </>
+            ) : j.fare_estimate ? (
+              <>
+                <p className="text-sm font-semibold tabular-nums">
+                  {formatInr(j.fare_estimate.low)} – {formatInr(j.fare_estimate.high)}
+                </p>
+                <p className="max-w-[12rem] text-[11px] text-muted-foreground">Typical fare, estimate{j.travellers && j.travellers > 1 ? ` for ${j.travellers}` : ""}</p>
               </>
             ) : (
               <p className="max-w-[12rem] text-xs text-muted-foreground">{j.fare_label}</p>
@@ -135,7 +156,15 @@ function Leg({ leg }: { leg: JourneyLegResponse }) {
           </p>
         ))}
         <p className="text-xs">
-          {leg.fare !== null ? <span className="font-medium">{money(leg.fare, leg.currency)} per person</span> : <span className="text-muted-foreground">{leg.fare_label ?? "Fare not available"}</span>}
+          {leg.fare !== null ? (
+            <span className="font-medium">{money(leg.fare, leg.currency)} per person</span>
+          ) : leg.fare_estimate ? (
+            <span className="text-muted-foreground">
+              No published fare. Typically {formatInr(leg.fare_estimate.low)} – {formatInr(leg.fare_estimate.high)} per person ({leg.fare_estimate.label.replace(/^Estimate from /, "estimate from ")})
+            </span>
+          ) : (
+            <span className="text-muted-foreground">{leg.fare_label ?? "Fare not available"}</span>
+          )}
           {leg.source && <span className="text-muted-foreground"> · {leg.source}</span>}
         </p>
         {leg.link && (
