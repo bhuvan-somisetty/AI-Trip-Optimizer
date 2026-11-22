@@ -52,6 +52,13 @@ def test_via_cities_prefer_hubs_a_small_detour_away():
     assert via_cities("BBI", "BLR", 0) == []
 
 
+def test_the_busiest_airports_are_tried_even_out_of_the_way():
+    # Bengaluru -> Delhi -> Jaipur is a 27% detour, but Delhi has the most flights to Jaipur.
+    assert via_cities("BLR", "JAI", 3) == ["HYD", "BOM", "DEL"]
+    # Chennai doesn't bring a traveller nearer to Jaipur, so it is never a stop.
+    assert "MAA" not in via_cities("BLR", "JAI", 4)
+
+
 def test_train_and_bus_times_get_a_date():
     route = {"departs": "11:40 PM", "duration_minutes": 340}
     assert scheduled(route, DAY, 19) == {**route, "departure_time": "2026-12-12T23:40:00", "arrival_time": "2026-12-13T05:20:00"}
@@ -129,6 +136,12 @@ def test_trains_are_shown_but_never_called_cheapest(canned):
     trains = [j for j in result["journeys"] if j["modes"] == ["train"]]
     assert [t["legs"][0]["service"] for t in trains] == ["12245 Duronto Express"]  # the next-day one is left out
     assert trains[0]["fare"] is None and trains[0]["fare_label"].startswith("Not available")
+    # A typical range from the distance, for comparing with a budget: never a price.
+    estimate = trains[0]["fare_estimate"]
+    assert estimate["currency"] == "INR" and 0 < estimate["low"] < estimate["high"]
+    assert trains[0]["legs"][0]["fare_estimate"]["label"].startswith("Estimate from about")
+    flights = [j for j in result["journeys"] if j["modes"] == ["flight"]]
+    assert flights and all(j["fare_estimate"] is None for j in flights)
     assert all(p is None or "Duronto" not in p["reason"] for k, p in result["recommendations"].items() if k != "fastest")
 
 
@@ -138,6 +151,25 @@ def test_each_leg_is_searched_once_from_the_right_time(canned):
     assert grounds[("BBI", "BLR")] == (5, 12, 19)  # the direct route: the whole day
     assert grounds[("BBI", "MAA")] == (5,) and grounds[("MAA", "BLR")] == (12,)
     assert len([a for a in canned if a[0] == "flight"]) == 5
+
+
+def test_flights_only_through_two_cities(canned, monkeypatch):
+    # Bengaluru -> Goa -> Delhi -> Jaipur on separate tickets beats a festival-time direct fare.
+    fares = {
+        ("BLR", "JAI"): [flight("BLR", "JAI", "06:00", "08:40", 30000, "6E101")],
+        ("BLR", "GOI"): [flight("BLR", "GOI", "05:30", "06:45", 3000, "6E201")],
+        ("GOI", "DEL"): [flight("GOI", "DEL", "10:00", "12:40", 5000, "6E301")],
+        ("DEL", "JAI"): [flight("DEL", "JAI", "15:00", "16:00", 10000, "6E401")],
+    }
+    monkeypatch.setattr(journeys, "search_flights", lambda frm, to, day, cabin_class=None: fares.get((frm, to), []))
+    monkeypatch.setattr(journeys, "via_cities", lambda o, d, n: ["GOI", "DEL"])
+    result = find_journeys("BLR", "JAI", DAY, modes={"flight"}, vias=2, via_depth=2)
+    by_id = {j["id"]: j for j in result["journeys"]}
+    pick = result["recommendations"]["cheapest_connecting"]
+    best = by_id[pick["journey"]]
+    assert [v["code"] for v in best["via"]] == ["GOI", "DEL"] and best["fare"] == 18000
+    assert best["modes"] == ["flight", "flight", "flight"] and best["transfers"] == 2
+    assert "₹12,000 cheaper than the cheapest direct option" in pick["reason"]
 
 
 def test_only_the_chosen_modes_are_searched(canned):
