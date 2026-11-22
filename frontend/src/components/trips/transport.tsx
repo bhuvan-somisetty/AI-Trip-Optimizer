@@ -1,23 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bus, ExternalLink, Loader2, Plane, RefreshCw, Ship, TrainFront } from "lucide-react";
+import Link from "next/link";
+import { Bus, ExternalLink, Loader2, Plane, RefreshCw, Ship, Sparkles, TrainFront } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/app/common";
 import * as api from "@/lib/api";
 import type { GroundOptionResponse, TransportResponse } from "@/lib/api";
 import { formatDate, formatDuration, formatInr } from "@/lib/format";
 import { useStore } from "@/lib/store";
+import { cn } from "@/lib/utils";
+
+type TripRoute = { from: string; to: string; date: string; back?: string | null };
+
+function searchHref(r: TripRoute, mode: "all" | "cheaper") {
+  const params = new URLSearchParams({ from: r.from, to: r.to, date: r.date, mode });
+  if (r.back) params.set("return", r.back);
+  return `/search?${params}`;
+}
 
 /**
- * Flight, trains, buses and ferries for the trip's outbound day, side by side (GET /trips/{id}/transport).
+ * Flight, trains, buses and ferries for the trip's outbound day, side by side (GET /trips/{id}/transport),
+ * with links to the full search: every option by budget, and cheaper flights through other cities.
  * A fare is shown only when the API has one; otherwise its label ("Not available"). Nothing here
  * changes the trip's prices, budget check or Trade-off Ledger.
  */
-export function TransportTab({ tripId }: { tripId: string }) {
+export function TransportTab({ tripId, search }: { tripId: string; search?: TripRoute }) {
   const token = useStore().session?.token;
   const [attempt, setAttempt] = useState(0);
   const key = `${tripId}:${attempt}`;
@@ -116,6 +127,17 @@ export function TransportTab({ tripId }: { tripId: string }) {
           )}
           {x.flight && <p className="text-xs text-muted-foreground">Flight: {x.flight.data_label === "Live" ? "live fare" : "cached fare"}{x.flight.source ? ` from ${x.flight.source}` : ""}.</p>}
           {x.notice && <p className="rounded-xl border border-dashed p-3 text-sm text-muted-foreground">{x.notice}</p>}
+          {search && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Link href={searchHref(search, "all")} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                Compare all by budget
+              </Link>
+              <Link href={searchHref(search, "cheaper")} className={cn(buttonVariants({ size: "sm" }))}>
+                <Sparkles />
+                Cheaper flights through other cities
+              </Link>
+            </div>
+          )}
         </CardContent>
       </Card>
 
