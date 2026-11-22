@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FlightResponse, TripResultResponse } from "./api";
-import { fromTrip, toItinerary, toTrip, tripCode, type TripInput } from "./mappers";
+import { fromTrip, toCity, toItinerary, toTrip, tripCode, type TripInput } from "./mappers";
 import { defaultFilters } from "./store";
 import type { Trip } from "./types";
 
@@ -192,5 +192,15 @@ describe("trip form mapping", () => {
     expect(saved.code).toBe(tripCode("0b1c2d3e-0000-4000-8000-000000000000"));
     expect(saved.filters.maxStops).toBe(1);
     expect(saved.title).toBe("Investor day");
+  });
+});
+
+describe("toCity", () => {
+  const airport = { code: "LHR", city: "London", country: "GB", country_name: "United Kingdom", airport: "London Heathrow Airport",
+    latitude: 51.4707, longitude: -0.4599, size: 3, timezone: "Europe/London" };
+
+  it("reads an airport from GET /airports as a city, international outside India", () => {
+    expect(toCity(airport)).toEqual({ code: "LHR", name: "London", country: "United Kingdom", lat: 51.4707, lon: -0.4599, international: true, hotelIndex: 1 });
+    expect(toCity({ ...airport, code: "VNS", country: "IN", country_name: "India" }).international).toBe(false);
   });
 });
