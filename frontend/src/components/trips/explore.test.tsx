@@ -85,6 +85,35 @@ describe("ExploreTab", () => {
     expect(screen.getByText("Local dishes need the AI model on the server")).toBeInTheDocument();
   });
 
+  it("shows day trips and famous hotels from Wikidata", async () => {
+    const around = { description: null, image: null, wikipedia: "https://en.wikipedia.org/wiki/Dudhsagar_Falls", rating: null, latitude: 15.3, longitude: 74.3, source: "Wikidata and Wikipedia", data_label: "Wikidata", fame: 28, wikidata: "http://www.wikidata.org/entity/Q1" };
+    getExplore.mockResolvedValue(
+      goa({
+        day_trips: [{ ...around, id: "wd-Q1", kind: "day_trip", name: "Dudhsagar Falls", category: "Waterfall", distance_m: 52100 }],
+        famous_stays: [{ ...around, id: "wd-Q2", kind: "stay", name: "The Taj Exotica Hotel & Resort", category: "Hotel", distance_m: 14800 }],
+        around_from: "the city centre",
+        around_notice: null,
+      })
+    );
+    render(<ExploreTab tripId="t1" />);
+    expect(await screen.findByText("Day trips nearby")).toBeInTheDocument();
+    expect(screen.getByText("Dudhsagar Falls")).toBeInTheDocument();
+    expect(screen.getByText("52.1 km from the city centre")).toBeInTheDocument();
+    expect(screen.getByText("Famous hotels")).toBeInTheDocument();
+    expect(screen.getByText("The Taj Exotica Hotel & Resort")).toBeInTheDocument();
+  });
+
+  it("explains missing day trips, and hides the sections for an older API", async () => {
+    getExplore.mockResolvedValue(goa({ day_trips: [], famous_stays: [], around_notice: "Wikidata couldn't be reached right now" }));
+    const { unmount } = render(<ExploreTab tripId="t1" />);
+    expect(await screen.findAllByText("Wikidata couldn't be reached right now")).toHaveLength(2);
+    unmount();
+    getExplore.mockResolvedValue(goa());
+    render(<ExploreTab tripId="t2" />);
+    await screen.findByText("Basilica of Bom Jesus");
+    expect(screen.queryByText("Day trips nearby")).not.toBeInTheDocument();
+  });
+
   it("leaves out fields the API sent as null", async () => {
     getExplore.mockResolvedValue(goa({ attractions: [{ ...goa().attractions[0], description: null, wikipedia: null, distance_m: null, image: null }] }));
     render(<ExploreTab tripId="t1" />);
