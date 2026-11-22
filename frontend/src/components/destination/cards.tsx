@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import {
+  BedDouble,
   Building2,
   Castle,
+  Droplets,
   ChevronDown,
   Clock,
   ExternalLink,
@@ -44,6 +46,24 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
   Viewpoint: Mountain,
   Market: ShoppingBasket,
   "Food court": Utensils,
+  // Day trips and famous hotels (Wikidata)
+  Palace: Castle,
+  Temple: Landmark,
+  Mosque: Landmark,
+  Church: Landmark,
+  "Archaeological site": Landmark,
+  "World Heritage Site": Landmark,
+  "Historic district": Building2,
+  "National park": Trees,
+  "Wildlife sanctuary": Trees,
+  "Protected area": Trees,
+  "Hill station": Mountain,
+  "Tourist attraction": MapPin,
+  Lake: Droplets,
+  Waterfall: Droplets,
+  Hotel: BedDouble,
+  "Heritage hotel": BedDouble,
+  Resort: BedDouble,
 };
 
 /** A soft illustrated placeholder for a place without a photo. */
