@@ -17,6 +17,7 @@ import type { JourneyMode, JourneyResponse, JourneysResponse } from "@/lib/api";
 import { bestWithinBudget, budgetFit, fitsBudget, modeSummary, sortCost } from "@/lib/budget";
 import { festivalDuring, festivalOn, type Festival } from "@/lib/festivals";
 import { formatDate, formatInr, toIsoDate, addDays } from "@/lib/format";
+import { minutesLabel } from "@/lib/geo";
 import { cityName, useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -77,13 +78,16 @@ export default function SearchPage() {
   const [onlyBudget, setOnlyBudget] = useState(false);
   const [cheaperBy, setCheaperBy] = useState<CheaperBy>("flight");
   const [stops, setStops] = useState<Stops>(rush ? 2 : 1);
+  // Cities the traveller wants to go through, in order (e.g. Goa then Bhubaneswar); empty = pick hubs.
+  const [ownVias, setOwnVias] = useState<string[]>(["", ""]);
+  const via = ownVias.filter((c) => /^[A-Z]{3}$/.test(c) && c !== q.from && c !== q.to);
   const [results, setResults] = useState<Record<string, { data?: JourneysResponse; error?: string }>>({});
 
   const ready = /^[A-Z]{3}$/.test(q.from) && /^[A-Z]{3}$/.test(q.to) && q.from !== q.to && q.date >= today;
   const tabDef = TABS.find((t) => t.id === tab)!;
   const cheaper = tab === "cheaper";
   const modes = cheaper && cheaperBy === "flight" ? (["flight"] as JourneyMode[]) : tabDef.modes;
-  const key = `${tab}|${q.from}|${q.to}|${q.date}|${q.back}|${q.travellers}${cheaper ? `|${cheaperBy}|${stops}` : ""}`;
+  const key = `${tab}|${q.from}|${q.to}|${q.date}|${q.back}|${q.travellers}${cheaper ? `|${cheaperBy}|${via.length ? via.join(">") : stops}` : ""}`;
   const current = results[key];
   // Direct searches run when the search is submitted; the cheaper-routes one waits for its button.
   const [cheaperAsked, setCheaperAsked] = useState<string | null>(null);
@@ -101,6 +105,7 @@ export default function SearchPage() {
         modes,
         vias: cheaper ? CHEAPER_SEARCH[stops].vias : 0,
         viaDepth: cheaper ? CHEAPER_SEARCH[stops].viaDepth : 1,
+        via: cheaper && via.length ? via : undefined,
         travellers: q.travellers,
       })
       .then(
@@ -222,7 +227,9 @@ export default function SearchPage() {
         </div>
       </div>
 
-      {cheaper && ready && <CheaperOptions by={cheaperBy} setBy={setCheaperBy} stops={stops} setStops={setStops} />}
+      {cheaper && ready && (
+        <CheaperOptions by={cheaperBy} setBy={setCheaperBy} stops={stops} setStops={setStops} ownVias={ownVias} setOwnVias={setOwnVias} from={q.from} to={q.to} />
+      )}
 
       {!ready ? (
         <Card>
@@ -233,7 +240,11 @@ export default function SearchPage() {
           <EmptyState
             icon={Sparkles}
             title="Is it cheaper to go through other cities?"
-            description={`Tries ${cityName(q.from)} → ${cityName(q.to)} on ${formatDate(q.date)} through ${stops === 2 ? "one or two" : "one"} of the big hub cities near the way, with real ${cheaperBy === "flight" ? "flights" : "flights, trains and buses"} booked as separate tickets, and checks every connection against the timetable. It runs about ${CHEAPER_SEARCH[stops].searches * (cheaperBy === "flight" ? 1 : 2)} live searches and can take up to a minute.`}
+            description={
+              via.length
+                ? `Tries ${[cityName(q.from), ...via.map(cityName), cityName(q.to)].join(" → ")} on ${formatDate(q.date)} (and each of your cities on its own), with real ${cheaperBy === "flight" ? "flights" : "flights, trains and buses"} booked as separate tickets, against going direct. Every connection is checked against the timetable. It runs about ${1 + 2 * via.length + (via.length * (via.length - 1)) / 2} live searches${cheaperBy === "flight" ? "" : " of each kind"}.`
+                : `Tries ${cityName(q.from)} → ${cityName(q.to)} on ${formatDate(q.date)} through ${stops === 2 ? "one or two" : "one"} of the big hub cities near the way, with real ${cheaperBy === "flight" ? "flights" : "flights, trains and buses"} booked as separate tickets, and checks every connection against the timetable. It runs about ${CHEAPER_SEARCH[stops].searches * (cheaperBy === "flight" ? 1 : 2)} live searches and can take up to a minute.`
+            }
             action={
               <Button onClick={() => setCheaperAsked(key)}>
                 <Sparkles />
@@ -293,7 +304,7 @@ export default function SearchPage() {
           )}
           <div className="flex flex-wrap items-center gap-3">
             <Link
-              href={`/planning?from=${q.from}&to=${q.to}&date=${q.date}${q.back ? `&return=${q.back}` : ""}`}
+              href={`/planning?from=${q.from}&to=${q.to}&date=${q.date}${q.back ? `&return=${q.back}` : ""}&mode=${tab === "cheaper" ? "flight" : tab}`}
               className={cn(buttonVariants())}
             >
               <RouteIcon />
@@ -332,29 +343,65 @@ function FestivalNotice({ festival: f, onCheaper, showButton }: { festival: Fest
   );
 }
 
-function CheaperOptions(p: { by: CheaperBy; setBy: (v: CheaperBy) => void; stops: Stops; setStops: (v: Stops) => void }) {
+function CheaperOptions(p: {
+  by: CheaperBy;
+  setBy: (v: CheaperBy) => void;
+  stops: Stops;
+  setStops: (v: Stops) => void;
+  ownVias: string[];
+  setOwnVias: (v: string[]) => void;
+  from: string;
+  to: string;
+}) {
+  const own = p.ownVias.some(Boolean);
+  const setVia = (i: number, code: string) => p.setOwnVias(p.ownVias.map((c, j) => (j === i ? code : c)));
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Segmented<CheaperBy>
-        size="sm"
-        aria-label="Travel by"
-        value={p.by}
-        onChange={p.setBy}
-        options={[
-          { value: "flight", label: "Flights only" },
-          { value: "all", label: "Flights, trains and buses" },
-        ]}
-      />
-      <Segmented<Stops>
-        size="sm"
-        aria-label="Stopover cities"
-        value={p.stops}
-        onChange={p.setStops}
-        options={[
-          { value: 1, label: "Through 1 city" },
-          { value: 2, label: "Through up to 2 cities" },
-        ]}
-      />
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <Segmented<CheaperBy>
+          size="sm"
+          aria-label="Travel by"
+          value={p.by}
+          onChange={p.setBy}
+          options={[
+            { value: "flight", label: "Flights only" },
+            { value: "all", label: "Flights, trains and buses" },
+          ]}
+        />
+        {!own && (
+          <Segmented<Stops>
+            size="sm"
+            aria-label="Stopover cities"
+            value={p.stops}
+            onChange={p.setStops}
+            options={[
+              { value: 1, label: "Through 1 city" },
+              { value: 2, label: "Through up to 2 cities" },
+            ]}
+          />
+        )}
+      </div>
+      <div className="rounded-xl border p-3">
+        <p className="text-sm font-medium">Or go through cities you choose</p>
+        <p className="mb-2 text-xs text-muted-foreground">
+          In order, for example Goa then Bhubaneswar. Left empty, the big hub cities on the way are tried instead.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
+          {p.ownVias.map((code, i) => (
+            <div key={i} className="space-y-1">
+              <Label htmlFor={`via-${i}`} className="text-xs">
+                {i === 0 ? "First stop" : "Then (optional)"}
+              </Label>
+              <AirportPicker id={`via-${i}`} value={code} exclude={p.from} onChange={(c) => setVia(i, c === p.to ? "" : c)} />
+            </div>
+          ))}
+          {own && (
+            <Button type="button" variant="ghost" size="sm" className="sm:mt-5" onClick={() => p.setOwnVias(["", ""])}>
+              Clear
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -423,6 +470,11 @@ function arrange(list: JourneyResponse[], sort: Sort, maxTransfers: number | nul
   return [...kept].sort(by[sort]);
 }
 
+/** ", but 8h 00m longer" for a slower cheaper route, ", and no slower" otherwise. */
+function timeNote(extraMinutes: number) {
+  return extraMinutes > 0 ? `, but ${minutesLabel(extraMinutes)} longer` : ", and no slower";
+}
+
 function routeOf(j: JourneyResponse) {
   return [j.legs[0].from.name, ...j.via.map((v) => v.name), j.legs[j.legs.length - 1].to.name].join(" → ");
 }
@@ -449,6 +501,7 @@ function Results({ title, data, sort, maxTransfers, maxHours, budget, onlyBudget
   const direct = data.recommendations.cheapest_direct ? byId.get(data.recommendations.cheapest_direct.journey) : undefined;
   const connecting = data.recommendations.cheapest_connecting ? byId.get(data.recommendations.cheapest_connecting.journey) : undefined;
   const saving = direct?.fare != null && connecting?.fare != null && direct.currency === connecting.currency ? direct.fare - connecting.fare : null;
+  const extra = direct && connecting ? connecting.duration_minutes - direct.duration_minutes : 0;
   const withinBudget = budget ? bestWithinBudget(data.journeys, budget, data.value_of_time) : null;
 
   return (
@@ -467,14 +520,25 @@ function Results({ title, data, sort, maxTransfers, maxHours, budget, onlyBudget
             </CardDescription>
             <CardTitle className="text-lg">
               {saving > 0
-                ? `Save ${money(saving, connecting.currency)}: ${routeOf(connecting)} for ${money(connecting.fare!, connecting.currency)}`
+                ? `Save ${money(saving, connecting.currency)} compared with the direct ${direct!.modes.includes("flight") ? "flight" : "option"}${timeNote(extra)}`
                 : `${money(direct!.fare!, direct!.currency)} direct, ${money(-saving, connecting.currency)} less than the cheapest route through another city`}
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-4 text-sm text-muted-foreground">
-            {saving > 0
-              ? `Instead of ${money(direct!.fare!, direct!.currency)} for the cheapest direct ${direct!.modes.includes("flight") ? "flight" : "option"}. ${connecting.legs.length} separate tickets, so leave enough time between them and pack light.`
-              : "Try another day, or the trains and buses."}
+          <CardContent className="space-y-1 px-4 text-sm text-muted-foreground">
+            {saving > 0 ? (
+              <>
+                <p className="font-medium text-foreground">
+                  {routeOf(connecting)}: {money(connecting.fare!, connecting.currency)} instead of {money(direct!.fare!, direct!.currency)}
+                </p>
+                <p>
+                  {minutesLabel(connecting.duration_minutes)} door to door instead of {minutesLabel(direct!.duration_minutes)}
+                  {connecting.transfer_waits.length ? `, changing in ${connecting.transfer_waits.map((w) => `${w.city.name} (${minutesLabel(w.minutes)})`).join(" and ")}` : ""}.{" "}
+                  {connecting.legs.length} separate tickets, so leave enough time between them and pack light.
+                </p>
+              </>
+            ) : (
+              <p>Try another day, other cities, or the trains and buses.</p>
+            )}
           </CardContent>
         </Card>
       )}
