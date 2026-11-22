@@ -11,8 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader } from "@/components/app/common";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { SpendChart } from "@/components/dashboard/spend-chart";
-import { routeLabel, useStore } from "@/lib/store";
-import { cityByCode } from "@/lib/catalog";
+import { cityName, routeLabel, useStore } from "@/lib/store";
 import { formatCompactInr, formatInr } from "@/lib/format";
 import { toast } from "@/lib/toast";
 
@@ -41,7 +40,7 @@ export default function AnalyticsPage() {
     const byDest = Object.values(
       approved.reduce<Record<string, { name: string; spend: number; trips: number }>>((acc, t) => {
         const k = t.destination;
-        acc[k] ??= { name: cityByCode[k]?.name ?? k, spend: 0, trips: 0 };
+        acc[k] ??= { name: cityName(k), spend: 0, trips: 0 };
         acc[k].spend += t.itinerary!.totalCost;
         acc[k].trips += 1;
         return acc;
