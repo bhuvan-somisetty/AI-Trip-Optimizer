@@ -2,9 +2,9 @@
 
 import { useSyncExternalStore } from "react";
 import * as api from "./api";
-import { cityByCode } from "./catalog";
+import { cityByCode, type City } from "./catalog";
 import { addDays, formatInr, toIsoDate, uid } from "./format";
-import { fromPolicy, fromTraveler, fromTrip, toAuditEvent, toItinerary, toPolicy, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
+import { fromPolicy, fromTraveler, fromTrip, toAuditEvent, toCity, toItinerary, toPolicy, toTraveler, toTrip, type TravelerInput, type TripInput } from "./mappers";
 import { OptimizationError, editItinerary, optimize } from "./optimizer";
 import { toast } from "./toast";
 import type {
@@ -39,6 +39,8 @@ export type State = {
   settings: Settings;
   readNotificationsAt: string;
   tripSeq: number;
+  /** Airports looked up from GET /airports, beyond the built-in list in lib/catalog.ts. */
+  cities: Record<string, City>;
 };
 
 const KEY = "ato-workspace-v2";
@@ -82,6 +84,7 @@ const empty: State = {
   settings: { theme: "light", notifyDecisions: true, notifyPipeline: true, compactTables: false },
   readNotificationsAt: new Date(0).toISOString(),
   tripSeq: 0,
+  cities: {},
 };
 
 let state: State = empty;
@@ -117,7 +120,8 @@ function hydrate() {
   } catch {
     loaded = null;
   }
-  state = { ...(loaded ?? seed()), hydrated: true, syncing: false };
+  // Spread over empty: a workspace saved before a field existed (e.g. cities) gets its default.
+  state = { ...empty, ...(loaded ?? seed()), hydrated: true, syncing: false };
   persist();
 }
 
@@ -207,6 +211,14 @@ async function withServerResult(trip: Trip): Promise<Trip> {
 
 let syncing: Promise<void> | null = null;
 
+/** Airport codes being looked up, or known to be unknown, so each is asked for once per page load. */
+const cityLookups = new Set<string>();
+
+/** Codes the user's trips and travelers use. */
+function codesInUse(s: State) {
+  return [...s.trips.flatMap((t) => [t.origin, t.destination]), ...s.travelers.map((t) => t.homeCity)];
+}
+
 // ---------------------------------------------------------------- actions
 
 export const actions = {
@@ -257,6 +269,7 @@ export const actions = {
           policy: policy ? toPolicy(policy) : s.policy,
           session: s.session && me ? { ...s.session, name: me.name || s.session.name, role: me.role } : s.session,
         }));
+        void actions.loadCities(codesInUse(state));
       } catch (e) {
         toast("Couldn't load your data", { description: (e as Error).message, variant: "error" });
       } finally {
@@ -265,6 +278,24 @@ export const actions = {
       }
     })();
     return syncing;
+  },
+
+  /** Keeps airports the user picked in the search box, so their names show everywhere. */
+  rememberCities(list: City[]) {
+    const fresh = list.filter((c) => !cityByCode[c.code] && !state.cities[c.code]);
+    if (fresh.length) set((s) => ({ cities: { ...s.cities, ...Object.fromEntries(fresh.map((c) => [c.code, c])) } }));
+  },
+  /**
+   * Looks up codes that aren't in lib/catalog.ts (GET /airports/{code}, no login). API mode only:
+   * demo mode stays on the built-in list. An unknown code or a failed lookup just keeps the code.
+   */
+  async loadCities(codes: string[]) {
+    if (!isApi()) return;
+    const missing = [...new Set(codes)].filter((c) => c && !cityByCode[c] && !state.cities[c] && !cityLookups.has(c));
+    if (!missing.length) return;
+    missing.forEach((c) => cityLookups.add(c));
+    const found = await Promise.allSettled(missing.map((c) => api.getAirport(c)));
+    actions.rememberCities(found.flatMap((r) => (r.status === "fulfilled" ? [toCity(r.value)] : [])));
   },
 
   async addTraveler(t: TravelerInput) {
@@ -665,6 +696,16 @@ export function travelerNames(trip: Trip, travelers: Traveler[]) {
   return trip.travelerIds.map((id) => travelers.find((t) => t.id === id)?.name ?? "Unknown");
 }
 
+/** A city from the built-in list or one looked up from the API; undefined while unknown. */
+export function cityOf(code: string): City | undefined {
+  return cityByCode[code] ?? getState().cities?.[code];
+}
+
+/** The city's name, or the bare code while it is unknown (never "undefined"). */
+export function cityName(code: string): string {
+  return cityOf(code)?.name ?? code;
+}
+
 export function routeLabel(trip: Trip) {
-  return `${cityByCode[trip.origin]?.name ?? trip.origin} → ${cityByCode[trip.destination]?.name ?? trip.destination}`;
+  return `${cityName(trip.origin)} → ${cityName(trip.destination)}`;
 }
