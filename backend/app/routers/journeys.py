@@ -27,12 +27,12 @@ def parse_modes(modes: str) -> set[str]:
 
 
 def search(origin: str, destination: str, day: date, modes: str, vias: int, value_of_time: float,
-           travellers: int = 1, via_depth: int = 1, return_date: date | None = None) -> dict:
+           travellers: int = 1, via_depth: int = 1, return_date: date | None = None, via: str | None = None) -> dict:
     if day < datetime.now(IST).date():
         raise HTTPException(status_code=422, detail="The date is in the past")
     try:
         return find_journeys(origin.upper(), destination.upper(), day, parse_modes(modes), vias, value_of_time,
-                             travellers, via_depth, return_date)
+                             travellers, via_depth, return_date, via.split(",") if via else None)
     except TravelDataError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -48,12 +48,13 @@ def journeys(
     travellers: int = Query(1, ge=1, le=MAX_TRAVELLERS, description="Fares are multiplied by this; no extra searches"),
     via_depth: int = Query(1, ge=1, le=2, description="2 also tries two via-cities in a row (more searches)"),
     return_date: date | None = Query(None, description="Also search the way back on this day (doubles the searches)"),
+    via: str | None = Query(None, max_length=40, description="Cities to go through, in order, e.g. GOI,BBI (up to 3); replaces the picked via-cities"),
     user: User = Depends(get_current_user),
 ):
     """Direct and connecting journeys on real departures, with the cheapest direct, cheapest
     connecting, fastest and best-value picks and why each was picked; the way back under
     "return" when return_date is given."""
-    return search(origin, destination, date, modes, vias, value_of_time, travellers, via_depth, return_date)
+    return search(origin, destination, date, modes, vias, value_of_time, travellers, via_depth, return_date, via)
 
 
 @router.get("/trips/{trip_id}/journeys")
@@ -64,8 +65,9 @@ def trip_journeys(
     travellers: int = Query(1, ge=1, le=MAX_TRAVELLERS),
     via_depth: int = Query(1, ge=1, le=2),
     include_return: bool = Query(False, description="Also search the way back on the trip's last day"),
+    via: str | None = Query(None, max_length=40, description="Cities to go through, in order, e.g. GOI,BBI"),
     trip: Trip = Depends(get_owned_trip),
 ):
     """The same search for a saved trip's route and first day (and last day with include_return)."""
     return search(trip.origin, trip.destination, trip.start_date, modes, vias, value_of_time, travellers,
-                  via_depth, trip.end_date if include_return else None)
+                  via_depth, trip.end_date if include_return else None, via)
