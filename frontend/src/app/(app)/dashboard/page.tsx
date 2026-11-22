@@ -12,6 +12,8 @@ import { SpendChart } from "@/components/dashboard/spend-chart";
 import { Reveal } from "@/components/motion/reveal";
 import { AuditTimeline } from "@/components/app/audit-timeline";
 import { MiniWindow } from "@/components/app/mini-window";
+import { TripSearch } from "@/components/dashboard/trip-search";
+import { PopularDestinations } from "@/components/dashboard/popular-destinations";
 import { TripStatusBadge } from "@/components/app/common";
 import { routeLabel, useStore } from "@/lib/store";
 import { formatCompactInr, formatDateRange, formatInr } from "@/lib/format";
@@ -57,6 +59,8 @@ export default function DashboardPage() {
   }, [s.trips, now]);
 
   const first = s.session?.name.split(" ")[0] ?? "there";
+  // The audit trail is admin-only on the server; in demo mode everything is local and visible.
+  const showActivity = s.session?.mode !== "api" || s.session?.role === "admin";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -108,6 +112,12 @@ export default function DashboardPage() {
           </div>
         </section>
       </Reveal>
+
+      {s.session?.mode === "api" && (
+        <Reveal delay={0.03}>
+          <TripSearch />
+        </Reveal>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Reveal delay={0.05}>
@@ -215,6 +225,13 @@ export default function DashboardPage() {
         </Reveal>
       </div>
 
+      {s.session?.mode === "api" && (
+        <Reveal delay={0.4}>
+          <PopularDestinations />
+        </Reveal>
+      )}
+
+      {showActivity && (
       <Reveal delay={0.45}>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -228,6 +245,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </Reveal>
+      )}
     </div>
   );
 }
