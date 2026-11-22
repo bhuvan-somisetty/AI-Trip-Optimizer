@@ -106,6 +106,16 @@ export type Flight = {
   priceStatus?: "cached" | "live";
   bookingLink?: string;
   source?: string;
+  /** a trip by train or bus books one in place of the flight; undefined for a flight */
+  mode?: "train" | "bus";
+  /** false when the train or bus publishes no fare: `price` is then 0 and not a price */
+  priceKnown?: boolean;
+  /** the typical fare range from the distance, when no fare is published */
+  fareEstimate?: { low: number; high: number; label: string };
+  bookingLabel?: string;
+  /** stations, for a train or bus */
+  fromStation?: string;
+  toStation?: string;
 };
 
 export type Layover = {
@@ -145,6 +155,8 @@ export type LedgerEntry = {
   label: string;
   detail: string;
   price: number;
+  /** false for a train or bus whose fare isn't published: `price` is then 0 and not shown */
+  priceKnown?: boolean;
   /** 0-100 weighted score from the browser optimizer; the backend picks by price and has none */
   score?: number;
   won: boolean;
