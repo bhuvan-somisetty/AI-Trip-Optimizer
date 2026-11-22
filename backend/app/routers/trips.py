@@ -222,6 +222,10 @@ def search_results(result: dict) -> dict:
         "hotel_options": result.get("hotel_options", []),
         "hotels_unavailable": result.get("hotels_unavailable"),
         "return_unavailable": result.get("return_unavailable"),
+        # A trip by train or bus (app/pipeline/graph.py ground_check) keeps its train and bus searches.
+        "ground_mode": result.get("ground_mode"),
+        "ground_options": result.get("ground_options", []),
+        "ground_return_options": result.get("ground_return_options", []),
     }
 
 
@@ -231,7 +235,7 @@ def saved_state(request: dict, found: dict) -> dict:
     # Itineraries saved before return flights were searched have no return_options at all.
     if "return_options" in found:
         state["return_options"] = found["return_options"]
-    for key in ("hotels_unavailable", "return_unavailable"):
+    for key in ("hotels_unavailable", "return_unavailable", "ground_mode", "ground_options", "ground_return_options"):
         if found.get(key):
             state[key] = found[key]
     return state
@@ -257,7 +261,7 @@ def option_summary(option: dict | None) -> dict | None:
     # What the audit keeps about a chosen flight/hotel: enough to trace it back to its source.
     if option is None:
         return None
-    keys = ("id", "airline", "flight_number", "name", "price", "price_per_night", "rating", "price_status", "source")
+    keys = ("id", "mode", "airline", "flight_number", "name", "price", "price_per_night", "rating", "price_status", "source")
     return {k: option[k] for k in keys if k in option}
 
 
