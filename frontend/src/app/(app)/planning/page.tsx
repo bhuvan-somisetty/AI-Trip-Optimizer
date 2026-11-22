@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -30,8 +30,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChipToggle, NativeSelect, Range, Segmented, Switch, Textarea } from "@/components/ui/fields";
 import { PageHeader } from "@/components/app/common";
 import { TravelerDialog } from "@/components/travelers/traveler-form";
-import { actions, defaultFilters, useStore } from "@/lib/store";
-import { airlines, amenityLabel, amenityOptions, cabinLabel, cities, cityByCode } from "@/lib/catalog";
+import { actions, cityName, cityOf, defaultFilters, useStore } from "@/lib/store";
+import { AirportPicker } from "@/components/trips/airport-picker";
+import { airlines, amenityLabel, amenityOptions, cabinLabel, cities } from "@/lib/catalog";
 import { OptimizationError, nightsBetween, optimize, optionsFor, priorityLabel, windowLabel } from "@/lib/optimizer";
 import { addDays, formatDateRange, formatInr, initials, toIsoDate } from "@/lib/format";
 import { toast } from "@/lib/toast";
@@ -106,6 +107,11 @@ export default function PlanningPage() {
 
   const selected = s.travelers.filter((t) => d.travelerIds.includes(t.id));
   const effective: Draft = { ...d, returnDate: roundTrip ? d.returnDate : null };
+
+  // A trip being edited can be to any airport: look up a city the built-in list doesn't have.
+  useEffect(() => {
+    void actions.loadCities([d.origin, d.destination]);
+  }, [d.origin, d.destination]);
 
   // Demo-mode feasibility preview: runs the local demo optimizer with no budget ceiling. In API
   // mode there is no preview, because real fares are only searched when the trip is optimized.
@@ -358,26 +364,34 @@ export default function PlanningPage() {
                     <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto_1fr]">
                       <div className="space-y-2">
                         <Label htmlFor="origin">From</Label>
-                        <NativeSelect id="origin" value={d.origin} onChange={(e) => up({ origin: e.target.value })}>
-                          {cityOptions.map((c) => (
-                            <option key={c.code} value={c.code}>
-                              {c.name} ({c.code})
-                            </option>
-                          ))}
-                        </NativeSelect>
+                        {apiMode ? (
+                          <AirportPicker id="origin" value={d.origin} exclude={d.destination} onChange={(code) => up({ origin: code })} />
+                        ) : (
+                          <NativeSelect id="origin" value={d.origin} onChange={(e) => up({ origin: e.target.value })}>
+                            {cityOptions.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {c.name} ({c.code})
+                              </option>
+                            ))}
+                          </NativeSelect>
+                        )}
                       </div>
                       <Button variant="outline" size="icon-lg" type="button" aria-label="Swap origin and destination" onClick={() => up({ origin: d.destination, destination: d.origin })} className="mx-auto">
                         <ArrowLeftRight />
                       </Button>
                       <div className="space-y-2">
                         <Label htmlFor="destination">To</Label>
-                        <NativeSelect id="destination" value={d.destination} onChange={(e) => up({ destination: e.target.value })}>
-                          {cityOptions.map((c) => (
-                            <option key={c.code} value={c.code}>
-                              {c.name} ({c.code}){c.international ? " · Intl" : ""}
-                            </option>
-                          ))}
-                        </NativeSelect>
+                        {apiMode ? (
+                          <AirportPicker id="destination" value={d.destination} exclude={d.origin} onChange={(code) => up({ destination: code })} />
+                        ) : (
+                          <NativeSelect id="destination" value={d.destination} onChange={(e) => up({ destination: e.target.value })}>
+                            {cityOptions.map((c) => (
+                              <option key={c.code} value={c.code}>
+                                {c.name} ({c.code}){c.international ? " · Intl" : ""}
+                              </option>
+                            ))}
+                          </NativeSelect>
+                        )}
                       </div>
                     </div>
 
@@ -405,11 +419,11 @@ export default function PlanningPage() {
                       </div>
                     </div>
 
-                    {cityByCode[d.destination]?.international && (
+                    {cityOf(d.destination)?.international && (
                       <div className="flex gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm">
                         <Info className="mt-0.5 size-4 shrink-0 text-primary" />
                         <p>
-                          International trip to {cityByCode[d.destination].country}. Check visa requirements before booking.
+                          International trip to {cityOf(d.destination)?.country}. Check visa requirements before booking.
                         </p>
                       </div>
                     )}
@@ -496,8 +510,8 @@ export default function PlanningPage() {
                   <CardHeader>
                     <CardTitle>Stay filters</CardTitle>
                     <CardDescription>
-                      {nights} night{nights > 1 ? "s" : ""} × {d.rooms} room{d.rooms > 1 ? "s" : ""} in {cityByCode[d.destination]?.name}. Company cap:{" "}
-                      {formatInr(cityByCode[d.destination]?.international ? s.policy.maxNightlyRateIntl : s.policy.maxNightlyRate)}/night.
+                      {nights} night{nights > 1 ? "s" : ""} × {d.rooms} room{d.rooms > 1 ? "s" : ""} in {cityName(d.destination)}. Company cap:{" "}
+                      {formatInr(cityOf(d.destination)?.international ? s.policy.maxNightlyRateIntl : s.policy.maxNightlyRate)}/night.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
@@ -599,7 +613,7 @@ export default function PlanningPage() {
                   <CardContent className="space-y-4">
                     <ReviewRow label="Title" value={d.title} onEdit={() => go(1)} />
                     <ReviewRow label="Travelers" value={selected.map((t) => t.name).join(", ")} onEdit={() => go(0)} />
-                    <ReviewRow label="Route" value={`${cityByCode[d.origin]?.name} → ${cityByCode[d.destination]?.name}`} onEdit={() => go(1)} />
+                    <ReviewRow label="Route" value={`${cityName(d.origin)} → ${cityName(d.destination)}`} onEdit={() => go(1)} />
                     <ReviewRow label="Dates" value={formatDateRange(d.departDate, roundTrip ? d.returnDate : null)} onEdit={() => go(1)} />
                     <ReviewRow
                       label="Flights"
@@ -654,12 +668,12 @@ export default function PlanningPage() {
               <div className="mt-3 flex items-center justify-between">
                 <div>
                   <p className="text-2xl font-bold">{d.origin}</p>
-                  <p className="text-xs text-white/60">{cityByCode[d.origin]?.name}</p>
+                  <p className="text-xs text-white/60">{cityName(d.origin)}</p>
                 </div>
                 <Plane className="size-5 rotate-45 text-sky-300" />
                 <div className="text-right">
                   <p className="text-2xl font-bold">{d.destination}</p>
-                  <p className="text-xs text-white/60">{cityByCode[d.destination]?.name}</p>
+                  <p className="text-xs text-white/60">{cityName(d.destination)}</p>
                 </div>
               </div>
               <p className="mt-3 text-sm text-white/80">{formatDateRange(d.departDate, roundTrip ? d.returnDate : null)}</p>
