@@ -1,17 +1,18 @@
-"""Explore a trip's destination: tourist attractions and restaurants (app/places.py) and
-famous local dishes (app/dishes.py).
+"""Explore a trip's destination: tourist attractions and restaurants (app/places.py), famous
+local dishes (app/dishes.py), and day trips and famous hotels around the city (app/wikidata.py).
 
 Kept apart from the optimizer on purpose: places never change a trip's prices, budget checks
 or Trade-off Ledger.
 """
 import logging
 import math
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
-from app import google_places, roads
+from app import google_places, roads, wikidata
 from app.database import get_session
 from app.dishes import DishesUnavailable, local_dishes
 from app.ground import search_ground
@@ -19,7 +20,7 @@ from app.models import CityPlaces, Trip
 from app.places import PlacesUnavailable, explore_city
 from app.routers.trips import get_owned_trip, saved_itinerary
 from app.routing import haversine_m, path_to, road_matrix, visiting_order
-from app.travel_data import CITIES, TravelDataError, country_name
+from app.travel_data import AIRPORTS, CITIES, TravelDataError, country_name
 
 router = APIRouter(tags=["explore"])
 logger = logging.getLogger(__name__)
@@ -49,6 +50,39 @@ def dishes_for(session: Session, city: str) -> tuple[list[dict], str | None]:
     return found, None
 
 
+SAME_PLACE_M = 1500  # a day trip this close to a listed attraction is the same place
+
+
+def around_city(city: str, centre: dict | None, attractions: list[dict]) -> dict:
+    """Day trips (famous places 15 to 150 km away) and famous hotels around the city centre
+    (the airport when the centre isn't known), without the attractions already listed."""
+    airport = AIRPORTS.get(city)
+    point = centre or (airport and {"latitude": airport["latitude"], "longitude": airport["longitude"]})
+    if not point:
+        return {"day_trips": [], "famous_stays": [], "around_source": None, "around_from": None, "around_notice": None}
+    lat, lon = point["latitude"], point["longitude"]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        trips, stays = pool.map(lambda kind: wikidata.around(kind, lat, lon), ("day_trip", "stay"))
+    names = {(a.get("name") or "").strip().lower() for a in attractions}
+
+    def listed(p: dict) -> bool:
+        if p["name"].strip().lower() in names:
+            return True
+        return p["latitude"] is not None and any(
+            a.get("latitude") is not None and a.get("longitude") is not None
+            and haversine_m(p["latitude"], p["longitude"], a["latitude"], a["longitude"]) < SAME_PLACE_M
+            for a in attractions
+        )
+
+    return {
+        "day_trips": [p for p in trips[0] if not listed(p)],
+        "famous_stays": stays[0],
+        "around_source": wikidata.SOURCE,
+        "around_from": "the city centre" if centre else "the airport",
+        "around_notice": trips[1] or stays[1],
+    }
+
+
 def destination_view(session: Session, city: str) -> dict:
     """A city's attractions (each in its "explore" or "history_culture" section), restaurants,
     food markets and dishes. Restaurants get Google's photo, rating and hours when Google Places
@@ -72,7 +106,8 @@ def destination_view(session: Session, city: str) -> dict:
         result = {**empty, "notice": f"Tourist places couldn't be loaded right now: {e}"}
     result["restaurants"], result["google_notice"] = google_places.enrich(result["restaurants"], result["city_name"])
     dishes, dishes_notice = dishes_for(session, city)
-    return {**result, "dishes": dishes, "dishes_notice": dishes_notice}
+    around = around_city(city, result.get("centre"), result["attractions"])
+    return {**result, "dishes": dishes, "dishes_notice": dishes_notice, **around}
 
 
 @router.get("/trips/{trip_id}/explore")
