@@ -35,8 +35,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState, PageHeader, TripStatusBadge } from "@/components/app/common";
-import { actions, routeLabel, travelerNames, useStore } from "@/lib/store";
-import { cities, cityByCode } from "@/lib/catalog";
+import { actions, cityName, routeLabel, travelerNames, useStore } from "@/lib/store";
+import { cities } from "@/lib/catalog";
 import { formatDateRange, formatInr, timeAgo } from "@/lib/format";
 import { toast } from "@/lib/toast";
 import type { Trip } from "@/lib/types";
@@ -79,6 +79,11 @@ export default function TripsPage() {
   const canDelete = s.session?.mode !== "api";
 
   const purposes = useMemo(() => [...new Set(s.trips.map((t) => t.purpose))].sort(), [s.trips]);
+  // The built-in cities, then any other city the user's trips go to (searched from all airports).
+  const destinationOptions = useMemo(
+    () => [...new Set([...cities.map((c) => c.code), ...s.trips.map((t) => t.destination)])],
+    [s.trips]
+  );
   const activeFilters = Object.entries(f).filter(([k, v]) => (k === "timeframe" ? v !== "all" : Boolean(v))).length;
 
   const filtered = useMemo(() => {
@@ -236,9 +241,9 @@ export default function TripsPage() {
               <Label className="text-xs">Destination</Label>
               <NativeSelect value={f.destination} onChange={(e) => upd("destination", e.target.value)}>
                 <option value="">Anywhere</option>
-                {cities.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.name} ({c.code})
+                {destinationOptions.map((code) => (
+                  <option key={code} value={code}>
+                    {cityName(code)} ({code})
                   </option>
                 ))}
               </NativeSelect>
@@ -396,14 +401,14 @@ export default function TripsPage() {
                   <div className="flex items-center gap-3 rounded-xl bg-muted/60 p-3">
                     <div className="text-center">
                       <p className="text-lg font-bold">{t.origin}</p>
-                      <p className="text-[11px] text-muted-foreground">{cityByCode[t.origin]?.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{cityName(t.origin)}</p>
                     </div>
                     <div className="relative flex-1 border-t border-dashed border-muted-foreground/40">
                       <Plane className="absolute -top-2 left-1/2 size-4 -translate-x-1/2 rotate-45 bg-transparent text-primary" />
                     </div>
                     <div className="text-center">
                       <p className="text-lg font-bold">{t.destination}</p>
-                      <p className="text-[11px] text-muted-foreground">{cityByCode[t.destination]?.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{cityName(t.destination)}</p>
                     </div>
                   </div>
                   <div className="space-y-1.5 text-sm text-muted-foreground">
