@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { amenityLabel, cabinLabel, cityByCode } from "@/lib/catalog";
+import { amenityLabel, cabinLabel } from "@/lib/catalog";
+import { cityName } from "@/lib/store";
 import { formatDate, formatDuration, formatInr, formatTime } from "@/lib/format";
 import type { Flight, Hotel, Itinerary, Layover, Trip } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -84,7 +85,7 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
         <div className="flex items-center gap-4">
           <div>
             <p className="text-2xl font-semibold tabular-nums">{formatTime(flight.departure)}</p>
-            <p className="text-sm text-muted-foreground">{flight.origin} · {cityByCode[flight.origin]?.name}</p>
+            <p className="text-sm text-muted-foreground">{flight.origin} · {cityName(flight.origin)}</p>
           </div>
           <div className="flex flex-1 flex-col items-center gap-1">
             <span className="text-xs text-muted-foreground">{flight.durationMin ? formatDuration(flight.durationMin) : "Duration not given"}</span>
@@ -95,7 +96,7 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
           </div>
           <div className="text-right">
             <p className="text-2xl font-semibold tabular-nums">{flight.arrival ? formatTime(flight.arrival) : "-"}</p>
-            <p className="text-sm text-muted-foreground">{flight.destination} · {cityByCode[flight.destination]?.name}</p>
+            <p className="text-sm text-muted-foreground">{flight.destination} · {cityName(flight.destination)}</p>
           </div>
         </div>
         {!!flight.layovers?.length && <p className="text-xs text-muted-foreground">{layoverText(flight.layovers)}</p>}
