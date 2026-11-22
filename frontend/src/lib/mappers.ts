@@ -152,14 +152,17 @@ function toLedgerEntry(e: LedgerEntryResponse, i: number, nights: number): Ledge
   const isStay = e.kind ? e.kind === "stay" : optionId.startsWith("HT-");
   // A rule ruled it out: a broken preference, a fare on another day, or a return that leaves too early.
   const screened = e.reason.startsWith("Preference") || e.reason.startsWith("Different day") || e.reason.startsWith("Timing");
+  // A train or bus of a trip by train or bus may have no published fare.
+  const price = e.price ?? 0;
   return {
     id: `led_${i}_${optionId}`,
     kind: e.kind ? ledgerKinds[e.kind] : isStay ? "stay" : "outbound",
     optionId,
     label: e.alternative,
     // The UI shows stays per night; the backend prices them for the whole stay.
-    detail: isStay ? `${formatInr(e.price)} for ${nights} night${nights === 1 ? "" : "s"}` : "One-way fare per traveler",
-    price: isStay && nights > 0 ? e.price / nights : e.price,
+    detail: isStay ? `${formatInr(price)} for ${nights} night${nights === 1 ? "" : "s"}` : e.price === null ? "Fare not published" : "One-way fare per traveler",
+    price: isStay && nights > 0 ? price / nights : price,
+    priceKnown: e.price !== null,
     won: e.won,
     feasible: !screened,
     reasonCode: e.won ? "WINNER" : screened ? "CONSTRAINT" : "PRICE",
@@ -201,12 +204,18 @@ function toFlight(f: FlightResponse): Flight {
     id: f.id,
     origin: f.origin,
     destination: f.destination,
-    airline: f.airline,
-    flightNo: f.flight_number ?? f.id,
+    airline: f.mode ? (f.operator ?? f.airline) : f.airline,
+    flightNo: f.mode ? (f.service ?? f.id) : (f.flight_number ?? f.id),
     departure: f.departure_time,
     arrival: orUndefined(f.arrival_time),
     durationMin: orUndefined(f.duration_minutes),
-    price: f.price,
+    price: f.price ?? 0,
+    priceKnown: f.price !== null,
+    mode: f.mode,
+    fareEstimate: f.fare_estimate ? { low: f.fare_estimate.low, high: f.fare_estimate.high, label: f.fare_estimate.label } : undefined,
+    bookingLabel: orUndefined(f.link_label),
+    fromStation: orUndefined(f.from_station),
+    toStation: orUndefined(f.to_station),
     cabin: cabins.includes(f.cabin_class as CabinClass) ? (f.cabin_class as CabinClass) : "economy",
     stops: f.stops,
     layovers: f.layovers?.map((l) => ({
@@ -262,7 +271,7 @@ export function toItinerary(r: TripResultResponse, trip: Trip, opts: { runMs?: n
     nights,
     rooms: 1,
     travelers: 1,
-    flightCost: f.price + (back?.price ?? 0),
+    flightCost: (f.price ?? 0) + (back?.price ?? 0),
     stayCost: h ? h.price_per_night * nights : 0,
     totalCost: it.total_cost,
     baselineCost: savings === null ? 0 : it.total_cost + savings,
