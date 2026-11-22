@@ -4,7 +4,9 @@ Sometimes going through another city is cheaper than going direct, e.g. Bhubanes
 -> Bengaluru during a festival. This module checks that with real fares instead of assuming it:
 
 1. A few via-cities are picked from the airport list: bigger airports that are only a small
-   detour from the straight line (total distance at most MAX_DETOUR times the direct one).
+   detour from the straight line (total distance at most MAX_DETOUR times the direct one). The
+   six busiest Indian airports may be a bigger detour and come first: they have the most flights
+   and often the lowest fares (Bengaluru -> Delhi -> Jaipur can beat Bengaluru -> Jaipur at Diwali).
 2. Every leg (origin -> via, via -> destination, origin -> destination) is searched for real:
    flights on Google Flights, trains / buses / ferries on Google Maps transit (both via SerpApi).
 3. Each departure becomes an edge of a time-dependent graph: cities are nodes, an edge leaves at
@@ -30,6 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from app.fares import estimate as estimate_fare, journey_range
 from app.ground import DEPART_HOURS, search_ground
 from app.routing import haversine_m
 from app.travel_data import AIRPORTS, TravelDataError, search_flights
@@ -38,8 +41,9 @@ logger = logging.getLogger(__name__)
 
 MODES = ("flight", "train", "bus", "ferry")
 DEFAULT_VIAS = 2
-MAX_VIAS = 3
+MAX_VIAS = 4
 MAX_DETOUR = 1.35  # a via-city may add at most 35% to the straight-line distance
+MAX_MEGA_HUB_DETOUR = 1.6  # ... or 60% when it is one of MEGA_HUBS
 MIN_LEG_KM = 150  # each leg of a via journey must be a real intercity hop
 GROUND_MAX_KM = 2500  # no train or bus is searched over a longer straight-line distance
 MAX_WAIT_MINUTES = 18 * 60  # longest wait in a via-city that is still offered
@@ -56,6 +60,9 @@ HUBS = {
     "JFK", "ORD", "ATL", "LAX", "NRT", "HND", "ICN", "PEK", "PVG", "SYD", "CMB", "KTM",
 }
 HUB_BONUS = 0.15  # a hub may be this much more of a detour and still come first
+# The busiest Indian airports: the most flights to every city, so the cheapest connections.
+MEGA_HUBS = {"DEL", "BOM", "BLR", "HYD", "MAA", "CCU"}
+MEGA_HUB_BONUS = 0.35
 # Leg searches for a via journey: the first leg from early morning, a middle leg (between two
 # via-cities) from mid-morning, the last leg from midday.
 FIRST_LEG_HOURS = (5,)
@@ -171,8 +178,9 @@ def efficient(labels: list[Label]) -> list[Label]:
 def via_cities(origin: str, destination: str, limit: int) -> list[str]:
     """Bigger airports a small detour away from the straight line, best first.
 
-    Ranked by detour (total distance over the direct one), with major hubs counted as a little
-    shorter: Bhubaneswar -> Bengaluru tries Chennai and Hyderabad before smaller cities."""
+    Ranked by detour (total distance over the direct one), with hubs counted as shorter:
+    Bhubaneswar -> Bengaluru tries Chennai and Hyderabad before smaller cities, Bengaluru ->
+    Jaipur tries Hyderabad, Mumbai and Delhi."""
     if limit <= 0:
         return []
     a, b = AIRPORTS[origin], AIRPORTS[destination]
@@ -183,9 +191,13 @@ def via_cities(origin: str, destination: str, limit: int) -> list[str]:
             continue
         first = haversine_m(a["latitude"], a["longitude"], v["latitude"], v["longitude"])
         second = haversine_m(v["latitude"], v["longitude"], b["latitude"], b["longitude"])
-        if min(first, second) < MIN_LEG_KM * 1000 or (first + second) > MAX_DETOUR * straight:
+        limit_detour = MAX_MEGA_HUB_DETOUR if code in MEGA_HUBS else MAX_DETOUR
+        if min(first, second) < MIN_LEG_KM * 1000 or (first + second) > limit_detour * straight:
             continue
-        found.append(((first + second) / straight - (HUB_BONUS if code in HUBS else 0), code))
+        if second >= straight:
+            continue  # it must bring the traveller nearer: Chennai is no stop on Bengaluru -> Jaipur
+        bonus = MEGA_HUB_BONUS if code in MEGA_HUBS else HUB_BONUS if code in HUBS else 0
+        found.append(((first + second) / straight - bonus, code))
     picked, cities = [], set()
     for _, code in sorted(found):
         if AIRPORTS[code]["city"] not in cities:
@@ -252,6 +264,8 @@ def ground_edge(g: dict, frm: str, to: str) -> Edge | None:
         "link_label": g.get("link_label"),
         "source": g.get("source"),
         "data_label": g.get("data_label"),
+        # A typical range when the provider publishes no fare (Indian trains and buses only).
+        "fare_estimate": estimate_fare(g["kind"], frm, to) if g.get("fare") is None else None,
     }
     return Edge(frm, to, g["kind"], departure, arrival, g.get("fare"), g.get("currency"), leg["stops"], leg)
 
@@ -317,6 +331,8 @@ def journey(label: Label, number: int, travellers: int = 1) -> dict:
         "currency": label.currency if label.fare is not None else None,
         "fare_label": ("Sum of real fares" if travellers == 1 else f"Sum of real fares for {travellers} travellers")
         if label.fare is not None else "Not available: a leg has no published fare",
+        # Only when the fare is unknown: a range from distance-based estimates, never a price.
+        "fare_estimate": journey_range(legs, travellers) if label.fare is None else None,
         "legs": legs,
     }
 
