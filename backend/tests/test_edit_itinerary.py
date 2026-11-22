@@ -122,10 +122,10 @@ def test_cannot_edit_someone_elses_trip(client, auth_headers, other_headers, tri
     assert edit(client, other_headers, trip_id, "flight", "FL-1001").status_code == 404
 
 
-def test_edit_is_in_the_audit_trail(client, auth_headers, trip_payload):
+def test_edit_is_in_the_audit_trail(client, auth_headers, trip_payload, read_audit):
     trip_id = optimized_trip(client, auth_headers, trip_payload)
     edit(client, auth_headers, trip_id, "flight", "FL-1001")
-    events = client.get(f"/audit?event_type=ITINERARY_EDITED&trip_id={trip_id}", headers=auth_headers).json()
+    events = read_audit(event_type="ITINERARY_EDITED", trip_id=trip_id)
     assert len(events) == 1
     assert events[0]["summary"] == "Swapped flight to FL-1001; total 13,300 -> 14,900"
     assert events[0]["payload"] == {"kind": "flight", "option_id": "FL-1001", "before": 13300, "after": 14900}
