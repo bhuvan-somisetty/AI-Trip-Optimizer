@@ -386,18 +386,60 @@ export const getDecision = (token: string, tripId: string) => call<DecisionRespo
 // The first explore or route for a city asks OpenTripMap and OpenStreetMap live (30 to 70 s); later ones are cached.
 const PLACES_TIMEOUT_MS = 100000;
 
-/** An attraction or restaurant from OpenTripMap; fields it didn't send are null. */
+/** Google Places details for a restaurant; only present when the server has a Google key. */
+export type GoogleDetails = {
+  rating: number | null;
+  rating_count: number | null;
+  address: string | null;
+  /** "Monday: 9:00 AM - 11:00 PM" lines */
+  opening_hours: string[] | null;
+  type: string | null;
+  maps_url: string | null;
+  source: string;
+  data_label: string;
+};
+
+/** An attraction or restaurant from OpenTripMap and OpenStreetMap; fields they didn't send are null. */
 export type PlaceResponse = {
   id: string;
   name: string;
   category: string | null;
+  /** "history_culture" for forts, temples, museums...; "explore" for nature and sightseeing */
+  section?: "explore" | "history_culture";
   description: string | null;
   image: string | null;
+  /** "Photo: Google" when the photo is Google's; Wikipedia photos come with the place */
+  image_label?: string | null;
+  photo_attribution?: { author: string | null; author_url: string | null } | null;
   wikipedia: string | null;
+  /** OpenTripMap popularity (1 to 3, "h" = heritage), not a user rating: show rating_label */
   rating: number | string | null;
+  rating_label?: string | null;
   latitude: number | null;
   longitude: number | null;
   distance_m: number | null;
+  address?: string | null;
+  /** OpenStreetMap's own format, e.g. "Mo-Su 08:00-20:00" */
+  opening_hours?: string | null;
+  cuisine?: string | null;
+  map_url?: string | null;
+  google?: GoogleDetails;
+  source: string;
+  data_label: string;
+};
+
+/** A food market or food court from OpenStreetMap. */
+export type FoodSpotResponse = {
+  id: string;
+  name: string;
+  category: "Market" | "Food court";
+  latitude: number;
+  longitude: number;
+  distance_m: number | null;
+  opening_hours: string | null;
+  address: string | null;
+  map_url: string | null;
+  image: null;
   source: string;
   data_label: string;
 };
@@ -418,9 +460,13 @@ export type ExploreResponse = {
   city_name: string;
   attractions: PlaceResponse[];
   restaurants: PlaceResponse[];
+  /** Missing from an older API; treat that as an empty list. */
+  food_spots?: FoodSpotResponse[];
   dishes: DishResponse[];
   /** why the places lists are empty; null when they loaded */
   notice: string | null;
+  /** why Google's restaurant details are missing when Google Places is set up */
+  google_notice?: string | null;
   /** why the dishes list is empty; null when it loaded */
   dishes_notice: string | null;
   source: string | null;
@@ -446,6 +492,8 @@ export type RouteLegResponse = {
   from: string;
   to: string;
   road_m: number;
+  /** estimated driving minutes (speed limits and typical road speeds, not traffic) */
+  estimated_minutes?: number;
   straight_m: number;
   /** [lat, lon] points along the road */
   path: [number, number][];
@@ -457,6 +505,11 @@ export type RouteResponse = {
   stops: RouteStopResponse[];
   legs: RouteLegResponse[];
   total_road_m: number | null;
+  total_estimated_minutes?: number | null;
+  /** what Dijkstra minimised */
+  weight?: RouteWeight;
+  /** says the minutes are an estimate */
+  time_label?: string;
   /** attractions no road from the hotel reaches */
   unreachable: string[];
   source: string;
@@ -465,8 +518,10 @@ export type RouteResponse = {
   notice: string | null;
 };
 
-export const getRoute = (token: string, tripId: string, stops: number) =>
-  call<RouteResponse>("GET", `/trips/${id(tripId)}/route?stops=${stops}`, { token, timeoutMs: PLACES_TIMEOUT_MS });
+export type RouteWeight = "distance" | "time";
+
+export const getRoute = (token: string, tripId: string, stops: number, weight: RouteWeight = "distance") =>
+  call<RouteResponse>("GET", `/trips/${id(tripId)}/route?stops=${stops}&weight=${weight}`, { token, timeoutMs: PLACES_TIMEOUT_MS });
 
 export type TransportStop = { name: string | null; code: string | null; time: string | null };
 
@@ -487,6 +542,9 @@ export type GroundOptionResponse = {
   fare: number | null;
   currency: string | null;
   fare_label: string;
+  /** the operator's own site (IRCTC, FlixBus, redBus...), only a link: no booking or price is read from it */
+  link?: string | null;
+  link_label?: string | null;
   source: string;
   data_label: string;
 };
@@ -546,3 +604,140 @@ export const searchAirports = (q: string, limit = 10) =>
 
 /** One airport by its code; ApiError 404 when the code is unknown. */
 export const getAirport = (code: string) => call<AirportResponse>("GET", `/airports/${encodeURIComponent(code)}`, { timeoutMs: 8000 });
+
+// ---------------------------------------------------------------- journeys (cheaper routes)
+
+export type JourneyMode = "flight" | "train" | "bus" | "ferry";
+export type JourneyPlace = { code: string; name: string; station?: string | null; station_code?: string | null };
+
+export type JourneyLegResponse = {
+  mode: JourneyMode;
+  service: string | null;
+  operator: string | null;
+  from: JourneyPlace;
+  to: JourneyPlace;
+  departure_time: string;
+  arrival_time: string;
+  duration_minutes: number | null;
+  stops: number;
+  layovers: { airport: string | null; airport_name: string | null; minutes: number | null; overnight: boolean }[];
+  /** per person; null when the source publishes none */
+  fare: number | null;
+  currency: string | null;
+  fare_label: string | null;
+  link: string | null;
+  link_label?: string | null;
+  source: string | null;
+  data_label: string | null;
+};
+
+export type JourneyResponse = {
+  id: string;
+  kind: "direct" | "connecting";
+  /** two or more legs booked separately: a delay on one can make you miss the next */
+  separate_tickets: boolean;
+  via: JourneyPlace[];
+  modes: JourneyMode[];
+  departure_time: string;
+  arrival_time: string;
+  duration_minutes: number;
+  transfers: number;
+  transfer_waits: { city: JourneyPlace; minutes: number }[];
+  travellers?: number;
+  fare_per_person?: number | null;
+  /** total for all travellers; null when a leg has no published fare */
+  fare: number | null;
+  currency: string | null;
+  fare_label: string;
+  legs: JourneyLegResponse[];
+};
+
+export type Recommendation = { journey: string; reason: string } | null;
+
+export type JourneysResponse = {
+  origin: JourneyPlace;
+  destination: JourneyPlace;
+  date: string;
+  travellers?: number;
+  modes: JourneyMode[];
+  via_cities: JourneyPlace[];
+  via_summary: { city: JourneyPlace; journey: string | null; fare: number | null; difference_from_direct: number | null; note: string }[];
+  journeys: JourneyResponse[];
+  recommendations: {
+    cheapest_direct: Recommendation;
+    cheapest_connecting: Recommendation;
+    fastest: Recommendation;
+    best_value: Recommendation;
+  };
+  value_of_time: number;
+  searched: { from: string; to: string; mode: string; found: number; error: string | null }[];
+  method: string;
+  notice: string | null;
+  /** the way back, when a return date was searched */
+  return?: JourneysResponse | null;
+};
+
+export type JourneySearch = {
+  origin: string;
+  destination: string;
+  date: string;
+  modes?: JourneyMode[];
+  /** via-cities to try: each costs about two flight and two transit searches */
+  vias?: number;
+  travellers?: number;
+  viaDepth?: 1 | 2;
+  returnDate?: string | null;
+};
+
+// Every leg is a live search; with via-cities that is up to a dozen of them.
+const JOURNEYS_TIMEOUT_MS = 120000;
+
+function journeyQuery(q: Omit<JourneySearch, "origin" | "destination" | "date">) {
+  const params = new URLSearchParams();
+  if (q.modes?.length) params.set("modes", q.modes.join(","));
+  if (q.vias !== undefined) params.set("vias", String(q.vias));
+  if (q.travellers) params.set("travellers", String(q.travellers));
+  if (q.viaDepth) params.set("via_depth", String(q.viaDepth));
+  return params;
+}
+
+/** Spends SerpApi searches: call it only when the user asks. */
+export const searchJourneys = (token: string, q: JourneySearch) => {
+  const params = journeyQuery(q);
+  params.set("origin", q.origin);
+  params.set("destination", q.destination);
+  params.set("date", q.date);
+  if (q.returnDate) params.set("return_date", q.returnDate);
+  return call<JourneysResponse>("GET", `/journeys?${params}`, { token, timeoutMs: JOURNEYS_TIMEOUT_MS });
+};
+
+export const getTripJourneys = (token: string, tripId: string, q: Omit<JourneySearch, "origin" | "destination" | "date"> & { includeReturn?: boolean } = {}) => {
+  const params = journeyQuery(q);
+  if (q.includeReturn) params.set("include_return", "true");
+  return call<JourneysResponse>("GET", `/trips/${id(tripId)}/journeys?${params}`, { token, timeoutMs: JOURNEYS_TIMEOUT_MS });
+};
+
+// ---------------------------------------------------------------- destinations and nearby places
+
+export type DestinationResponse = ExploreResponse & {
+  country: string;
+  country_name: string;
+  location: { latitude: number; longitude: number };
+  overview: { title: string | null; text: string | null; image: string | null; wikipedia: string | null; source: string; image_label: string | null } | null;
+};
+
+export const getDestination = (token: string, code: string) =>
+  call<DestinationResponse>("GET", `/destinations/${encodeURIComponent(code)}`, { token, timeoutMs: PLACES_TIMEOUT_MS });
+
+export type NearbyResponse = {
+  attractions: PlaceResponse[];
+  restaurants: PlaceResponse[];
+  centre?: { latitude: number; longitude: number };
+  radius_m?: number;
+  source?: string;
+  notice: string | null;
+};
+
+/** Sends the point to the server (and OpenTripMap): only after the user allowed their location. */
+export const getNearby = (token: string, lat: number, lon: number, radiusM = 3000) =>
+  call<NearbyResponse>("GET", `/places/nearby?lat=${lat}&lon=${lon}&radius_m=${radiusM}`, { token, timeoutMs: PLACES_TIMEOUT_MS });
