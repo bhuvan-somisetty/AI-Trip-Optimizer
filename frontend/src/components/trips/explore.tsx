@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Compass, ExternalLink, Landmark, Loader2, MapPin, RefreshCw, ShoppingBasket, Trees, Utensils, UtensilsCrossed } from "lucide-react";
+import { ArrowRight, BedDouble, CarFront, Compass, ExternalLink, Landmark, Loader2, MapPin, RefreshCw, ShoppingBasket, Trees, Utensils, UtensilsCrossed } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,8 @@ import { formatDate } from "@/lib/format";
 import { useStore } from "@/lib/store";
 
 /**
- * Places to see, local food and restaurants at the trip's destination (GET /trips/{id}/explore).
+ * Places to see, day trips, famous hotels, local food and restaurants at the trip's destination
+ * (GET /trips/{id}/explore).
  * Only what the API sent is shown, each with its source label; an empty list shows the API's notice.
  * Nothing here changes the trip's prices, budget check or Trade-off Ledger.
  */
@@ -135,6 +136,34 @@ export function ExploreTab({ tripId }: { tripId: string }) {
         </Section>
       )}
 
+      {x.day_trips && (
+        <Section icon={CarFront} title="Day trips nearby">
+          {x.day_trips.length ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {x.day_trips.map((p) => (
+                <PlaceCard key={p.id} place={p} distanceFrom={x.around_from ?? "the city"} />
+              ))}
+            </div>
+          ) : (
+            <Notice text={x.around_notice ?? "No famous places were found within a day trip of this city."} />
+          )}
+        </Section>
+      )}
+
+      {x.famous_stays && (
+        <Section icon={BedDouble} title="Famous hotels">
+          {x.famous_stays.length ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {x.famous_stays.map((p) => (
+                <PlaceCard key={p.id} place={p} distanceFrom={x.around_from ?? "the city"} />
+              ))}
+            </div>
+          ) : (
+            <Notice text={x.around_notice ?? "No famous hotels are listed for this city."} />
+          )}
+        </Section>
+      )}
+
       <Section icon={UtensilsCrossed} title="Local food">
         {x.dishes.length ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -187,7 +216,7 @@ export function ExploreTab({ tripId }: { tripId: string }) {
   );
 }
 
-function PlaceCard({ place: p }: { place: PlaceResponse }) {
+function PlaceCard({ place: p, distanceFrom = "the city centre" }: { place: PlaceResponse; distanceFrom?: string }) {
   return (
     <Card className="gap-3 overflow-hidden pt-0">
       {p.image ? (
@@ -204,7 +233,7 @@ function PlaceCard({ place: p }: { place: PlaceResponse }) {
         {p.distance_m !== null && (
           <CardDescription className="flex items-center gap-1">
             <MapPin className="size-3.5" />
-            {km(p.distance_m)} from the city centre
+            {km(p.distance_m)} from {distanceFrom}
           </CardDescription>
         )}
       </CardHeader>
