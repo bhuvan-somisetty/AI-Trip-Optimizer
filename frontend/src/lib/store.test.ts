@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { actions, getState } from "./store";
+import { actions, cityName, cityOf, getState, routeLabel } from "./store";
 
 // The store against the real API's shapes: fetch is mocked, so these check what the browser
 // sends to the backend and how it reads the answers (docs/07_API_Specification.md).
@@ -112,5 +112,34 @@ describe("store in API mode", () => {
     const trip = getState().trips.find((t) => t.id === TRIP_ID)!;
     expect(trip.status).toBe("DECIDED");
     expect(trip.decisionReason).toBe("Over budget");
+  });
+});
+
+describe("cities beyond the built-in list", () => {
+  const airport = (code: string, city: string) => ({
+    code, city, country: "IN", country_name: "India", airport: `${city} Airport`, latitude: 25, longitude: 82, size: 2, timezone: "Asia/Kolkata",
+  });
+  const lookups = () => calls.filter((c) => c.path.startsWith("/airports/")).map((c) => c.path);
+
+  it("looks each unknown code up once and keeps the bare code when it can't be found", async () => {
+    routes["GET /airports/VNS"] = airport("VNS", "Varanasi");
+    await actions.loadCities(["DEL", "VNS", "QQQ", "VNS"]); // DEL is built in; QQQ has no answer
+    expect(lookups()).toEqual(["/airports/VNS", "/airports/QQQ"]);
+    expect(cityName("VNS")).toBe("Varanasi");
+    expect(cityOf("VNS")?.international).toBe(false);
+    expect(cityName("QQQ")).toBe("QQQ");
+    await actions.loadCities(["VNS", "QQQ"]);
+    expect(lookups()).toHaveLength(2);
+  });
+
+  it("names the cities of trips loaded from the server", async () => {
+    routes["GET /trips"] = [{
+      id: "1b1c2d3e-0000-4000-8000-000000000000", traveler_id: "trv", origin: "DEL", destination: "ATQ", dates: ["2026-12-22", "2026-12-25"],
+      budget: 30000, preferences: {}, status: "DRAFT", failure_reason: null, created_by: "u",
+    }];
+    routes["GET /airports/ATQ"] = airport("ATQ", "Amritsar");
+    await actions.syncFromApi();
+    const trip = getState().trips[0];
+    await vi.waitFor(() => expect(routeLabel(trip)).toBe("New Delhi → Amritsar"));
   });
 });
