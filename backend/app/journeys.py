@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 MODES = ("flight", "train", "bus", "ferry")
 DEFAULT_VIAS = 2
 MAX_VIAS = 4
+MAX_CHOSEN_VIAS = 3  # cities a traveller names themselves (3 changes is the most allowed)
 MAX_DETOUR = 1.35  # a via-city may add at most 35% to the straight-line distance
 MAX_MEGA_HUB_DETOUR = 1.6  # ... or 60% when it is one of MEGA_HUBS
 MIN_LEG_KM = 150  # each leg of a via journey must be a real intercity hop
@@ -398,36 +399,60 @@ def recommend(journeys: list[dict], value_of_time: float) -> dict:
     return picks
 
 
+def chosen_via_cities(codes: list[str] | None, origin: str, destination: str) -> list[str] | None:
+    """Via-cities the traveller named, in their order (e.g. Goa then Bhubaneswar), or None.
+    Unknown codes, repeats and the trip's own two cities are refused rather than skipped."""
+    chosen = [c.strip().upper() for c in codes or [] if c and c.strip()]
+    if not chosen:
+        return None
+    if len(chosen) > MAX_CHOSEN_VIAS:
+        raise TravelDataError(f"Name at most {MAX_CHOSEN_VIAS} cities to go through")
+    unknown = [c for c in chosen if c not in AIRPORTS]
+    if unknown:
+        raise TravelDataError(f"Unknown airport code: {', '.join(unknown)}")
+    if len(set(chosen)) < len(chosen) or {origin, destination} & set(chosen):
+        raise TravelDataError("Name each city to go through once, and not the origin or destination")
+    return chosen
+
+
 def find_journeys(origin: str, destination: str, day: date, modes: set[str] | None = None,
                   vias: int = DEFAULT_VIAS, value_of_time: float = DEFAULT_VALUE_OF_TIME,
-                  travellers: int = 1, via_depth: int = 1, return_date: date | None = None) -> dict:
+                  travellers: int = 1, via_depth: int = 1, return_date: date | None = None,
+                  via: list[str] | None = None) -> dict:
     """Direct and connecting journeys from `origin` to `destination` (airport codes) leaving on `day`,
     and with `return_date` the same for the way back under "return".
 
     `travellers` multiplies every fare (searched per person, so it costs no extra searches).
     `via_depth=2` also tries going through two via-cities in a row (origin -> A -> B -> destination);
-    that adds one leg search per pair of via-cities."""
+    that adds one leg search per pair of via-cities. `via` names the via-cities instead of picking
+    them (Bengaluru -> Goa -> Bhubaneswar -> Jaipur): each one alone and every pair in the given
+    order are tried, and the way back goes through them in reverse."""
     if return_date is not None and return_date < day:
         raise TravelDataError("The return date is before the departure date")
-    out = one_way(origin, destination, day, modes, vias, value_of_time, travellers, via_depth)
-    out["return"] = (one_way(destination, origin, return_date, modes, vias, value_of_time, travellers, via_depth)
+    chosen = chosen_via_cities(via, origin.upper(), destination.upper())
+    out = one_way(origin, destination, day, modes, vias, value_of_time, travellers, via_depth, chosen)
+    out["return"] = (one_way(destination, origin, return_date, modes, vias, value_of_time, travellers, via_depth,
+                             chosen[::-1] if chosen else None)
                      if return_date else None)
     return out
 
 
 def one_way(origin: str, destination: str, day: date, modes: set[str] | None, vias: int,
-            value_of_time: float, travellers: int, via_depth: int) -> dict:
+            value_of_time: float, travellers: int, via_depth: int, chosen: list[str] | None = None) -> dict:
     modes = set(modes or MODES)
     travellers = max(1, min(travellers, MAX_TRAVELLERS))
     if origin not in AIRPORTS or destination not in AIRPORTS:
         raise TravelDataError("Journeys can only be searched between known airport cities")
     if AIRPORTS[origin]["city"] == AIRPORTS[destination]["city"]:
         raise TravelDataError("The origin and destination are the same city")
-    via = via_cities(origin, destination, max(0, min(vias, MAX_VIAS)))
+    via = chosen or via_cities(origin, destination, max(0, min(vias, MAX_VIAS)))
     plan = [(origin, destination, DEPART_HOURS)]
     for v in via:
         plan += [(origin, v, FIRST_LEG_HOURS), (v, destination, SECOND_LEG_HOURS)]
-    if via_depth >= 2:
+    if chosen:
+        # The traveller's own order: every pair a -> b with a named before b.
+        plan += [(a, b, MIDDLE_LEG_HOURS) for i, a in enumerate(chosen) for b in chosen[i + 1:]]
+    elif via_depth >= 2:
         # Two via-cities in a row, nearer one first: origin -> a -> b -> destination.
         for a in via:
             for b in via:
@@ -488,7 +513,8 @@ def one_way(origin: str, destination: str, day: date, modes: set[str] | None, vi
         "destination": _place(destination),
         "date": day.isoformat(),
         "travellers": travellers,
-        "via_depth": 2 if via_depth >= 2 else 1,
+        "via_depth": 2 if via_depth >= 2 or (chosen and len(chosen) > 1) else 1,
+        "via_chosen": bool(chosen),
         "modes": sorted(modes),
         "via_cities": [_place(v) for v in via],
         "via_summary": via_summary,
