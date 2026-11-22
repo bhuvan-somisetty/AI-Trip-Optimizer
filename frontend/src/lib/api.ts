@@ -520,3 +520,29 @@ export type TransportResponse = {
 
 export const getTransport = (token: string, tripId: string) =>
   call<TransportResponse>("GET", `/trips/${id(tripId)}/transport`, { token, timeoutMs: PLACES_TIMEOUT_MS });
+
+// ---------------------------------------------------------------- airports (no login needed)
+
+/** One airport from the backend's OurAirports list (4,000+ airports with scheduled flights). */
+export type AirportResponse = {
+  code: string;
+  city: string;
+  /** ISO country code, e.g. "IN" */
+  country: string;
+  country_name: string;
+  airport: string;
+  latitude: number;
+  longitude: number;
+  /** 3 large, 2 medium, 1 small */
+  size: number;
+  timezone: string | null;
+};
+
+export type AirportSearchResponse = { airports: AirportResponse[]; source: string };
+
+/** Type-ahead search: an exact code or city first, then names that start with the text. */
+export const searchAirports = (q: string, limit = 10) =>
+  call<AirportSearchResponse>("GET", `/airports?q=${encodeURIComponent(q)}&limit=${limit}`, { timeoutMs: 8000 });
+
+/** One airport by its code; ApiError 404 when the code is unknown. */
+export const getAirport = (code: string) => call<AirportResponse>("GET", `/airports/${encodeURIComponent(code)}`, { timeoutMs: 8000 });
