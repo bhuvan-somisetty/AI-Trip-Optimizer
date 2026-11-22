@@ -8,11 +8,17 @@ Three calls build a city's list (the API's own field names, from its OpenAPI spe
   2. GET /places/radius?radius=&lon=&lat=&kinds= -> xid, name, kinds, dist, point of nearby places
   3. GET /places/xid/{xid}                      -> wikipedia_extracts.text, preview.source, rate ...
 
-Nothing here invents a value: a field OpenTripMap didn't send stays None. A city's result is
+Then one OpenStreetMap request (the Overpass API, free) adds what OpenStreetMap itself has for those
+places, opening hours, cuisine and street address, and the named food markets and food courts
+around the city ("Taste the destination").
+
+Nothing here invents a value: a field the sources didn't send stays None. A city's result is
 kept in the city_places table for PLACES_CACHE_DAYS, so it costs requests once a month.
 """
+import logging
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -32,6 +38,23 @@ MAX_ATTRACTIONS = 12
 MAX_CANDIDATES = 30
 MAX_RESTAURANTS = 10
 DESCRIPTION_CHARS = 320
+MAX_FOOD_SPOTS = 8
+# Nature and sightseeing ("Explore" section), searched on their own because the most famous
+# places of a city are usually its forts, temples and churches ("History and culture").
+SIGHT_KINDS = "natural,view_points,gardens_and_parks,amusements"
+MAX_SIGHTS = 6
+DETAIL_WORKERS = 5  # OpenTripMap allows 10 requests a second
+OVERPASS_TIMEOUT_SECONDS = 60  # the market search can take a while on the public server
+# Bump when the cached payload gains fields, so older cached cities are fetched again.
+PAYLOAD_VERSION = 2
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OSM_SOURCE = "OpenStreetMap (Overpass API, © OpenStreetMap contributors)"
+# Categories shown under "History and culture"; the rest go under "Explore".
+HISTORY_CULTURE = {"Fort", "Monument", "Museum", "Historic place", "Religious site", "Architecture", "Culture"}
+# Markets that aren't about food (OpenStreetMap tags them all amenity=marketplace).
+NOT_FOOD = re.compile(r"jewel|shopping|garment|cloth|textile|electronic|mobile|furniture|\bmall\b|auto|flea|"
+                      r"supermarket|hardware|medical|pharma|hostel|\bmess\b|\bworks?\b", re.I)
+logger = logging.getLogger(__name__)
 
 # OpenTripMap kinds -> the label shown, most specific first.
 CATEGORIES = (
@@ -43,6 +66,9 @@ CATEGORIES = (
     ("historic", "Historic place"),
     ("religion", "Religious site"),
     ("beaches", "Beach"),
+    ("view_points", "Viewpoint"),
+    ("gardens_and_parks", "Park"),
+    ("amusements", "Amusement"),
     ("natural", "Nature"),
     ("architecture", "Architecture"),
     ("cultural", "Culture"),
@@ -127,26 +153,118 @@ def nearby(lat: float, lon: float, kinds: str, limit: int, rate: str | None = No
     return named
 
 
+def section(category: str | None) -> str:
+    return "history_culture" if category in HISTORY_CULTURE else "explore"
+
+
+def map_url(lat: float | None, lon: float | None) -> str | None:
+    if lat is None or lon is None:
+        return None
+    return f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=17/{lat}/{lon}"
+
+
+def address_text(address: dict | None) -> str | None:
+    """"12 MG Road, Fontainhas, Panaji" from the parts OpenTripMap or OpenStreetMap give."""
+    a = address or {}
+    street = " ".join(x for x in (a.get("house_number"), a.get("road")) if x)
+    parts = [street, a.get("suburb") or a.get("neighbourhood"), a.get("city") or a.get("town") or a.get("village")]
+    text = ", ".join(x for x in parts if x)
+    return text or None
+
+
 def place(row: dict, details: dict | None = None) -> dict:
     details = details or {}
     point = details.get("point") or row.get("point") or {}
     text = ((details.get("wikipedia_extracts") or {}).get("text") or "").strip()
     if len(text) > DESCRIPTION_CHARS:
         text = text[:DESCRIPTION_CHARS].rsplit(" ", 1)[0] + "..."
+    kind = category(details.get("kinds") or row.get("kinds"))
     return {
         "id": row["xid"],
         "name": details.get("name") or row["name"],
-        "category": category(details.get("kinds") or row.get("kinds")),
+        "category": kind,
+        "section": section(kind),
         "description": text or None,
         "image": (details.get("preview") or {}).get("source"),
         "wikipedia": details.get("wikipedia"),
         "rating": details.get("rate"),  # OpenTripMap's own popularity rate: 1 to 3, "h" = heritage
+        "rating_label": "OpenTripMap popularity (1 to 3, h = heritage)" if details.get("rate") else None,
         "latitude": point.get("lat"),
         "longitude": point.get("lon"),
         "distance_m": round(row["dist"]) if isinstance(row.get("dist"), (int, float)) else None,
+        "address": address_text(details.get("address")),
+        "opening_hours": None,  # from OpenStreetMap, filled in by with_osm_tags
+        "cuisine": None,
+        "map_url": map_url(point.get("lat"), point.get("lon")),
+        "osm": details.get("osm") or row.get("osm"),
         "source": SOURCE,
         "data_label": "Map data",
     }
+
+
+def overpass_query(osm_ids: list[str], lat: float, lon: float) -> str:
+    """Tags of our places by their OpenStreetMap ids, then the named markets and food courts."""
+    by_type: dict[str, list[str]] = {}
+    for ref in osm_ids:
+        kind, _, number = (ref or "").partition("/")
+        if kind in ("node", "way", "relation") and number.isdigit():
+            by_type.setdefault(kind, []).append(number)
+    ids = "".join(f"{kind}(id:{','.join(numbers)});" for kind, numbers in by_type.items())
+    lookup = f"({ids});out tags;" if ids else ""
+    return (f"[out:json][timeout:{OVERPASS_TIMEOUT_SECONDS - 5}];{lookup}"
+            f'nwr["amenity"~"^(marketplace|food_court)$"]["name"](around:{RADIUS_M},{lat},{lon});out tags center 40;')
+
+
+def osm_address(tags: dict) -> str | None:
+    return address_text({"house_number": tags.get("addr:housenumber"), "road": tags.get("addr:street"),
+                         "suburb": tags.get("addr:suburb"), "city": tags.get("addr:city")})
+
+
+def osm_details(osm_ids: list[str], lat: float, lon: float) -> tuple[dict[str, dict], list[dict]]:
+    """OpenStreetMap tags by "node/123" id, and the food markets around (lat, lon). Empty when
+    Overpass is busy or down: these only add detail, so the places are kept without them."""
+    try:
+        body = _request("Overpass", "POST", OVERPASS_URL, data={"data": overpass_query(osm_ids, lat, lon)},
+                        headers={"User-Agent": USER_AGENT}, timeout=OVERPASS_TIMEOUT_SECONDS)
+    except TravelDataError as e:
+        logger.warning("OpenStreetMap details skipped: %s", e)
+        return {}, []
+    wanted, tags_by_id, spots, names = set(osm_ids), {}, [], set()
+    for element in body.get("elements", []) if isinstance(body, dict) else []:
+        ref, tags = f"{element.get('type')}/{element.get('id')}", element.get("tags") or {}
+        if ref in wanted:
+            tags_by_id[ref] = tags
+            continue
+        name = (tags.get("name") or "").strip()
+        point = element.get("center") or element
+        if not name or NOT_FOOD.search(name) or point.get("lat") is None or name.lower() in names:
+            continue  # not food, no location, or a second market of the same name
+        names.add(name.lower())
+        spots.append({
+            "id": ref,
+            "name": name,
+            "category": "Food court" if tags.get("amenity") == "food_court" else "Market",
+            "latitude": point["lat"],
+            "longitude": point["lon"],
+            "distance_m": round(haversine_m(lat, lon, point["lat"], point["lon"])),
+            "opening_hours": tags.get("opening_hours"),
+            "address": osm_address(tags),
+            "map_url": map_url(point["lat"], point["lon"]),
+            "image": None,
+            "source": OSM_SOURCE,
+            "data_label": "Map data",
+        })
+    spots.sort(key=lambda s: (s["opening_hours"] is None, s["distance_m"]))  # better-mapped first
+    return tags_by_id, spots[:MAX_FOOD_SPOTS]
+
+
+def with_osm_tags(item: dict, tags: dict | None) -> dict:
+    """Adds OpenStreetMap's opening hours, cuisine and address, where it has them."""
+    if not tags:
+        return item
+    cuisine = (tags.get("cuisine") or "").replace("_", " ").replace(";", ", ") or None
+    return {**item, "opening_hours": tags.get("opening_hours"), "cuisine": cuisine,
+            "address": item.get("address") or osm_address(tags)}
 
 
 def fame(item: dict) -> tuple:
@@ -175,7 +293,7 @@ def same_site(a: dict, b: dict) -> bool:
     return words(a) == words(b) and len(words(a)) == 2 and apart is not None and apart <= 500
 
 
-def best_attractions(candidates: list[dict]) -> list[dict]:
+def best_attractions(candidates: list[dict], limit: int = MAX_ATTRACTIONS) -> list[dict]:
     """The most notable places: closed or uncategorised ones dropped, one site listed twice
     kept once (its better-known entry)."""
     kept: list[dict] = []
@@ -186,7 +304,7 @@ def best_attractions(candidates: list[dict]) -> list[dict]:
         if any(same_site(item, k) for k in kept):
             continue
         kept.append(item)
-        if len(kept) == MAX_ATTRACTIONS:
+        if len(kept) == limit:
             break
     return kept
 
@@ -206,21 +324,32 @@ def fetch_city(city: str) -> dict:
             break
         known = {r["xid"] for r in rows}
         rows += [r for r in nearby(lat, lon, "interesting_places", 50, rate=rate) if r["xid"] not in known]
-    candidates = []
-    for row in rows[:MAX_CANDIDATES]:
+    known = {r["xid"] for r in rows}
+    sights = [r for r in nearby(lat, lon, SIGHT_KINDS, 40) if r["xid"] not in known][: MAX_SIGHTS * 2]
+
+    def detailed(row: dict) -> dict:
         try:
             details = _otm(f"xid/{row['xid']}")
         except TravelDataError:
             details = None  # keep the place with what the list gave
-        candidates.append(place(row, details if isinstance(details, dict) else None))
-    attractions = best_attractions(candidates)
+        return place(row, details if isinstance(details, dict) else None)
+
+    with ThreadPoolExecutor(max_workers=DETAIL_WORKERS) as pool:
+        candidates = list(pool.map(detailed, rows[:MAX_CANDIDATES] + sights))
+    # Up to MAX_ATTRACTIONS history-and-culture places and MAX_SIGHTS nature / sightseeing ones.
+    history = best_attractions([c for c in candidates if c["section"] == "history_culture"])
+    explore = best_attractions([c for c in candidates if c["section"] == "explore"], MAX_SIGHTS)
+    attractions = sorted(history + explore, key=fame)
     restaurants = [place(row) for row in nearby(lat, lon, "foods", 60)[:MAX_RESTAURANTS]]
+    tags, food_spots = osm_details([p["osm"] for p in attractions + restaurants if p.get("osm")], lat, lon)
     return {
+        "version": PAYLOAD_VERSION,
         "city": city,
         "city_name": CITIES[city][0],
         "centre": {"latitude": lat, "longitude": lon},
-        "attractions": attractions,
-        "restaurants": restaurants,
+        "attractions": [with_osm_tags(p, tags.get(p.get("osm"))) for p in attractions],
+        "restaurants": [with_osm_tags(p, tags.get(p.get("osm"))) for p in restaurants],
+        "food_spots": food_spots,
         "source": SOURCE,
     }
 
@@ -234,7 +363,7 @@ def explore_city(session: Session, city: str) -> dict:
     """A city's places from the cache when fresh, otherwise fetched and cached."""
     cached = session.get(CityPlaces, city)
     fresh_after = datetime.now(timezone.utc) - timedelta(days=config.PLACES_CACHE_DAYS)
-    if cached is not None and _aware(cached.fetched_at) > fresh_after:
+    if cached is not None and _aware(cached.fetched_at) > fresh_after and cached.payload.get("version") == PAYLOAD_VERSION:
         return {**cached.payload, "fetched_at": _aware(cached.fetched_at).isoformat(), "cached": True}
     payload = fetch_city(city)
     now = datetime.now(timezone.utc)
