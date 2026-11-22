@@ -5,7 +5,8 @@ Python; compose_node is the only step that calls the LLM.
 
 A trip has up to three line items: the outbound flight ("flight"), the return flight
 ("return") and the hotel ("stay"). Each is picked the same way, as the cheapest option
-that passes every rule, and all the money maths is done here in code.
+that passes every rule, and all the money maths is done here in code. A trip by train or bus
+(the trip form's Trains or Buses) has a train or bus in place of each flight (ground_check).
 """
 import json
 import logging
@@ -15,7 +16,7 @@ from datetime import date, datetime, timedelta
 
 from langgraph.graph import END, START, StateGraph
 
-from app import config
+from app import config, fares, ground
 from app import travel_data
 from app.pipeline.state import PipelineState
 
@@ -51,6 +52,9 @@ def nearby_flights(origin: str, destination: str, day, cabin: str | None, days: 
 def search_node(state: PipelineState) -> dict:
     # Pure lookup, no LLM: every option the later nodes see came from a real provider.
     request = state["request"]
+    by_ground = ground_modes(request["preferences"])
+    if by_ground:
+        return search_ground_trip(request, by_ground)
     cabin = request["preferences"].get("cabin_class")
     flex = flexible_days(request["preferences"])
     found: dict = {"flight_options": [], "hotel_options": []}
@@ -86,6 +90,33 @@ def search_node(state: PipelineState) -> dict:
     except travel_data.TravelDataError as e:
         found["return_options"] = []
         found["return_unavailable"] = f"Return flight search failed: {e}"
+    search_hotels_into(found, request)
+    return found
+
+
+# ---- trips by train or bus ---------------------------------------------------------------------
+# A trip whose traveller picked Trains or Buses (not Flights) in the trip form books no flight: the
+# outbound and return line items are the train or bus picked from Google Maps transit
+# (app/ground.py). Most trains and buses publish no fare, so the total holds only the fares that
+# are known and a flag gives the typical range from the distance (app/fares.py), as an estimate.
+GROUND_MODES = ("train", "bus")
+MODE_WORDS = {"train": ("train", "trains"), "bus": ("bus", "buses")}
+
+
+def ground_modes(preferences: dict) -> list[str] | None:
+    """The trip's chosen ground modes when it excludes flights, else None (a flight trip)."""
+    filters = preferences.get("filters")
+    modes = filters.get("modes") if isinstance(filters, dict) else None
+    if not isinstance(modes, list) or not modes or "flight" in modes:
+        return None
+    return [m for m in GROUND_MODES if m in modes] or None
+
+
+def modes_text(modes: list[str]) -> str:
+    return " or ".join(MODE_WORDS[m][1] for m in modes)
+
+
+def search_hotels_into(found: dict, request: dict) -> None:
     if request["end_date"] > request["start_date"]:
         try:
             found["hotel_options"] = travel_data.search_hotels(
@@ -95,7 +126,190 @@ def search_node(state: PipelineState) -> dict:
             found["hotels_unavailable"] = str(e)
         except travel_data.TravelDataError as e:
             found["search_error"] = str(e)
+
+
+def search_ground_trip(request: dict, modes: list[str]) -> dict:
+    """search_node for a train or bus trip: the day's departures both ways, and hotels."""
+    found: dict = {"flight_options": [], "hotel_options": [], "ground_mode": modes,
+                   "ground_options": [], "ground_return_options": []}
+    try:
+        found["ground_options"] = [
+            g for g in ground.search_ground(request["origin"], request["destination"], request["start_date"])
+            if g.get("kind") in modes
+        ]
+    except travel_data.TravelDataError as e:
+        found["search_error"] = str(e)
+        return found
+    try:
+        found["ground_return_options"] = [
+            g for g in ground.search_ground(request["destination"], request["origin"], request["end_date"])
+            if g.get("kind") in modes
+        ]
+    except travel_data.TravelDataError as e:
+        found["return_unavailable"] = f"The search for the way back failed: {e}"
+    search_hotels_into(found, request)
     return found
+
+
+def transport_option(g: dict, frm: str, to: str, number: int) -> dict:
+    """A train or bus from search_ground as an itinerary line item (stored where a flight would be)."""
+    fare = g.get("fare") if g.get("currency") in (None, "INR") else None
+    return {
+        "id": f"{g['kind'].upper()}-{number}",
+        "mode": g["kind"],
+        "service": g.get("service"),
+        "operator": g.get("operator"),
+        "airline": g.get("operator") or g.get("service") or MODE_WORDS[g["kind"]][0].title(),
+        "flight_number": g.get("service"),
+        "origin": frm,
+        "destination": to,
+        "from_station": (g.get("from") or {}).get("name"),
+        "to_station": (g.get("to") or {}).get("name"),
+        "departure_time": g.get("departure_time"),
+        "arrival_time": g.get("arrival_time"),
+        "duration_minutes": g.get("duration_minutes"),
+        "stops": g.get("changes") or 0,
+        "cabin_class": None,
+        "price": fare,
+        "currency": "INR" if fare is not None else None,
+        "fare_label": g.get("fare_label") if fare is not None else "Fare not published",
+        "fare_estimate": fares.estimate(g["kind"], frm, to) if fare is None else None,
+        "link": g.get("link"),
+        "link_label": g.get("link_label"),
+        "source": g.get("source"),
+        "data_label": g.get("data_label"),
+    }
+
+
+def ground_candidates(raw: list[dict], frm: str, to: str, day) -> list[dict]:
+    options = [transport_option(g, frm, to, i) for i, g in enumerate(raw, start=1)]
+    return [o for o in options if (o["departure_time"] or "")[:10] == day.isoformat()]
+
+
+def pick_ground(options: list[dict]) -> dict | None:
+    """The cheapest train or bus with a published fare, else the fastest of the day."""
+    priced = [o for o in options if o["price"] is not None]
+    if priced:
+        return min(priced, key=lambda o: (o["price"], o["duration_minutes"] or 10**6))
+    return min(options, key=lambda o: o["duration_minutes"] or 10**6, default=None)
+
+
+def ground_word(option: dict) -> str:
+    return MODE_WORDS.get(option.get("mode"), ("transport",))[0]
+
+
+def transport_label(option: dict) -> str:
+    label = f"{option['id']} {option.get('service') or option.get('airline')}"
+    if option.get("departure_time"):
+        label += f", departs {option['departure_time'][:16].replace('T', ' ')}"
+    return label
+
+
+def ground_check(state: PipelineState) -> dict:
+    """check_node for a train or bus trip: the train or bus each way and the hotel, with the
+    budget checked on the known fares and the typical range for the rest."""
+    request = state["request"]
+    preferences = with_policy_preferences(request)
+    policy = request.get("policy")
+    nights = (request["end_date"] - request["start_date"]).days
+    modes = state["ground_mode"]
+    route = f"{request['origin']} to {request['destination']} on {request['start_date'].isoformat()}"
+    back = f"{request['destination']} to {request['origin']} on {request['end_date'].isoformat()}"
+    flags: list[str] = []
+    typical: dict = {}
+
+    outbound = pick_ground(ground_candidates(state.get("ground_options", []), request["origin"],
+                                             request["destination"], request["start_date"]))
+    if state.get("search_error"):
+        flags.append(state["search_error"])
+    elif outbound is None:
+        flags.append(f"No {modes_text(modes)} found from {route}")
+    way_back = pick_ground(ground_candidates(state.get("ground_return_options", []), request["destination"],
+                                             request["origin"], request["end_date"]))
+    if state.get("return_unavailable"):
+        flags.append(f"{state['return_unavailable']}, so the total has no way back in it")
+    elif way_back is None and not state.get("search_error"):
+        flags.append(f"No {modes_text(modes)} found from {back}, so the total has no way back in it")
+
+    rejected_stay: list = []
+    hotels: list = []
+    if nights > 0 and not state.get("hotels_unavailable"):
+        hotels = screen("stay", state["hotel_options"], hotel_rule_broken, preferences, rejected_stay)
+        if policy:
+            hotels = screen("stay", hotels, policy_hotel_rule(policy, international(request)), preferences, rejected_stay)
+    known_fares = sum(o["price"] for o in (outbound, way_back) if o and o["price"] is not None)
+    stay_price = lambda h: h["price_per_night"] * nights
+    floor = cheapest(hotels, stay_price, preferences)
+    headroom = request["budget"] - known_fares - (stay_price(floor) if floor else 0)
+    hotel, too_dear = None, []
+    if nights > 0 and state.get("hotels_unavailable"):
+        flags.append(state["hotels_unavailable"])
+    elif nights > 0:
+        hotel, too_dear = choose("stay", hotels, stay_price, preferences, headroom)
+        if hotels:
+            typical["stay"] = statistics.median(h["price_per_night"] for h in hotels) * nights
+        if not state["hotel_options"] and not state.get("search_error"):
+            flags.append(f"No hotels found in {request['destination']}")
+        elif state["hotel_options"] and hotel is None:
+            flags.append(f"No hotel in {request['destination']} meets the trip's preferences")
+
+    total_cost = float(known_fares + (stay_price(hotel) if hotel else 0))
+    within_budget = total_cost <= request["budget"]
+    if not within_budget:
+        flags.append(f"Total {total_cost:,.0f} is {total_cost - request['budget']:,.0f} over the {request['budget']:,.0f} budget")
+    unknown = [o for o in (outbound, way_back) if o and o["price"] is None]
+    estimated = [o["fare_estimate"] for o in unknown if o.get("fare_estimate")]
+    if unknown:
+        word = ground_word(unknown[0])
+        if len(estimated) == len(unknown):
+            low, high = sum(e["low"] for e in estimated), sum(e["high"] for e in estimated)
+            flags.append(f"The {word} fare isn't published, so it isn't in the total: typically {low:,.0f} to "
+                         f"{high:,.0f} per person for the {'two journeys' if len(unknown) > 1 else 'journey'} "
+                         f"(estimate from the distance)")
+            if within_budget and total_cost + high > request["budget"]:
+                flags.append(f"With the {word} fare at the top of its typical range the trip would be "
+                             f"{total_cost + high - request['budget']:,.0f} over budget")
+        else:
+            flags.append(f"The {word} fare isn't published, so it isn't in the total")
+
+    return {
+        "check": {
+            "flight": outbound,
+            "return_flight": way_back,
+            "hotel": hotel,
+            "nights": nights,
+            "total_cost": total_cost,
+            "within_budget": within_budget,
+            "flags": flags,
+            "rejected": rejected_stay,
+            "typical": typical,
+            "savings": savings(typical, chosen_prices(None, None, hotel, nights)),
+            "too_dear": {"stay": too_dear},
+            "ground_mode": modes,
+        }
+    }
+
+
+def ground_ledger(kind: str, raw: list[dict], frm: str, to: str, day, chosen: dict | None) -> list[dict]:
+    """One row per train or bus of the day: the pick, or why it lost."""
+    entries = []
+    options = ground_candidates(raw, frm, to, day)
+    for option in sorted(options, key=lambda o: (o["price"] is None, o["price"] or 0, o["duration_minutes"] or 10**6)):
+        won = bool(chosen) and option["id"] == chosen["id"]
+        if won:
+            reason = ("Cheapest published fare of the day" if option["price"] is not None
+                      else "Fastest of the day; no fare is published, so it isn't in the total")
+        elif chosen and option["price"] is not None and chosen["price"] is not None:
+            difference = option["price"] - chosen["price"]
+            reason = f"Price: {abs(difference):,.0f} {'less' if difference < 0 else 'more'} than {chosen['id']}"
+        elif chosen and option["duration_minutes"] and chosen["duration_minutes"]:
+            reason = f"Slower: {hours(option['duration_minutes'])} vs {hours(chosen['duration_minutes'])} for {chosen['id']}"
+        else:
+            reason = "Not picked"
+        entries.append({"kind": kind, "alternative": transport_label(option),
+                        "price": float(option["price"]) if option["price"] is not None else None,
+                        "won": won, "reason": reason})
+    return entries
 
 
 def preference(preferences: dict, key: str, client_key: str):
@@ -498,6 +712,8 @@ def with_policy_preferences(request: dict) -> dict:
 def check_node(state: PipelineState) -> dict:
     # Pure Python, no LLM: picks, per the trip's priority, among the options that pass every
     # rule (the cheapest, by default) and does the money maths here, so the verdict is reproducible.
+    if state.get("ground_mode"):
+        return ground_check(state)
     request = state["request"]
     preferences = with_policy_preferences(request)
     policy = request.get("policy")
@@ -720,6 +936,20 @@ def build_ledger(state: PipelineState) -> list[dict]:
     nights = check["nights"]
     picked = state.get("picked", [])
     preferences = state["request"]["preferences"]
+    if state.get("ground_mode"):
+        request = state["request"]
+        ledger = ground_ledger("flight", state.get("ground_options", []), request["origin"],
+                               request["destination"], request["start_date"], check["flight"])
+        ledger += ground_ledger("return", state.get("ground_return_options", []), request["destination"],
+                                request["origin"], request["end_date"], check.get("return_flight"))
+        if nights > 0:
+            ledger += ledger_entries(
+                "stay", state["hotel_options"], check["hotel"], lambda h: h["price_per_night"] * nights,
+                hotel_label, rejections(check, "stay"), picked="stay" in picked,
+                priority=trip_priority(preferences), why=why_chosen(preferences, "stay"),
+                too_dear=check.get("too_dear", {}).get("stay", []),
+            )
+        return ledger
     ranking = lambda kind: {
         "priority": trip_priority(preferences),
         "why": why_chosen(preferences, kind),
@@ -766,6 +996,23 @@ def rupees(amount) -> int:
     return round(float(amount))
 
 
+def ground_fact(option: dict | None, compared: int) -> dict | None:
+    if option is None:
+        return None
+    fact = {
+        "travel_by": ground_word(option),
+        "option": transport_label(option),
+        "price": rupees(option["price"]) if option["price"] is not None else None,
+        "why_chosen": "cheapest published fare of the day" if option["price"] is not None
+        else "fastest of the day; its fare isn't published",
+        "options_compared": compared,
+    }
+    if option.get("fare_estimate"):
+        fact["typical_fare_estimate"] = {"low": rupees(option["fare_estimate"]["low"]),
+                                         "high": rupees(option["fare_estimate"]["high"])}
+    return fact
+
+
 def rationale_facts(state: PipelineState) -> dict:
     # The only numbers the rationale may use; all of them were computed in code.
     request = state["request"]
@@ -773,11 +1020,12 @@ def rationale_facts(state: PipelineState) -> dict:
     hotel = check["hotel"]
     return_flight = check.get("return_flight")
     picked = state.get("picked", [])
+    by_ground = state.get("ground_mode")
     return {
         "route": f"{request['origin']} to {request['destination']}",
         "dates": f"{request['start_date'].isoformat()} to {request['end_date'].isoformat()}",
         "budget": rupees(request["budget"]),
-        "flight": {
+        "flight": ground_fact(check["flight"], len(state.get("ground_options", []))) if by_ground else {
             "option": flight_label(check["flight"]),
             "price": rupees(check["flight"]["price"]),
             "why_chosen": WHY_PICKED if "flight" in picked else why_chosen(request["preferences"], "flight"),
@@ -785,6 +1033,7 @@ def rationale_facts(state: PipelineState) -> dict:
         },
         "return_flight": None
         if return_flight is None
+        else ground_fact(return_flight, len(state.get("ground_return_options", []))) if by_ground
         else {
             "option": flight_label(return_flight),
             "price": rupees(return_flight["price"]),
@@ -810,11 +1059,23 @@ def rationale_facts(state: PipelineState) -> dict:
     }
 
 
+def leg_text(leg: dict, word: str) -> str:
+    """ "flight X at 4,827", or for a train or bus without a fare, its typical range."""
+    text = f"{leg.get('travel_by') or word} {leg['option']}"
+    if leg["price"] is not None:
+        return f"{text} at {leg['price']:,.0f}"
+    estimate = leg.get("typical_fare_estimate")
+    if estimate:
+        return f"{text} (fare not published, typically {estimate['low']:,.0f} to {estimate['high']:,.0f})"
+    return f"{text} (fare not published)"
+
+
 def template_rationale(facts: dict) -> str:
-    parts = [f"Chose flight {facts['flight']['option']} at {facts['flight']['price']:,.0f}"]
+    parts = [f"Chose {leg_text(facts['flight'], 'flight')}"]
     if facts.get("return_flight"):
         back = facts["return_flight"]
-        parts.append(f"{'with' if facts['hotel'] else 'and'} return flight {back['option']} at {back['price']:,.0f}")
+        word = f"return {back['travel_by']}" if back.get("travel_by") else "return flight"
+        parts.append(f"{'with' if facts['hotel'] else 'and'} {leg_text({**back, 'travel_by': None}, word)}")
     if facts["hotel"]:
         hotel = facts["hotel"]
         parts.append(
@@ -845,7 +1106,8 @@ def template_rationale(facts: dict) -> str:
 RATIONALE_PROMPT = """You explain a business trip itinerary to the manager who will approve it.
 Write 3 to 5 short sentences in plain, natural English: which flights and hotel were chosen and why
 (use why_chosen and options_compared), the total cost against the budget, and any flags or options
-ruled out. Write like a helpful colleague, not a report: never mention field names such as
+ruled out. When a line item has travel_by (train or bus), it is a train or bus, not a flight; when its
+price is null, say its fare isn't published and give typical_fare_estimate as the usual range. Write like a helpful colleague, not a report: never mention field names such as
 price_per_night or within_budget, never say true or false, and skip anything that is empty.
 
 Use ONLY the facts below. Never introduce, round, convert or calculate a number that is not written
