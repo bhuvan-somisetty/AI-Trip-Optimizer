@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Compass, ExternalLink, Landmark, Loader2, MapPin, RefreshCw, Utensils, UtensilsCrossed } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Compass, ExternalLink, Landmark, Loader2, MapPin, RefreshCw, ShoppingBasket, Trees, Utensils, UtensilsCrossed } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,10 @@ export function ExploreTab({ tripId }: { tripId: string }) {
   }
 
   const x = result.data;
+  // Newer APIs put each place in one section; older ones send a single list.
+  const history = x.attractions.filter((p) => p.section === "history_culture");
+  const sights = x.attractions.filter((p) => p.section === "explore");
+  const spots = x.food_spots ?? [];
   return (
     <div className="space-y-6">
       <Card>
@@ -83,22 +88,52 @@ export function ExploreTab({ tripId }: { tripId: string }) {
             trip&apos;s prices, budget check or Trade-off Ledger.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-wrap items-center justify-between gap-3">
           <OsmCredit />
+          <Link href={`/destinations/${x.city}`} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+            Open the destination page with its map <ArrowRight className="size-3.5" />
+          </Link>
         </CardContent>
       </Card>
 
-      <Section icon={Landmark} title="Places to see">
-        {x.attractions.length ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {x.attractions.map((p) => (
-              <PlaceCard key={p.id} place={p} />
-            ))}
-          </div>
-        ) : (
-          <Notice text={x.notice ?? "No places to see were found for this city."} />
-        )}
-      </Section>
+      {x.attractions.some((p) => p.section) ? (
+        <>
+          <Section icon={Landmark} title="History and culture">
+            {history.length ? (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {history.map((p) => (
+                  <PlaceCard key={p.id} place={p} />
+                ))}
+              </div>
+            ) : (
+              <Notice text="No historical places were found for this city." />
+            )}
+          </Section>
+          <Section icon={Trees} title="Explore: nature and sightseeing">
+            {sights.length ? (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {sights.map((p) => (
+                  <PlaceCard key={p.id} place={p} />
+                ))}
+              </div>
+            ) : (
+              <Notice text="No nature or sightseeing spots were found for this city." />
+            )}
+          </Section>
+        </>
+      ) : (
+        <Section icon={Landmark} title="Places to see">
+          {x.attractions.length ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {x.attractions.map((p) => (
+                <PlaceCard key={p.id} place={p} />
+              ))}
+            </div>
+          ) : (
+            <Notice text={x.notice ?? "No places to see were found for this city."} />
+          )}
+        </Section>
+      )}
 
       <Section icon={UtensilsCrossed} title="Local food">
         {x.dishes.length ? (
@@ -120,6 +155,7 @@ export function ExploreTab({ tripId }: { tripId: string }) {
                 <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
                   <span className="font-medium">{r.name}</span>
                   {r.category && <Badge variant="secondary" className="font-normal">{r.category}</Badge>}
+                  {r.cuisine && <span className="text-xs capitalize text-muted-foreground">{r.cuisine}</span>}
                   {r.distance_m !== null && <span className="text-xs text-muted-foreground">{km(r.distance_m)} from the centre</span>}
                   <span className="ml-auto text-[11px] text-muted-foreground">{r.data_label}</span>
                 </li>
@@ -130,6 +166,23 @@ export function ExploreTab({ tripId }: { tripId: string }) {
           <Notice text={x.notice ?? "No restaurants were found for this city."} />
         )}
       </Section>
+
+      {spots.length > 0 && (
+        <Section icon={ShoppingBasket} title="Markets and food courts">
+          <Card className="py-0">
+            <ul className="divide-y">
+              {spots.map((f) => (
+                <li key={f.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
+                  <span className="font-medium">{f.name}</span>
+                  <Badge variant="secondary" className="font-normal">{f.category}</Badge>
+                  {f.opening_hours && <span className="text-xs text-muted-foreground">Opening hours (OpenStreetMap): {f.opening_hours}</span>}
+                  <span className="ml-auto text-[11px] text-muted-foreground">{f.data_label}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </Section>
+      )}
     </div>
   );
 }
@@ -155,9 +208,11 @@ function PlaceCard({ place: p }: { place: PlaceResponse }) {
           </CardDescription>
         )}
       </CardHeader>
-      {(p.description || p.wikipedia) && (
+      {(p.description || p.wikipedia || p.opening_hours || p.address) && (
         <CardContent className="space-y-2 text-sm">
           {p.description && <p className="text-muted-foreground">{p.description}</p>}
+          {p.address && <p className="text-xs text-muted-foreground">{p.address}</p>}
+          {p.opening_hours && <p className="text-xs text-muted-foreground">Opening hours (OpenStreetMap): {p.opening_hours}</p>}
           {p.wikipedia && <WikiLink href={p.wikipedia} />}
         </CardContent>
       )}
