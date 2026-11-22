@@ -255,7 +255,8 @@ export const actions = {
         const [travelers, rows, events, me, policy] = await Promise.all([
           remote(api.listTravelers),
           remote((tok) => api.listTrips(tok)),
-          remote(api.listAudit),
+          // The audit trail is admin-only on the server (403 for everyone else): members get none.
+          remote(api.listAudit).catch((e) => (e instanceof api.ApiError && e.status === 403 ? [] : Promise.reject(e))),
           remote(api.getMe).catch(() => null),
           remote(api.getPolicy).catch(() => null),
         ]);
