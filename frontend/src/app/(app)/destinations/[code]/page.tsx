@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Compass, ExternalLink, Landmark, Loader2, LocateFixed, MapPinned, RefreshCw, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, BedDouble, CarFront, Compass, ExternalLink, Landmark, Loader2, LocateFixed, MapPinned, RefreshCw, UtensilsCrossed } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/app/common";
@@ -26,7 +26,8 @@ type Located = { state: "idle" } | { state: "asking" } | { state: "denied"; mess
 
 /**
  * Everything about a destination (GET /destinations/{code}): overview, Explore Your Destination,
- * History and Culture, Taste the Destination, a map and "near me". Only what the API sent is shown.
+ * History and Culture, Day Trips Nearby, Famous Hotels, Taste the Destination, a map and "near me".
+ * Only what the API sent is shown.
  */
 export default function DestinationPage() {
   const { code: raw } = useParams<{ code: string }>();
@@ -242,6 +243,36 @@ export default function DestinationPage() {
         )}
       </section>
 
+      {d.day_trips && (
+        <section className="space-y-4">
+          <SectionTitle icon={CarFront} title="Day Trips Nearby" hint="Famous forts, temples, national parks, lakes and waterfalls 15 to 150 km away, the best known first." />
+          {d.day_trips.length ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {d.day_trips.map((p) => (
+                <PlaceTile key={p.id} place={p} from={from} distanceFrom={d.around_from ?? "the city"} />
+              ))}
+            </div>
+          ) : (
+            <Notice text={d.around_notice ?? "No famous places were found within a day trip of this city."} />
+          )}
+        </section>
+      )}
+
+      {d.famous_stays && (
+        <section className="space-y-4">
+          <SectionTitle icon={BedDouble} title="Famous Hotels" hint="Landmark and heritage hotels with a Wikipedia article. For prices, plan a trip: the optimizer searches live hotel rates." />
+          {d.famous_stays.length ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {d.famous_stays.map((p) => (
+                <PlaceTile key={p.id} place={p} from={from} distanceFrom={d.around_from ?? "the city"} />
+              ))}
+            </div>
+          ) : (
+            <Notice text={d.around_notice ?? "No famous hotels are listed for this city."} />
+          )}
+        </section>
+      )}
+
       <section className="space-y-6">
         <SectionTitle icon={UtensilsCrossed} title="Taste the Destination" hint="Famous local dishes (AI suggestions with Wikipedia photos), restaurants and food markets from the map." />
         <div className="space-y-3">
@@ -287,7 +318,8 @@ export default function DestinationPage() {
         <CardHeader>
           <CardTitle className="text-base">Where this comes from</CardTitle>
           <CardDescription>
-            Places and restaurants: {d.source ?? "OpenTripMap"} and OpenStreetMap (map data). Dishes: AI suggestions, photos from Wikipedia. Restaurant photos and ratings marked
+            Places and restaurants: {d.source ?? "OpenTripMap"} and OpenStreetMap (map data). Day trips and famous hotels: {d.around_source ?? "Wikidata and Wikipedia"},
+            ranked by how many Wikipedia languages write about them. Dishes: AI suggestions, photos from Wikipedia. Restaurant photos and ratings marked
             Google come from Google Places. Nothing here is invented: a missing photo shows an illustration and a missing field is left out.
           </CardDescription>
         </CardHeader>
