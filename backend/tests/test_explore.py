@@ -1,7 +1,7 @@
 """Tourist attractions and restaurants (app/places.py, GET /trips/{id}/explore).
 
-OpenTripMap is never called: every request is answered from canned bodies shaped like its
-OpenAPI spec (geoname, radius, xid).
+OpenTripMap and OpenStreetMap are never called: every request is answered from canned bodies
+shaped like OpenTripMap's OpenAPI spec (geoname, radius, xid) and Overpass's JSON output.
 """
 from datetime import datetime, timedelta, timezone
 
@@ -16,7 +16,7 @@ from app.travel_data import TravelDataError
 GEONAME = {"name": "New Delhi", "country": "IN", "lat": 28.6139, "lon": 77.209, "population": 317797}
 ATTRACTIONS = [
     {"xid": "W1", "name": "Red Fort", "dist": 3120.4, "kinds": "fortifications,historic,interesting_places",
-     "point": {"lon": 77.2410, "lat": 28.6562}},
+     "point": {"lon": 77.2410, "lat": 28.6562}, "osm": "way/101"},
     {"xid": "W2", "name": "Qutub Minar", "dist": 8800, "kinds": "monuments_and_memorials,historic",
      "point": {"lon": 77.1855, "lat": 28.5245}},
     {"xid": "W3", "name": "", "dist": 100, "kinds": "historic", "point": {"lon": 77.2, "lat": 28.6}},  # unnamed
@@ -27,25 +27,52 @@ DETAILS = {
            "wikipedia": "https://en.wikipedia.org/wiki/Red_Fort",
            "preview": {"source": "https://upload.wikimedia.org/red-fort.jpg", "width": 400, "height": 300},
            "wikipedia_extracts": {"title": "Red Fort", "text": "The Red Fort is a historic fort in Delhi. " * 20},
-           "point": {"lon": 77.2410, "lat": 28.6562}},
+           "point": {"lon": 77.2410, "lat": 28.6562}, "osm": "way/101",
+           "address": {"road": "Netaji Subhash Marg", "suburb": "Chandni Chowk", "city": "New Delhi"}},
 }
+SIGHTS = [
+    {"xid": "S1", "name": "Lodhi Garden", "dist": 5200, "kinds": "gardens_and_parks,urban_environment",
+     "point": {"lon": 77.2197, "lat": 28.5931}},
+]
 RESTAURANTS = [
-    {"xid": "R1", "name": "Karim's", "dist": 3300, "kinds": "restaurants,foods", "point": {"lon": 77.233, "lat": 28.649}},
+    {"xid": "R1", "name": "Karim's", "dist": 3300, "kinds": "restaurants,foods", "point": {"lon": 77.233, "lat": 28.649},
+     "osm": "node/202"},
     {"xid": "R2", "name": "Haldiram's", "dist": 2100, "kinds": "fast_food,foods", "point": {"lon": 77.22, "lat": 28.63}},
 ]
+
+
+# Overpass's answer: tags of the places asked for by id, then markets around the centre.
+OSM = {"elements": [
+    {"type": "way", "id": 101, "tags": {"name": "Red Fort", "opening_hours": "Tu-Su 09:30-16:30"}},
+    {"type": "node", "id": 202, "tags": {"name": "Karim's", "cuisine": "indian;mughlai", "addr:street": "Gali Kababian"}},
+    {"type": "way", "id": 303, "center": {"lat": 28.6506, "lon": 77.2303},
+     "tags": {"name": "Chandni Chowk Market", "amenity": "marketplace", "opening_hours": "Mo-Sa 10:00-21:00"}},
+    {"type": "node", "id": 404, "lat": 28.63, "lon": 77.22, "tags": {"name": "Palika Bazaar Jewellery Market", "amenity": "marketplace"}},
+    {"type": "node", "id": 505, "lat": 28.62, "lon": 77.21, "tags": {"name": "Dilli Haat Food Court", "amenity": "food_court"}},
+    {"type": "node", "id": 606, "lat": 28.64, "lon": 77.22, "tags": {"name": "Chandni Chowk Market", "amenity": "marketplace"}},  # same name
+    {"type": "node", "id": 707, "lat": 28.61, "lon": 77.20, "tags": {"name": "Modern Supermarket", "amenity": "marketplace"}},
+]}
 
 
 class FakeOpenTripMap:
     def __init__(self):
         self.calls = []
+        self.overpass = []
+        self.sights = []  # nature and sightseeing rows; a test that wants some sets them
 
     def __call__(self, provider, method, url, params=None, **kwargs):
+        if provider == "Overpass":
+            self.overpass.append(kwargs["data"]["data"])
+            self.overpass_timeout = kwargs.get("timeout")
+            return OSM
         assert provider == "OpenTripMap" and params["apikey"] == "test-key"
         path = url.removeprefix(places.OTM_URL + "/")
         self.calls.append((path, dict(params)))
         if path == "geoname":
             return GEONAME
         if path == "radius":
+            if params["kinds"] == places.SIGHT_KINDS:
+                return self.sights
             return RESTAURANTS if params["kinds"] == "foods" else ATTRACTIONS
         if path.startswith("xid/"):
             xid = path.removeprefix("xid/")
@@ -204,3 +231,55 @@ def test_one_site_listed_twice_is_kept_once_but_namesakes_far_apart_stay():
     ])
     assert [k["name"] for k in kept] == [
         "Jantar Mantar, Delhi", "Our Lady of the Immaculate Conception", "Our Lady of the Rosary"]
+
+
+# ---- OpenStreetMap details and food markets ----------------------------------------
+
+def test_places_get_opening_hours_cuisine_address_and_sections(otm):
+    result = places.fetch_city("DEL")
+    fort = next(a for a in result["attractions"] if a["name"] == "Red Fort")
+    assert fort["opening_hours"] == "Tu-Su 09:30-16:30" and fort["section"] == "history_culture"
+    assert fort["address"] == "Netaji Subhash Marg, Chandni Chowk, New Delhi"
+    assert fort["map_url"] == "https://www.openstreetmap.org/?mlat=28.6562&mlon=77.241#map=17/28.6562/77.241"
+    assert fort["rating_label"].startswith("OpenTripMap popularity")
+    karims = next(r for r in result["restaurants"] if r["name"] == "Karim's")
+    assert karims["cuisine"] == "indian, mughlai" and karims["address"] == "Gali Kababian"
+    # One OpenStreetMap request, asking for our places by id and the markets around the centre.
+    (query,) = otm.overpass
+    assert "way(id:101)" in query and "node(id:202)" in query and "marketplace|food_court" in query
+
+
+def test_food_markets_and_food_courts_but_not_jewellery(otm):
+    spots = places.fetch_city("DEL")["food_spots"]
+    assert [s["name"] for s in spots] == ["Chandni Chowk Market", "Dilli Haat Food Court"]  # mapped hours first
+    assert spots[0]["category"] == "Market" and spots[0]["opening_hours"] == "Mo-Sa 10:00-21:00"
+    assert spots[1]["category"] == "Food court" and spots[0]["data_label"] == "Map data"
+
+
+def test_places_are_kept_when_openstreetmap_is_busy(otm, monkeypatch):
+    def busy(provider, *args, **kwargs):
+        if provider == "Overpass":
+            raise TravelDataError("Overpass rate limit reached, please wait a minute and try again")
+        return otm(provider, *args, **kwargs)
+    monkeypatch.setattr(places, "_request", busy)
+    result = places.fetch_city("DEL")
+    assert result["attractions"] and result["food_spots"] == []
+    assert result["attractions"][0]["opening_hours"] is None
+
+
+def test_a_city_cached_before_these_fields_is_fetched_again(client, db, auth_headers, trip_payload, otm):
+    db.add(CityPlaces(city="DEL", payload={"city": "DEL", "attractions": [], "restaurants": []},
+                      fetched_at=datetime.now(timezone.utc)))
+    db.commit()
+    trip_id = trip_to(client, auth_headers, trip_payload)
+    body = client.get(f"/trips/{trip_id}/explore", headers=auth_headers).json()
+    assert body["cached"] is False and body["food_spots"]
+
+
+def test_nature_and_sightseeing_fill_the_explore_section(otm):
+    otm.sights = SIGHTS
+    attractions = places.fetch_city("DEL")["attractions"]
+    sections = {a["name"]: a["section"] for a in attractions}
+    assert sections["Lodhi Garden"] == "explore" and sections["Red Fort"] == "history_culture"
+    assert next(a for a in attractions if a["name"] == "Lodhi Garden")["category"] == "Park"
+    assert otm.overpass_timeout == places.OVERPASS_TIMEOUT_SECONDS  # longer than the default 25 s
