@@ -5,12 +5,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, Session, create_engine, select
 
 import app.models  # noqa: F401  (registers models on SQLModel.metadata)
 from app import policy, travel_data
 from app.database import get_session
 from app.main import app
+from app.models import User, UserRole
 from app.pipeline import graph
 
 
@@ -115,3 +116,25 @@ def trip_payload(traveler_id):
         "budget": 60000,
         "preferences": {"class": "economy"},
     }
+
+
+@pytest.fixture
+def read_audit(client, auth_headers):
+    """GET /audit is admin-only. Reads the trail as the test owner, made an admin just for the read,
+    so tests of what gets recorded don't change who may do what elsewhere in the test."""
+    def read(**params):
+        session = next(app.dependency_overrides[get_session]())
+        user = session.exec(select(User).where(User.email == "owner@example.com")).one()
+        role, user.role = user.role, UserRole.admin
+        session.add(user)
+        session.commit()
+        try:
+            response = client.get("/audit", params=params, headers=auth_headers)
+            assert response.status_code == 200, response.text
+            return response.json()
+        finally:
+            user.role = role
+            session.add(user)
+            session.commit()
+            session.close()
+    return read
