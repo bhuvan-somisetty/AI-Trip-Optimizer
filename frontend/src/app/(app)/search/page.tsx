@@ -3,30 +3,35 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeftRight, Bus, Layers, Loader2, Plane, Route as RouteIcon, Search, Sparkles, TrainFront, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Bus, CalendarHeart, Layers, Loader2, PiggyBank, Plane, Route as RouteIcon, Search, Sparkles, TrainFront, Wallet, type LucideIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect, Segmented } from "@/components/ui/fields";
+import { NativeSelect, Segmented, Switch } from "@/components/ui/fields";
 import { EmptyState } from "@/components/app/common";
 import { AirportPicker } from "@/components/trips/airport-picker";
-import { JourneyCard, money } from "@/components/journeys/journey-card";
+import { JourneyCard, MODE_ICON, MODE_LABEL, money } from "@/components/journeys/journey-card";
 import * as api from "@/lib/api";
 import type { JourneyMode, JourneyResponse, JourneysResponse } from "@/lib/api";
-import { formatDate, toIsoDate, addDays } from "@/lib/format";
+import { bestWithinBudget, budgetFit, fitsBudget, modeSummary, sortCost } from "@/lib/budget";
+import { festivalDuring, festivalOn, type Festival } from "@/lib/festivals";
+import { formatDate, formatInr, toIsoDate, addDays } from "@/lib/format";
 import { cityName, useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type TabId = "all" | "flight" | "train" | "bus" | "cheaper";
+const GROUND: JourneyMode[] = ["flight", "train", "bus"];
 const TABS: { id: TabId; label: string; icon: LucideIcon; modes: JourneyMode[] }[] = [
-  { id: "all", label: "Compare all", icon: Layers, modes: ["flight", "train", "bus"] },
+  { id: "all", label: "Compare all", icon: Layers, modes: GROUND },
   { id: "flight", label: "Flights", icon: Plane, modes: ["flight"] },
   { id: "train", label: "Trains", icon: TrainFront, modes: ["train"] },
   { id: "bus", label: "Buses", icon: Bus, modes: ["bus"] },
-  { id: "cheaper", label: "Cheaper routes", icon: Sparkles, modes: ["flight", "train", "bus"] },
+  { id: "cheaper", label: "Cheaper routes", icon: Sparkles, modes: GROUND },
 ];
 type Sort = "price" | "duration" | "transfers";
+type CheaperBy = "flight" | "all";
+type Stops = 1 | 2;
 
 const PICKS: { key: keyof JourneysResponse["recommendations"]; label: string }[] = [
   { key: "cheapest_direct", label: "Cheapest direct" },
@@ -35,10 +40,18 @@ const PICKS: { key: keyof JourneysResponse["recommendations"]; label: string }[]
   { key: "best_value", label: "Best value" },
 ];
 
+/** Via-cities tried for each choice: with two stopovers, every pair of them is tried in a row too. */
+const CHEAPER_SEARCH: Record<Stops, { vias: number; viaDepth: 1 | 2; searches: number }> = {
+  1: { vias: 3, viaDepth: 1, searches: 7 },
+  2: { vias: 4, viaDepth: 2, searches: 15 },
+};
+
 /**
  * Flights, trains and buses between two cities (GET /journeys), with a "Cheaper routes" tab that
- * also tries going through other cities. Every search is live and spends SerpApi quota, so the
- * cheaper-routes search only runs when the user presses its button.
+ * also tries going through one or two other cities, flights only by default (Bengaluru -> Goa ->
+ * Delhi -> Jaipur on separate tickets can beat a festival-time direct fare). An optional budget
+ * marks every option within or over it, cheapest first. Every search is live and spends SerpApi
+ * quota, so the cheaper-routes search only runs when the user presses its button.
  */
 export default function SearchPage() {
   const params = useSearchParams();
@@ -52,22 +65,29 @@ export default function SearchPage() {
     date: params.get("date") ?? toIsoDate(addDays(new Date(), 14)),
     back: params.get("return") ?? "",
     travellers: Math.min(9, Math.max(1, Number(params.get("travellers")) || 1)),
+    budget: Math.max(0, Number(params.get("budget")) || 0) || null,
   };
   const askedMode = params.get("mode");
-  const [tab, setTab] = useState<TabId>(askedMode === "flight" || askedMode === "train" || askedMode === "bus" ? askedMode : "all");
-  const [form, setForm] = useState(q);
+  const rush = festivalDuring(q.date) ?? (q.back ? festivalOn(q.back) : null);
+  const [tab, setTab] = useState<TabId>(askedMode === "flight" || askedMode === "train" || askedMode === "bus" || askedMode === "cheaper" ? askedMode : "all");
+  const [form, setForm] = useState({ ...q, budget: q.budget ? String(q.budget) : "" });
   const [sort, setSort] = useState<Sort>("price");
   const [maxTransfers, setMaxTransfers] = useState<number | null>(null);
   const [maxHours, setMaxHours] = useState<number | null>(null);
+  const [onlyBudget, setOnlyBudget] = useState(false);
+  const [cheaperBy, setCheaperBy] = useState<CheaperBy>("flight");
+  const [stops, setStops] = useState<Stops>(rush ? 2 : 1);
   const [results, setResults] = useState<Record<string, { data?: JourneysResponse; error?: string }>>({});
 
   const ready = /^[A-Z]{3}$/.test(q.from) && /^[A-Z]{3}$/.test(q.to) && q.from !== q.to && q.date >= today;
   const tabDef = TABS.find((t) => t.id === tab)!;
-  const key = `${tab}|${q.from}|${q.to}|${q.date}|${q.back}|${q.travellers}`;
+  const cheaper = tab === "cheaper";
+  const modes = cheaper && cheaperBy === "flight" ? (["flight"] as JourneyMode[]) : tabDef.modes;
+  const key = `${tab}|${q.from}|${q.to}|${q.date}|${q.back}|${q.travellers}${cheaper ? `|${cheaperBy}|${stops}` : ""}`;
   const current = results[key];
   // Direct searches run when the search is submitted; the cheaper-routes one waits for its button.
   const [cheaperAsked, setCheaperAsked] = useState<string | null>(null);
-  const shouldRun = ready && !!token && (tab !== "cheaper" || cheaperAsked === key);
+  const shouldRun = ready && !!token && (!cheaper || cheaperAsked === key);
 
   useEffect(() => {
     if (!shouldRun || results[key] || !token) return;
@@ -78,8 +98,9 @@ export default function SearchPage() {
         destination: q.to,
         date: q.date,
         returnDate: q.back || null,
-        modes: tabDef.modes,
-        vias: tab === "cheaper" ? 2 : 0,
+        modes,
+        vias: cheaper ? CHEAPER_SEARCH[stops].vias : 0,
+        viaDepth: cheaper ? CHEAPER_SEARCH[stops].viaDepth : 1,
         travellers: q.travellers,
       })
       .then(
@@ -94,9 +115,17 @@ export default function SearchPage() {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const next = new URLSearchParams({ from: form.from, to: form.to, date: form.date, travellers: String(form.travellers), mode: tab === "cheaper" ? "all" : tab });
+    const next = new URLSearchParams({ from: form.from, to: form.to, date: form.date, travellers: String(form.travellers), mode: tab });
     if (form.back) next.set("return", form.back);
+    const budget = Math.round(Number(form.budget));
+    if (budget > 0) next.set("budget", String(budget));
     router.replace(`/search?${next}`);
+  }
+
+  function cheaperFlights() {
+    setTab("cheaper");
+    setCheaperBy("flight");
+    setStops(2);
   }
 
   if (!token) {
@@ -111,12 +140,15 @@ export default function SearchPage() {
     <div className="mx-auto max-w-6xl space-y-6">
       <div>
         <h1 className="text-3xl font-semibold">Flights, trains and buses</h1>
-        <p className="text-sm text-muted-foreground">Live schedules and fares. A fare is shown only when the provider publishes one.</p>
+        <p className="text-sm text-muted-foreground">
+          Live schedules and fares, cheapest first. Add a budget to see what fits it. A fare is shown only when the provider publishes one; trains and buses without one get a
+          typical range, marked as an estimate.
+        </p>
       </div>
 
       <Card>
         <CardContent className="pt-6">
-          <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_auto_1fr_10rem_10rem_6rem_auto] md:items-end">
+          <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_auto_1fr_9.5rem_9.5rem_5rem_8rem_auto] md:items-end">
             <div className="space-y-1.5">
               <Label htmlFor="search-from">From</Label>
               <AirportPicker id="search-from" value={form.from} exclude={form.to} onChange={(code) => setForm((f) => ({ ...f, from: code }))} />
@@ -144,13 +176,35 @@ export default function SearchPage() {
                 ))}
               </NativeSelect>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="search-budget">Budget (₹, optional)</Label>
+              <Input
+                id="search-budget"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={500}
+                placeholder="Any"
+                value={form.budget}
+                onChange={(e) => setForm((f) => ({ ...f, budget: e.target.value }))}
+                className="h-9"
+              />
+            </div>
             <Button type="submit" disabled={!form.from || !form.to || form.from === form.to}>
               <Search />
               Search
             </Button>
           </form>
+          {q.budget && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Budget {formatInr(q.budget)} for {q.travellers === 1 ? "one traveller" : `all ${q.travellers} travellers`}
+              {q.back ? ", each way" : ""}.
+            </p>
+          )}
         </CardContent>
       </Card>
+
+      {ready && rush && <FestivalNotice festival={rush} onCheaper={cheaperFlights} showButton={!(cheaper && cheaperBy === "flight" && stops === 2)} />}
 
       <div className="scrollbar-thin -mx-1 overflow-x-auto border-b px-1">
         <div className="flex min-w-max gap-1">
@@ -168,16 +222,18 @@ export default function SearchPage() {
         </div>
       </div>
 
+      {cheaper && ready && <CheaperOptions by={cheaperBy} setBy={setCheaperBy} stops={stops} setStops={setStops} />}
+
       {!ready ? (
         <Card>
           <EmptyState icon={Search} title="Pick where and when" description="Choose two different cities and a departure date from today on, then press Search." />
         </Card>
-      ) : tab === "cheaper" && cheaperAsked !== key ? (
+      ) : cheaper && cheaperAsked !== key ? (
         <Card>
           <EmptyState
             icon={Sparkles}
-            title={`Is it cheaper to go through another city?`}
-            description={`Tries ${cityName(q.from)} → ${cityName(q.to)} through nearby hub cities on ${formatDate(q.date)}, with real flights, trains and buses, and checks every connection against the timetable. It runs about ten live searches and can take up to a minute.`}
+            title="Is it cheaper to go through other cities?"
+            description={`Tries ${cityName(q.from)} → ${cityName(q.to)} on ${formatDate(q.date)} through ${stops === 2 ? "one or two" : "one"} of the big hub cities near the way, with real ${cheaperBy === "flight" ? "flights" : "flights, trains and buses"} booked as separate tickets, and checks every connection against the timetable. It runs about ${CHEAPER_SEARCH[stops].searches * (cheaperBy === "flight" ? 1 : 2)} live searches and can take up to a minute.`}
             action={
               <Button onClick={() => setCheaperAsked(key)}>
                 <Sparkles />
@@ -188,7 +244,7 @@ export default function SearchPage() {
         </Card>
       ) : !current ? (
         <Card>
-          <EmptyState icon={Loader2} className="[&_svg]:animate-spin" title="Searching live schedules…" description="This can take up to 30 seconds (a minute for cheaper routes)." />
+          <EmptyState icon={Loader2} className="[&_svg]:animate-spin" title="Searching live schedules…" description="This can take up to 30 seconds (a minute or two for cheaper routes)." />
         </Card>
       ) : current.error || !current.data ? (
         <Card>
@@ -202,9 +258,24 @@ export default function SearchPage() {
             sort={sort}
             maxTransfers={maxTransfers}
             maxHours={maxHours}
-            controls={<Controls sort={sort} setSort={setSort} maxTransfers={maxTransfers} setMaxTransfers={setMaxTransfers} maxHours={maxHours} setMaxHours={setMaxHours} />}
-            showPicks={tab === "cheaper" || tab === "all"}
-            showVias={tab === "cheaper"}
+            budget={q.budget}
+            onlyBudget={onlyBudget}
+            modes={modes}
+            controls={
+              <Controls
+                sort={sort}
+                setSort={setSort}
+                maxTransfers={maxTransfers}
+                setMaxTransfers={setMaxTransfers}
+                maxHours={maxHours}
+                setMaxHours={setMaxHours}
+                budget={q.budget}
+                onlyBudget={onlyBudget}
+                setOnlyBudget={setOnlyBudget}
+              />
+            }
+            showPicks={cheaper || tab === "all"}
+            showVias={cheaper}
           />
           {current.data.return && (
             <Results
@@ -213,8 +284,11 @@ export default function SearchPage() {
               sort={sort}
               maxTransfers={maxTransfers}
               maxHours={maxHours}
-              showPicks={tab === "cheaper" || tab === "all"}
-              showVias={tab === "cheaper"}
+              budget={q.budget}
+              onlyBudget={onlyBudget}
+              modes={modes}
+              showPicks={cheaper || tab === "all"}
+              showVias={cheaper}
             />
           )}
           <div className="flex flex-wrap items-center gap-3">
@@ -226,11 +300,61 @@ export default function SearchPage() {
               Plan this trip
             </Link>
             <Link href={`/destinations/${q.to}`} className={cn(buttonVariants({ variant: "outline" }))}>
-              Explore {cityName(q.to)}
+              Explore {cityName(q.to)}: places, forts, food and day trips
             </Link>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function FestivalNotice({ festival: f, onCheaper, showButton }: { festival: Festival; onCheaper: () => void; showButton: boolean }) {
+  return (
+    <div role="note" className="flex flex-col gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 sm:flex-row sm:items-center">
+      <CalendarHeart className="size-5 shrink-0 text-amber-700 dark:text-warning" />
+      <div className="min-w-0 flex-1 space-y-0.5 text-sm">
+        <p className="font-semibold">
+          {f.name} rush: {formatDate(f.from, { day: "numeric", month: "short" })} to {formatDate(f.to, { day: "numeric", month: "short" })}
+        </p>
+        <p className="text-muted-foreground">
+          Direct flights usually cost much more around now{f.region ? `, most of all to and from ${f.region}` : ""}. Flying through one or two other cities on separate
+          tickets is often cheaper, and so is leaving a few days before or after the rush.
+        </p>
+      </div>
+      {showButton && (
+        <Button size="sm" onClick={onCheaper} className="shrink-0">
+          <Sparkles />
+          Find cheaper flight routes
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function CheaperOptions(p: { by: CheaperBy; setBy: (v: CheaperBy) => void; stops: Stops; setStops: (v: Stops) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Segmented<CheaperBy>
+        size="sm"
+        aria-label="Travel by"
+        value={p.by}
+        onChange={p.setBy}
+        options={[
+          { value: "flight", label: "Flights only" },
+          { value: "all", label: "Flights, trains and buses" },
+        ]}
+      />
+      <Segmented<Stops>
+        size="sm"
+        aria-label="Stopover cities"
+        value={p.stops}
+        onChange={p.setStops}
+        options={[
+          { value: 1, label: "Through 1 city" },
+          { value: 2, label: "Through up to 2 cities" },
+        ]}
+      />
     </div>
   );
 }
@@ -242,6 +366,9 @@ function Controls(p: {
   setMaxTransfers: (n: number | null) => void;
   maxHours: number | null;
   setMaxHours: (n: number | null) => void;
+  budget: number | null;
+  onlyBudget: boolean;
+  setOnlyBudget: (v: boolean) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -261,6 +388,7 @@ function Controls(p: {
         <option value="0">Direct only</option>
         <option value="1">Up to 1 change</option>
         <option value="2">Up to 2 changes</option>
+        <option value="3">Up to 3 changes</option>
       </NativeSelect>
       <NativeSelect aria-label="Longest journey" value={String(p.maxHours ?? "")} onChange={(e) => p.setMaxHours(e.target.value === "" ? null : Number(e.target.value))} className="w-40">
         <option value="">Any length</option>
@@ -269,36 +397,59 @@ function Controls(p: {
         <option value="12">Up to 12 h</option>
         <option value="24">Up to 24 h</option>
       </NativeSelect>
+      {p.budget && (
+        <label className="flex items-center gap-2 text-sm">
+          <Switch checked={p.onlyBudget} onCheckedChange={p.setOnlyBudget} aria-label="Only within budget" />
+          Only within budget
+        </label>
+      )}
     </div>
   );
 }
 
-/** Sorted and filtered journeys; a journey without a fare goes after every priced one when sorting by price. */
-function arrange(list: JourneyResponse[], sort: Sort, maxTransfers: number | null, maxHours: number | null) {
-  const kept = list.filter((j) => (maxTransfers === null || j.transfers <= maxTransfers) && (maxHours === null || j.duration_minutes <= maxHours * 60));
-  const fare = (j: JourneyResponse) => j.fare ?? Number.POSITIVE_INFINITY;
+/**
+ * Sorted and filtered journeys. "Cheapest" sorts by the fare, or by the low end of the typical
+ * range for a train or bus without one; a journey with neither goes last.
+ */
+function arrange(list: JourneyResponse[], sort: Sort, maxTransfers: number | null, maxHours: number | null, budget: number | null = null, onlyBudget = false) {
+  const kept = list.filter(
+    (j) => (maxTransfers === null || j.transfers <= maxTransfers) && (maxHours === null || j.duration_minutes <= maxHours * 60) && (!onlyBudget || fitsBudget(j, budget))
+  );
   const by: Record<Sort, (a: JourneyResponse, b: JourneyResponse) => number> = {
-    price: (a, b) => fare(a) - fare(b) || a.duration_minutes - b.duration_minutes,
-    duration: (a, b) => a.duration_minutes - b.duration_minutes || fare(a) - fare(b),
-    transfers: (a, b) => a.transfers - b.transfers || fare(a) - fare(b),
+    price: (a, b) => sortCost(a) - sortCost(b) || a.duration_minutes - b.duration_minutes,
+    duration: (a, b) => a.duration_minutes - b.duration_minutes || sortCost(a) - sortCost(b),
+    transfers: (a, b) => a.transfers - b.transfers || sortCost(a) - sortCost(b),
   };
   return [...kept].sort(by[sort]);
 }
 
-function Results({ title, data, sort, maxTransfers, maxHours, controls, showPicks, showVias }: {
+function routeOf(j: JourneyResponse) {
+  return [j.legs[0].from.name, ...j.via.map((v) => v.name), j.legs[j.legs.length - 1].to.name].join(" → ");
+}
+
+function Results({ title, data, sort, maxTransfers, maxHours, budget, onlyBudget, modes, controls, showPicks, showVias }: {
   title: string;
   data: JourneysResponse;
   sort: Sort;
   maxTransfers: number | null;
   maxHours: number | null;
+  budget: number | null;
+  onlyBudget: boolean;
+  modes: JourneyMode[];
   controls?: React.ReactNode;
   showPicks: boolean;
   showVias: boolean;
 }) {
   const byId = useMemo(() => new Map(data.journeys.map((j) => [j.id, j])), [data]);
-  const list = useMemo(() => arrange(data.journeys, sort, maxTransfers, maxHours), [data, sort, maxTransfers, maxHours]);
+  const list = useMemo(() => arrange(data.journeys, sort, maxTransfers, maxHours, budget, onlyBudget), [data, sort, maxTransfers, maxHours, budget, onlyBudget]);
   const picked = new Map<string, string>();
   if (showPicks) PICKS.forEach((p) => data.recommendations[p.key] && !picked.has(data.recommendations[p.key]!.journey) && picked.set(data.recommendations[p.key]!.journey, p.label));
+
+  // The headline of a cheaper-routes search: what going through other cities saves over going direct.
+  const direct = data.recommendations.cheapest_direct ? byId.get(data.recommendations.cheapest_direct.journey) : undefined;
+  const connecting = data.recommendations.cheapest_connecting ? byId.get(data.recommendations.cheapest_connecting.journey) : undefined;
+  const saving = direct?.fare != null && connecting?.fare != null && direct.currency === connecting.currency ? direct.fare - connecting.fare : null;
+  const withinBudget = budget ? bestWithinBudget(data.journeys, budget, data.value_of_time) : null;
 
   return (
     <section className="space-y-4">
@@ -306,6 +457,68 @@ function Results({ title, data, sort, maxTransfers, maxHours, controls, showPick
         <h2 className="text-xl font-semibold">{title}</h2>
         {controls}
       </div>
+
+      {showVias && connecting && saving !== null && (
+        <Card className={cn("gap-1 py-4", saving > 0 ? "border-success/40 bg-success/5" : "")}>
+          <CardHeader className="px-4">
+            <CardDescription className="flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
+              <PiggyBank className="size-3.5" />
+              {saving > 0 ? "Cheaper than going direct" : "Going direct is cheaper on this day"}
+            </CardDescription>
+            <CardTitle className="text-lg">
+              {saving > 0
+                ? `Save ${money(saving, connecting.currency)}: ${routeOf(connecting)} for ${money(connecting.fare!, connecting.currency)}`
+                : `${money(direct!.fare!, direct!.currency)} direct, ${money(-saving, connecting.currency)} less than the cheapest route through another city`}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 text-sm text-muted-foreground">
+            {saving > 0
+              ? `Instead of ${money(direct!.fare!, direct!.currency)} for the cheapest direct ${direct!.modes.includes("flight") ? "flight" : "option"}. ${connecting.legs.length} separate tickets, so leave enough time between them and pack light.`
+              : "Try another day, or the trains and buses."}
+          </CardContent>
+        </Card>
+      )}
+
+      {budget && (
+        <Card className="gap-2 py-4">
+          <CardHeader className="px-4">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wallet className="size-4 text-primary" />
+              Your budget: {formatInr(budget)}
+            </CardTitle>
+            <CardDescription>
+              {withinBudget?.cheapest
+                ? `Cheapest within it: ${routeOf(withinBudget.cheapest)}, ${money(withinBudget.cheapest.fare!, withinBudget.cheapest.currency)} (${formatInr(budget - withinBudget.cheapest.fare!)} left).`
+                : "No option with a published fare fits this budget on this day."}
+              {withinBudget?.bestValue && withinBudget.bestValue.id !== withinBudget.cheapest?.id
+                ? ` Best value within it: ${routeOf(withinBudget.bestValue)}, ${money(withinBudget.bestValue.fare!, withinBudget.bestValue.currency)}.`
+                : ""}
+            </CardDescription>
+          </CardHeader>
+          {modes.length > 1 && (
+            <CardContent className="grid gap-2 px-4 text-sm sm:grid-cols-3">
+              {modeSummary(data.journeys, modes, budget).map((m) => {
+                const Icon = MODE_ICON[m.mode];
+                return (
+                  <div key={m.mode} className="flex items-start gap-2 rounded-lg border p-2.5">
+                    <Icon className="mt-0.5 size-4 shrink-0 text-primary" />
+                    <div>
+                      <p className="font-medium">{MODE_LABEL[m.mode]}s</p>
+                      <p className="text-xs text-muted-foreground">
+                        {m.count === 0
+                          ? "None found on this day"
+                          : `${m.fitting} of ${m.count} within budget${m.cheapestFare !== null ? `, from ${formatInr(m.cheapestFare)}` : ""}${
+                              m.estimate ? `${m.cheapestFare !== null ? ";" : ","} typically ${formatInr(m.estimate.low)} – ${formatInr(m.estimate.high)} (estimate)` : ""
+                            }`}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {showPicks && (
         <div className="grid gap-3 md:grid-cols-2">
@@ -346,11 +559,13 @@ function Results({ title, data, sort, maxTransfers, maxHours, controls, showPick
       ) : list.length ? (
         <div className="space-y-3">
           {list.map((j) => (
-            <JourneyCard key={j.id} journey={j} badge={picked.get(j.id)} />
+            <JourneyCard key={j.id} journey={j} badge={picked.get(j.id)} fit={budgetFit(j, budget)} />
           ))}
         </div>
       ) : (
-        <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No journey matches these filters.</p>
+        <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+          {onlyBudget ? "Nothing on this day fits the budget with these filters. Try Cheaper routes, another day, or a train or bus." : "No journey matches these filters."}
+        </p>
       )}
 
       <p className="text-xs text-muted-foreground">{data.method} Searched: {data.searched.map((s) => `${s.from}→${s.to} ${s.mode} (${s.error ? "failed" : s.found})`).join(", ")}.</p>
