@@ -1,4 +1,5 @@
-import type { AuditEventResponse, FlightResponse, LedgerEntryResponse, PolicyBody, PolicyResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
+import type { AirportResponse, AuditEventResponse, FlightResponse, LedgerEntryResponse, PolicyBody, PolicyResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
+import type { City } from "./catalog";
 import { formatInr } from "./format";
 import type { AuditEvent, CabinClass, ConstraintIssue, Flight, Hotel, Itinerary, LedgerEntry, Policy, Traveler, Trip, TripFilters } from "./types";
 
@@ -336,5 +337,21 @@ export function toAuditEvent(r: AuditEventResponse): AuditEvent {
     summary: readableSummary(r.summary),
     payload: r.payload,
     createdAt: r.created_at,
+  };
+}
+
+/**
+ * An airport from GET /airports as a City, so the forms and labels treat it like the built-in
+ * list. hotelIndex only matters to demo mode's generated prices, which never use these.
+ */
+export function toCity(a: AirportResponse): City {
+  return {
+    code: a.code,
+    name: a.city,
+    country: a.country_name,
+    lat: a.latitude,
+    lon: a.longitude,
+    international: a.country !== "IN",
+    hotelIndex: 1,
   };
 }
