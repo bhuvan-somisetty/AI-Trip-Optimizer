@@ -229,7 +229,8 @@ export type LedgerEntryResponse = {
   /** "flight" (outbound) | "return" | "stay"; null for itineraries saved before the backend recorded it */
   kind: "flight" | "return" | "stay" | null;
   alternative: string;
-  price: number;
+  /** null for a train or bus whose fare isn't published */
+  price: number | null;
   won: boolean;
   reason: string;
 };
@@ -243,9 +244,20 @@ export type FlightResponse = {
   arrival_time?: string | null;
   airline: string;
   flight_number?: string | null;
-  price: number;
-  currency?: string;
-  cabin_class: string;
+  /** null only for a train or bus whose fare isn't published */
+  price: number | null;
+  currency?: string | null;
+  /** null for a train or bus */
+  cabin_class: string | null;
+  /** set on a trip by train or bus, which books one of them here instead of a flight */
+  mode?: "train" | "bus";
+  service?: string | null;
+  operator?: string | null;
+  from_station?: string | null;
+  to_station?: string | null;
+  fare_label?: string | null;
+  fare_estimate?: FareEstimate | null;
+  link_label?: string | null;
   stops: number;
   /** Each connection, as Google Flights lists it; empty for non-stop, missing for cached fares. */
   layovers?: { airport: string | null; airport_name: string | null; minutes: number | null; overnight: boolean }[];
@@ -709,6 +721,8 @@ export type JourneySearch = {
   travellers?: number;
   viaDepth?: 1 | 2;
   returnDate?: string | null;
+  /** airport codes to go through, in order (e.g. GOI, BBI); replaces the picked via-cities */
+  via?: string[];
 };
 
 // Every leg is a live search; with via-cities that is up to a dozen of them.
@@ -720,6 +734,7 @@ function journeyQuery(q: Omit<JourneySearch, "origin" | "destination" | "date">)
   if (q.vias !== undefined) params.set("vias", String(q.vias));
   if (q.travellers) params.set("travellers", String(q.travellers));
   if (q.viaDepth) params.set("via_depth", String(q.viaDepth));
+  if (q.via?.length) params.set("via", q.via.join(","));
   return params;
 }
 
