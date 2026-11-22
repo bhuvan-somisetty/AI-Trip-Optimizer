@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/fields";
 import { EmptyState } from "@/components/app/common";
 import * as api from "@/lib/api";
-import type { RouteResponse } from "@/lib/api";
+import type { RouteResponse, RouteWeight } from "@/lib/api";
+import { minutesLabel } from "@/lib/geo";
 import { useStore } from "@/lib/store";
 
 // Leaflet touches `window` when it loads, so the map only renders in the browser.
@@ -21,28 +22,31 @@ const RouteMap = dynamic(() => import("./route-map"), {
 const STOP_CHOICES = [3, 4, 5, 6, 7, 8, 9, 10];
 
 /**
- * Shortest road routes from the trip's hotel to its top attractions (GET /trips/{id}/route).
- * Distances only: the road data has no reliable speeds, so no travel times are shown.
+ * Shortest road routes from the trip's hotel to its top attractions (GET /trips/{id}/route), by
+ * road distance or by estimated driving time. Times are estimates from speed limits and typical
+ * road speeds, not live traffic, and are labelled so.
  * Nothing here changes the trip's prices, budget check or Trade-off Ledger.
  */
 export function RouteTab({ tripId }: { tripId: string }) {
   const token = useStore().session?.token;
   const [stops, setStops] = useState(6);
+  const [weight, setWeight] = useState<RouteWeight>("distance");
   const [attempt, setAttempt] = useState(0);
-  const key = `${tripId}:${stops}:${attempt}`;
+  const key = `${tripId}:${stops}:${weight}:${attempt}`;
   const [result, setResult] = useState<{ key: string; data?: RouteResponse; error?: string }>();
 
   useEffect(() => {
     if (!token) return;
     let live = true;
-    api.getRoute(token, tripId, stops).then(
+    // The default (distance) call keeps its three-argument form.
+    (weight === "distance" ? api.getRoute(token, tripId, stops) : api.getRoute(token, tripId, stops, weight)).then(
       (data) => live && setResult({ key, data }),
       (e) => live && setResult({ key, error: (e as Error).message })
     );
     return () => {
       live = false;
     };
-  }, [token, tripId, stops, key]);
+  }, [token, tripId, stops, weight, key]);
 
   if (!token) {
     return (
@@ -70,6 +74,13 @@ export function RouteTab({ tripId }: { tripId: string }) {
                 {n}
               </option>
             ))}
+          </NativeSelect>
+          <label htmlFor="route-weight" className="ml-3 text-sm text-muted-foreground">
+            Shortest by
+          </label>
+          <NativeSelect id="route-weight" value={weight} onChange={(e) => setWeight(e.target.value as RouteWeight)} className="w-32" disabled={loading}>
+            <option value="distance">Distance</option>
+            <option value="time">Time</option>
           </NativeSelect>
         </div>
       </CardHeader>
@@ -128,6 +139,7 @@ function RouteList({ route }: { route: RouteResponse }) {
               <p className="text-xs text-muted-foreground">
                 {km(leg.road_m)} by road ({km(leg.straight_m)} straight) from {i === 0 ? "the hotel" : leg.from}
               </p>
+              {leg.estimated_minutes !== undefined && <p className="text-xs text-muted-foreground">About {minutesLabel(leg.estimated_minutes)} by car (estimate)</p>}
             </div>
           </li>
         ))}
@@ -136,11 +148,15 @@ function RouteList({ route }: { route: RouteResponse }) {
         <p className="flex items-center gap-2 border-t pt-3 font-medium">
           <RouteIcon className="size-4 text-primary" />
           Total {km(route.total_road_m)} by road
+          {route.total_estimated_minutes != null && <span className="font-normal text-muted-foreground">, about {minutesLabel(route.total_estimated_minutes)}</span>}
         </p>
       )}
       {!!route.unreachable.length && <p className="text-xs text-muted-foreground">No road found to: {route.unreachable.join(", ")}.</p>}
       {route.notice && <p className="text-xs text-muted-foreground">{route.notice}</p>}
-      <p className="text-xs text-muted-foreground">Shortest road distances found with Dijkstra&apos;s algorithm on OpenStreetMap roads. No travel times are shown.</p>
+      <p className="text-xs text-muted-foreground">
+        Shortest road {route.weight === "time" ? "times" : "distances"} found with Dijkstra&apos;s algorithm on OpenStreetMap roads.{" "}
+        {route.time_label ?? "Driving times are estimates, not live traffic."}
+      </p>
       <p className="text-xs text-muted-foreground">
         ©{" "}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">
