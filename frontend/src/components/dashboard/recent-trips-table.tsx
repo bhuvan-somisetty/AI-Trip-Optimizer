@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TripStatusBadge } from "@/components/app/common";
-import { cityByCode } from "@/lib/catalog";
+import { cityName } from "@/lib/store";
 import { formatDateRange, formatInr } from "@/lib/format";
 import type { Trip } from "@/lib/types";
 
@@ -26,7 +26,7 @@ export function RecentTripsTable({ trips }: { trips: Trip[] }) {
         {trips.map((trip) => (
           <TableRow key={trip.id} className="cursor-pointer" onClick={() => router.push(`/trips/${trip.id}`)}>
             <TableCell className="font-medium text-primary">{trip.code}</TableCell>
-            <TableCell>{cityByCode[trip.destination]?.name ?? trip.destination}</TableCell>
+            <TableCell>{cityName(trip.destination)}</TableCell>
             <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateRange(trip.departDate, trip.returnDate)}</TableCell>
             <TableCell>
               <TripStatusBadge trip={trip} />
