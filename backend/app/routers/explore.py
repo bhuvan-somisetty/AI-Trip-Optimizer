@@ -207,8 +207,8 @@ def route_trip(
 
 
 def flight_option(flight: dict | None) -> dict | None:
-    if not flight:
-        return None
+    if not flight or flight.get("mode") in ("train", "bus"):
+        return None  # a trip by train or bus: its trains and buses are listed already
     departs = (flight.get("departure_time") or "")[11:16] or None
     arrives = (flight.get("arrival_time") or "")[11:16] or None
     return {
