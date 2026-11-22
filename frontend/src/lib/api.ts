@@ -428,6 +428,14 @@ export type PlaceResponse = {
   data_label: string;
 };
 
+/** A day trip or famous hotel near the destination, from Wikidata (same card as a place). */
+export type AroundPlace = PlaceResponse & {
+  kind: "day_trip" | "stay";
+  /** Wikipedia language editions with an article on it: how famous it is */
+  fame: number;
+  wikidata: string;
+};
+
 /** A food market or food court from OpenStreetMap. */
 export type FoodSpotResponse = {
   id: string;
@@ -472,6 +480,15 @@ export type ExploreResponse = {
   source: string | null;
   fetched_at: string | null;
   cached: boolean;
+  /** Famous places 15 to 150 km away; missing from an older API */
+  day_trips?: AroundPlace[];
+  /** The city's famous hotels; missing from an older API */
+  famous_stays?: AroundPlace[];
+  around_source?: string | null;
+  /** what day-trip distances are measured from: "the city centre" or "the airport" */
+  around_from?: string | null;
+  /** why day trips or famous hotels are missing */
+  around_notice?: string | null;
 };
 
 export const getExplore = (token: string, tripId: string) =>
@@ -608,6 +625,8 @@ export const getAirport = (code: string) => call<AirportResponse>("GET", `/airpo
 // ---------------------------------------------------------------- journeys (cheaper routes)
 
 export type JourneyMode = "flight" | "train" | "bus" | "ferry";
+/** A typical fare range from the distance, for Indian trains and buses that publish no fare: never a price. */
+export type FareEstimate = { low: number; high: number; currency: string; label: string; distance_km?: number };
 export type JourneyPlace = { code: string; name: string; station?: string | null; station_code?: string | null };
 
 export type JourneyLegResponse = {
@@ -629,6 +648,7 @@ export type JourneyLegResponse = {
   link_label?: string | null;
   source: string | null;
   data_label: string | null;
+  fare_estimate?: FareEstimate | null;
 };
 
 export type JourneyResponse = {
@@ -649,6 +669,8 @@ export type JourneyResponse = {
   fare: number | null;
   currency: string | null;
   fare_label: string;
+  /** only when fare is null: the journey's range for all travellers, from real fares and estimates */
+  fare_estimate?: FareEstimate | null;
   legs: JourneyLegResponse[];
 };
 
