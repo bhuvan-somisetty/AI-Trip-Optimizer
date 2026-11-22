@@ -43,7 +43,7 @@ export function TradeoffLedger({
   const counts = it.ledger
     .filter((l) => l.kind === kind)
     .reduce<Record<string, number>>((acc, l) => ({ ...acc, [l.reasonCode]: (acc[l.reasonCode] ?? 0) + 1 }), {});
-  const minPrice = Math.min(...it.ledger.filter((l) => l.kind === kind).map((l) => l.price));
+  const minPrice = Math.min(...it.ledger.filter((l) => l.kind === kind && l.priceKnown !== false).map((l) => l.price));
 
   return (
     <Card>
@@ -99,11 +99,15 @@ export function TradeoffLedger({
               </div>
               <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end sm:justify-center sm:gap-1.5">
                 <div className="text-right">
-                  <p className="font-semibold tabular-nums">
-                    {formatInr(l.price)}
-                    <span className="text-xs font-normal text-muted-foreground">{l.kind === "stay" ? "/night" : "/pax"}</span>
-                  </p>
-                  {l.price === minPrice && <p className="text-[11px] font-medium text-emerald-600 dark:text-success">Lowest price</p>}
+                  {l.priceKnown === false ? (
+                    <p className="text-xs text-muted-foreground">Fare not published</p>
+                  ) : (
+                    <p className="font-semibold tabular-nums">
+                      {formatInr(l.price)}
+                      <span className="text-xs font-normal text-muted-foreground">{l.kind === "stay" ? "/night" : "/pax"}</span>
+                    </p>
+                  )}
+                  {l.priceKnown !== false && l.price === minPrice && <p className="text-[11px] font-medium text-emerald-600 dark:text-success">Lowest price</p>}
                 </div>
                 {l.score !== undefined && (
                   <div className="flex items-center gap-2">
