@@ -803,7 +803,10 @@ Tourist attractions, restaurants and famous local dishes for the trip's destinat
 
 - **Attractions and restaurants** come from [OpenTripMap](https://dev.opentripmap.org) (OpenStreetMap, Wikidata, Wikipedia; free key `OPENTRIPMAP_API_KEY`, 5,000 requests a day, non-commercial). The city is located with `geoname`, places within 10 km are listed with `radius` (heritage sites first, rating `3h`, then `3`, then `2`), and up to 30 candidates are looked up with `xid` for a description and photo. The 12 kept are ordered by OpenTripMap's own signals (heritage, Wikipedia article, photo, distance); closed and uncategorised places are dropped, and one site listed twice is kept once. Restaurants come from the `foods` category.
 - **Dishes** are named by the LLM (up to six, one plain sentence each, no numbers allowed; any line with a digit is dropped) and labelled `AI suggestion`. Each is looked up on Wikipedia for a photo and short text: the exact title first, else a page search accepted only when the title shares a specific word with the dish.
-- **Cache:** a city's places and dishes are saved in the `city_places` table for `PLACES_CACHE_DAYS` (default 30), so OpenTripMap, the LLM and Wikipedia are asked once per city. A failure is not saved, so it is retried next time.
+- **Sections** *(added 2026-11-22)*: every attraction has `section`: `history_culture` (forts, monuments, museums, historic places, temples, churches, mosques, architecture, culture) or `explore` (nature, beaches, viewpoints, parks, amusements). Nature and sightseeing are searched on their own (OpenTripMap kinds `natural,view_points,gardens_and_parks,amusements`), up to 6, next to up to 12 history-and-culture places, so a city's famous temples don't crowd them out. A place appears in one section only.
+- **OpenStreetMap details** *(added 2026-11-22)*: one [Overpass](https://wiki.openstreetmap.org/wiki/Overpass_API) request per city adds `opening_hours` (OpenStreetMap's own format, e.g. `Mo-Su 08:00-20:00`), `cuisine` and the street `address` where OpenStreetMap has them, and finds named food markets and food courts (`food_spots`, up to 8; markets whose name says jewellery, clothes, supermarket and the like are left out). If Overpass is busy the places are kept without these fields. Every place also gets `map_url` (an OpenStreetMap link) and, when it has an OpenTripMap rate, `rating_label` saying what that number is (popularity 1 to 3, `h` = heritage; it is not a user rating).
+- **Google Places (optional)** *(added 2026-11-22)*: with `GOOGLE_PLACES_API_KEY` set, up to `GOOGLE_PLACES_MAX` (default 6) restaurants are matched on Google (Places API (New) Text Search near the restaurant's own map point; used only when the result is within 300 m and shares a word of the name). A match adds `google` (`rating`, `rating_count`, `address`, `opening_hours` as weekday lines, `type`, `maps_url`, `data_label: "Live"`), a photo in `image` with `image_label: "Photo: Google"` and `photo_attribution` (the author Google requires to be shown). Google's data is never saved in `city_places`. Without a key nothing changes; a failure sets `google_notice`. It is paid: one Text Search and one photo request per restaurant.
+- **Cache:** a city's places and dishes are saved in the `city_places` table for `PLACES_CACHE_DAYS` (default 30), so OpenTripMap, the LLM and Wikipedia are asked once per city. A failure is not saved, so it is retried next time. Cities saved before the fields above existed are fetched again once (`version` in the payload).
 
 **Response (200 OK)** (shortened; one item of each list):
 ```json
@@ -837,19 +840,23 @@ Tourist attractions, restaurants and famous local dishes for the trip's destinat
 ```
 *(Names and distances are from a live check on 2026-11-21; ids, coordinates and texts are shortened here.)*
 
-**Notices:** no `OPENTRIPMAP_API_KEY` on the server, a destination outside the supported cities, OpenTripMap unreachable or rate-limited; for dishes, no LLM configured or a failed LLM call.
+Fields added 2026-11-22, from a live check in Goa: `Basilica of Bom Jesus` has `"section": "history_culture"`, `"address": "Old Goa"`; `Miramar` has `"section": "explore"`, `"category": "Beach"`; `food_spots` starts with `{"name": "Panaji Market", "category": "Market", "opening_hours": "Mo-Su 06:00-21:00", "data_label": "Map data", "source": "OpenStreetMap (Overpass API, © OpenStreetMap contributors)"}`. That first fetch took 50 s (place details are fetched five at a time).
+
+**Notices:** no `OPENTRIPMAP_API_KEY` on the server, a destination outside the supported cities, OpenTripMap unreachable or rate-limited; for dishes, no LLM configured or a failed LLM call; `google_notice` when Google Places is set up but failed.
 
 ### GET /trips/{id}/route
 Shortest road routes from the trip's hotel to its top attractions, computed with **Dijkstra's algorithm** on the real road network, and a visiting order.
 
-**Query parameter (optional):** `stops`, 1 to 10, default 6 (the first attractions from `/explore` that have a location).
+**Query parameters (optional):** `stops`, 1 to 10, default 6 (the first attractions from `/explore` that have a location); `weight`, `distance` (default) or `time` *(added 2026-11-22)*: what Dijkstra minimises.
 
 1. **Road graph:** one [Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) query (free, no key, fair use) returns the drivable OpenStreetMap roads in a box around the hotel and stops plus about 1 km. Each road point is a node; each stretch between two consecutive points is an edge weighted by its length in metres. `oneway` and roundabout tags make edges one-directional. Cached by area for 7 days in server memory.
 2. **Snapping:** the hotel and each stop attach to the nearest point on the largest connected road network (`to_road_m` says how far that was).
 3. **Dijkstra:** our own implementation with a `heapq` priority queue, run once from each stop, gives the road distance between every pair of stops (tested against Bellman-Ford on random graphs).
 4. **Order:** from the hotel, always the nearest unvisited stop by road. Stops no road reaches are listed in `unreachable`.
 
-Distances are road metres between the snapped road points; `straight_m` is the straight line between the exact places. No travel times are given, because the road data has no reliable speeds.
+Distances are road metres between the snapped road points; `straight_m` is the straight line between the exact places.
+
+**Travel time** *(added 2026-11-22)*: the same roads also form a second graph weighted by estimated driving seconds: the road's `maxspeed` tag when it is a plain number (km/h, or mph converted), otherwise a typical city speed for its class (motorway 80, trunk 60, primary 40, secondary 35, tertiary 30, unclassified 25, residential 20, living street 10 km/h). Every leg gives `road_m` and `estimated_minutes` along the path Dijkstra chose, and the route gives `total_estimated_minutes` and `time_label` ("Estimated from speed limits and typical road speeds, not live traffic"). With `weight=time` Dijkstra minimises those seconds, so a longer but faster road can win. Live check in Goa (hotel plus 5 stops): by distance 34.0 km and about 69 minutes; by time 35.1 km and about 67 minutes.
 
 **Response (200 OK)** (shortened; live check in Goa on 2026-11-21):
 ```json
@@ -862,9 +869,10 @@ Distances are road metres between the snapped road points; `straight_m` is the s
   ],
   "legs": [
     {"from": "Whoopers Boutique Hotel, Anjuna", "to": "Lower Aguada Fort extension",
-     "road_m": 11300, "straight_m": 9000, "path": [[15.5759, 73.7470], [15.5741, 73.7488]]}
+     "road_m": 11300, "estimated_minutes": 14.2, "straight_m": 9000, "path": [[15.5759, 73.7470], [15.5741, 73.7488]]}
   ],
   "total_road_m": 40200,
+  "total_estimated_minutes": 69.2,
   "unreachable": [],
   "source": "OpenStreetMap road network via the Overpass API (© OpenStreetMap contributors)",
   "data_label": "Map data",
@@ -875,7 +883,83 @@ In that run the 27,294-node road graph took 26 s to load the first time, and the
 
 **Notices:** the trip isn't optimized yet (the route starts at its hotel), the hotel has no map location (optimize again), attractions can't be loaded, or OpenStreetMap roads are busy or unreachable.
 
-**Response (422)**: `stops` outside 1 to 10.
+**Response (422)**: `stops` outside 1 to 10, or `weight` other than `distance` / `time`.
+
+---
+
+## Transport and Journeys
+*(`/transport` built 2026-11-21, worldwide and with ferries 2026-11-22; `/journeys` built 2026-11-22: `app/ground.py`, `app/journeys.py`, `app/routers/journeys.py`; tests in `test_ground.py`, `test_journeys.py`.)*
+
+All need a valid JWT (every search spends SerpApi quota: the free plan has 250 searches a month). None of them change a trip's itinerary, budget check or Trade-off Ledger.
+
+### GET /trips/{id}/transport
+Flight, trains, buses and ferries for the trip's first day, side by side. Trains, buses and ferries come from Google Maps transit (SerpApi `google_maps_directions`, `travel_mode=3`) for **any two airport cities**; the day is searched from 05:00, 12:00 and 19:00 in the origin's time zone (three searches, cached), so night departures are included. Each option has `kind` (`train`, `bus`, `ferry`, from Google's own vehicle icon), `service`, `operator`, `from`/`to` stations, `departs`/`arrives`, `departure_time`/`arrival_time` (local date-times), `duration_minutes`, `changes`, `legs`, and a `fare` only when Google gives one (`fare_label` is otherwise "Not available"). The response has `trains`, `buses`, `ferries`, the trip's `flight` (null before it is optimized) and `comparison` (the fastest of each mode). Live check, Delhi to Jaipur on 12 Dec 2026: 14 trains and a FlixBus.
+
+### GET /journeys
+Direct and connecting journeys, including **cheaper routes through another city** (the instructor's Bhubaneswar → Hyderabad → Bengaluru example).
+
+**Query parameters:** `origin`, `destination` (airport codes), `date` (not in the past); optional `modes` (comma-separated `flight,train,bus,ferry`, default all), `vias` (0 to 3, default 2; each via-city costs about two flight searches and two transit searches), `value_of_time` (rupees an hour of travel is worth for "best value", default 300), `travellers` (1 to 9: every fare is found per person and multiplied, so it costs no extra searches; each journey gives `fare` for everyone and `fare_per_person`), `via_depth` (1 or 2: with 2, journeys through two via-cities in a row are also tried, e.g. Bhubaneswar → Visakhapatnam → Hyderabad → Bengaluru, one extra leg search per pair of via-cities), `return_date` (also searches the way back on that day, returned under `return` in the same shape; doubles the searches).
+
+1. **Via-cities:** airports a small detour from the straight line (total distance at most 1.35 times the direct one, each leg at least 150 km), ranked by detour with major hubs counted as a little shorter. Bhubaneswar → Bengaluru tries Chennai and Hyderabad.
+2. **Real departures:** every leg (origin → via, via → destination, origin → destination) is searched on Google Flights and Google Maps transit. Each departure becomes an edge of a time-dependent graph: it leaves a city at its departure time and reaches the next at its arrival time.
+3. **Timetable rules:** a change needs at least 120 minutes between two flights on separate tickets, 150 minutes between a flight and a train or bus, 45 minutes between two trains or buses, and at most an 18-hour wait; no city is passed twice; at most 3 changes in all.
+4. **Algorithm:** a multi-criteria Dijkstra (Martins' label-setting) over fare, arrival time, departure time and number of changes: labels leave the priority queue in order of arrival time, and in each city only labels not beaten on all four are kept. At the destination the journeys no other beats on fare, total time and changes are listed, plus the cheapest direct one, the cheapest through each via-city and the fastest of each mode.
+5. **Fares:** a journey's fare is the sum of real fares. A leg without one (most trains and buses) makes the total `null` ("Not available: a leg has no published fare"), so such a journey can be the fastest but is never called the cheapest.
+
+**Response (200 OK)** (shortened; live check on 2026-11-22, Bhubaneswar → Bengaluru on 12 Dec 2026, flights only, two via-cities):
+```json
+{
+  "origin": {"code": "BBI", "name": "Bhubaneswar"},
+  "destination": {"code": "BLR", "name": "Bangalore"},
+  "date": "2026-12-12",
+  "via_cities": [{"code": "MAA", "name": "Chennai"}, {"code": "HYD", "name": "Hyderabad"}],
+  "via_summary": [
+    {"city": {"code": "MAA", "name": "Chennai"}, "journey": "J-4", "fare": 13454.0, "difference_from_direct": 1297.0,
+     "note": "₹1,297 more than the cheapest direct option"},
+    {"city": {"code": "HYD", "name": "Hyderabad"}, "journey": "J-3", "fare": 13152.0, "difference_from_direct": 995.0,
+     "note": "₹995 more than the cheapest direct option"}
+  ],
+  "journeys": [
+    {"id": "J-3", "kind": "connecting", "separate_tickets": true, "via": [{"code": "HYD", "name": "Hyderabad"}],
+     "modes": ["flight", "flight"], "departure_time": "2026-12-12T14:40:00", "arrival_time": "2026-12-12T22:50:00",
+     "duration_minutes": 490, "transfers": 1, "transfer_waits": [{"city": {"code": "HYD", "name": "Hyderabad"}, "minutes": 295}],
+     "fare": 13152.0, "currency": "INR", "fare_label": "Sum of real fares",
+     "legs": [{"mode": "flight", "service": "Star Air S5662", "fare": 8001, "data_label": "Live"},
+              {"mode": "flight", "service": "Alliance Air 9I818", "fare": 5151, "data_label": "Live"}]}
+  ],
+  "recommendations": {
+    "cheapest_direct": {"journey": "J-2", "reason": "Lowest fare without changing: ₹12,157 (IndiGo 6E6085), 2h 05m."},
+    "cheapest_connecting": {"journey": "J-1", "reason": "Lowest fare with a change: ₹10,933 (IndiGo 6E631 (1 stop)), 4h 05m. ₹1,224 cheaper than the cheapest direct option, 2h 00m longer."},
+    "fastest": {"journey": "J-5", "reason": "Shortest time from departure to arrival among the departures found: 2h 00m (IndiGo 6E611, ₹18,142)."},
+    "best_value": {"journey": "J-1", "reason": "Best balance of fare and time, counting each hour of travel as ₹300: ₹10,933 for 4h 05m (IndiGo 6E631 (1 stop))."}
+  },
+  "searched": [{"from": "BBI", "to": "BLR", "mode": "flight", "found": 14, "error": null}],
+  "method": "Time-dependent multi-criteria Dijkstra (Martins' label-setting) over real departures: fare, arrival time, departure time and number of changes.",
+  "notice": null
+}
+```
+On that day going through Chennai or Hyderabad on separate tickets cost more than flying direct, and the cheapest option was Google's own one-stop IndiGo ticket; the response says so instead of assuming a connection is cheaper.
+
+**Response (422):** unknown airport code, the same city twice, a past date, or `modes` other than `flight,train,bus,ferry`. **401** without a login.
+
+### GET /trips/{id}/journeys
+The same search for a saved trip's origin, destination and first day (same optional parameters, plus `include_return=true` to also search the trip's last day the other way). 404 for someone else's trip.
+
+**Provider links:** train and bus options (here and in `/transport`) carry `link` and `link_label` to the operator's own site when it is known: IRCTC for Indian Railways, FlixBus, Eurostar, and redBus for other buses in India; flight legs link to the Google Flights search. These are plain links: no availability, seat or price is read from them.
+
+---
+
+## Airports and Discovery
+*(`/airports` built 2026-11-21; `/destinations` and `/places/nearby` 2026-11-22: `app/routers/airports.py`, `app/routers/discover.py`; tests in `test_airports.py`, `test_discover.py`.)*
+
+### GET /airports and GET /airports/{code}
+No login. `GET /airports?q=varanasi&limit=10` searches the 4,007 airports with scheduled flights (OurAirports, public domain): an exact code or city first, then names starting with the text. Each airport: `code`, `city`, `country`, `country_name`, `airport`, `latitude`, `longitude`, `size`, `timezone`. `GET /airports/{code}` returns one, or 404 "Unknown airport code".
+
+### GET /destinations/{code}
+Everything about a destination without a trip: the same lists as a trip's Explore (attractions with their `section`, restaurants, `food_spots`, dishes, Google details when set up), plus `country_name`, `location` (the airport's coordinates) and `overview`: the city's Wikipedia summary (`title`, `text` up to 600 characters, `image`, `wikipedia`, `image_label: "Photo: Wikipedia"`), or `null` when Wikipedia has no page for it. Needs a login; 404 for an unknown code. Live check: Varanasi's overview begins "Varanasi, or Kashi, is a city on the Ganges river in northern India ...".
+
+### GET /places/nearby
+Attractions (up to 8, with photo and description when OpenTripMap has them) and restaurants (up to 8) around a point. **Query:** `lat`, `lon`, optional `radius_m` (500 to 10,000, default 3,000). Meant for the browser's location once the user has allowed it; the point is sent to OpenTripMap only and cached in server memory by about 100 m. Needs a login. Live check in Panaji: Our Lady of the Immaculate Conception, Fontainhas, Reis Magos Fort, Kala Academy, Miramar.
 
 ---
 
@@ -883,7 +967,7 @@ In that run the 27,294-node road graph took 26 s to load the first time, and the
 *(`GET /audit` built 2026-11-12, `GET /dashboard` 2026-11-13.)*
 
 ### GET /dashboard
-*(**Built 2026-11-13**, `app/routers/dashboard.py`, tests in `backend/tests/test_dashboard.py`; response below captured from the running app.)* Returns total spend, average savings and average turnaround time for a period (PRD US-010). Requires a valid JWT. **Admins see the whole team's trips, members only their own** (the same split as `GET /audit`; the PRD story is written for an admin, and members get the same numbers for their own trips).
+*(**Built 2026-11-13**, `app/routers/dashboard.py`, tests in `backend/tests/test_dashboard.py`; response below captured from the running app.)* Returns total spend, average savings and average turnaround time for a period (PRD US-010). Requires a valid JWT. **Admins see the whole team's trips, members only their own** (the PRD story is written for an admin, and members get the same numbers for their own trips).
 
 **Query parameter (optional):** `period` as a year (`2026`), a quarter (`2026-Q4`) or a month (`2026-11`); left out, it covers all time. A trip counts in the period it was **decided** in (`trips_created` counts by creation date). Spend and savings come from **approved** itineraries; turnaround is from the trip being created to its decision, over every decided trip. Averages are `null` when there is nothing to average.
 
@@ -912,7 +996,7 @@ The Analytics page computes the same figures in the browser from the user's trip
 ### GET /audit
 *(**Verified** — built 2026-11-11, `app/routers/audit.py`; response below captured from the running app, not invented.)*
 
-Returns audit event history, newest first. Independent of dashboard aggregation — every pipeline run and decision is recorded here regardless of what the dashboard shows (PRD: Audit trail, US-010). Requires a valid JWT. **Admins see every user's events; members see only their own.** Events are append-only: nothing in the API edits or deletes them, and re-optimizing a trip replaces its itinerary but keeps every earlier `PIPELINE_RUN` here.
+Returns audit event history, newest first. Independent of dashboard aggregation — every pipeline run and decision is recorded here regardless of what the dashboard shows (PRD: Audit trail, US-010). Requires a valid JWT. **Admins only** *(changed 2026-11-22, the instructor's request)*: admins see every user's events, and everyone else gets `403 {"detail": "The audit trail is for admins only"}` — enforced by the API, not just by hiding the menu. Events are still recorded for every user's actions. Events are append-only: nothing in the API edits or deletes them, and re-optimizing a trip replaces its itinerary but keeps every earlier `PIPELINE_RUN` here.
 
 **Recorded events:** `TRAVELER_CREATED`, `TRAVELER_UPDATED` (payload has `before`/`after`), `TRAVELER_DELETED`, `TRIP_CREATED`, `PIPELINE_RUN` (what was chosen, the total, the flags, the rationale and the data source of each option), `PIPELINE_FAILED` (with the reason), `REVIEW_STARTED`, `DECISION` (outcome, reason, and the itinerary as it stood when decided). `ITINERARY_EDITED` (which line item was swapped, and the total before and after). `TRIP_UPDATED` (each changed request field before and after, and whether a saved itinerary was dropped). `POLICY_UPDATED` (each changed policy field before and after). `PIPELINE_RUN` and `PIPELINE_FAILED` also carry `run_ms`, how long the optimizer took. An action that fails (e.g. a 409) records nothing — the event is saved in the same transaction as the action.
 
@@ -931,7 +1015,7 @@ Returns audit event history, newest first. Independent of dashboard aggregation 
 ```
 The longer example below was captured before `actor_name` existed.
 
-**Query parameters (all optional):** `trip_id`, `event_type` (one of the names above), `limit` (1–500, default 100). Someone else's `trip_id` returns `[]`, the same as an unknown one.
+**Query parameters (all optional):** `trip_id`, `event_type` (one of the names above), `limit` (1–500, default 100).
 
 *(Client query: `GET /audit?trip_id=83980862-2f7c-445e-b833-0f7623d78af2`)*
 
