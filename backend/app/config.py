@@ -33,6 +33,12 @@ PLACES_CACHE_DAYS = int(os.getenv("PLACES_CACHE_DAYS") or "30")
 # Where flights come from: "google" (Google Flights via SerpApi, live, needs SERPAPI_API_KEY;
 # falls back to Travelpayouts when it fails or finds nothing) or "travelpayouts" (cached fares only).
 FLIGHT_SOURCE = (os.getenv("FLIGHT_SOURCE") or "google").strip().lower()
+# Optional: Google Places (New) for restaurant photos, ratings and opening hours in Explore
+# (app/google_places.py). Paid, billed per request on a Google Cloud project with billing on.
+# Without a key, restaurants keep OpenStreetMap's data only. GOOGLE_PLACES_MAX caps how many
+# restaurants are looked up per city view, so one view costs at most 2 x that many requests.
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
+GOOGLE_PLACES_MAX = int(os.getenv("GOOGLE_PLACES_MAX") or "6")
 
 # Sign in with Google: the OAuth Web client ID from Google Cloud (Google Auth Platform -> Clients).
 # Only the ID is needed, to check that Google's ID tokens were issued for this app; without it
