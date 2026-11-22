@@ -147,6 +147,29 @@ describe("toItinerary", () => {
     ]);
   });
 
+  it("maps a train with no published fare on a trip by train", () => {
+    const train: FlightResponse = {
+      ...flight("TRAIN-2", "DEL", "BOM", 0, "2026-12-22"),
+      mode: "train",
+      airline: "Indian Railways",
+      operator: "Indian Railways",
+      service: "12951 Rajdhani Express",
+      from_station: "New Delhi",
+      to_station: "Mumbai Central",
+      cabin_class: null,
+      price: null,
+      fare_estimate: { low: 1000, high: 4000, currency: "INR", label: "Estimate from about 1,425 km (sleeper to AC 2-tier)" },
+      link_label: "Book on IRCTC",
+    };
+    const r = result({ flight: train, return_flight: null, total_cost: 9000 });
+    r.tradeoff_ledger = [{ kind: "flight", alternative: "TRAIN-2 train 12951 Rajdhani Express", price: null, won: true, reason: "Fastest of the day" }];
+    const it = toItinerary(r, trip)!;
+    expect(it.outbound).toMatchObject({ mode: "train", flightNo: "12951 Rajdhani Express", price: 0, priceKnown: false, fromStation: "New Delhi" });
+    expect(it.outbound.fareEstimate).toMatchObject({ low: 1000, high: 4000 });
+    expect(it.flightCost).toBe(0);
+    expect(it.ledger[0]).toMatchObject({ priceKnown: false, price: 0, detail: "Fare not published" });
+  });
+
   it("returns undefined when optimization failed", () => {
     expect(toItinerary({ status: "OPTIMIZATION_FAILED", itinerary: null, tradeoff_ledger: [], reason: "No flights" }, trip)).toBeUndefined();
   });
