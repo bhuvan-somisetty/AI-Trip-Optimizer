@@ -121,7 +121,7 @@ def _cached(key: tuple, fetch):
 
 def _request(provider: str, method: str, url: str, **kwargs) -> dict | list:
     try:
-        response = httpx.request(method, url, timeout=TIMEOUT_SECONDS, **kwargs)
+        response = httpx.request(method, url, **{"timeout": TIMEOUT_SECONDS, **kwargs})
     except httpx.TimeoutException as e:
         raise TravelDataError(f"{provider} took too long to answer, please try again") from e
     except httpx.HTTPError as e:
