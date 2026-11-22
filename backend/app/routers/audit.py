@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from app.database import get_session
@@ -19,15 +19,12 @@ def list_audit_events(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Audit history, newest first.
-
-    Admins see every user's events (PRD US-010: "as an admin ... the team's workflow is
-    traceable"); members see only their own. A trip_id the caller can't see just returns
-    an empty list, so the endpoint doesn't reveal which trip IDs exist.
+    """Audit history, newest first. Admins only (PRD US-010: "as an admin ... the team's workflow
+    is traceable"); everyone else gets 403, so the trail can't be read by hiding a menu item alone.
     """
-    query = select(AuditEvent, User.email, User.name).join(User, User.id == AuditEvent.user_id)
     if current_user.role != UserRole.admin:
-        query = query.where(AuditEvent.user_id == current_user.id)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="The audit trail is for admins only")
+    query = select(AuditEvent, User.email, User.name).join(User, User.id == AuditEvent.user_id)
     if trip_id is not None:
         query = query.where(AuditEvent.trip_id == trip_id)
     if event_type is not None:
