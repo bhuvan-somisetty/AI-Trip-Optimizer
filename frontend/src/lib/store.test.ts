@@ -143,3 +143,18 @@ describe("cities beyond the built-in list", () => {
     await vi.waitFor(() => expect(routeLabel(trip)).toBe("New Delhi → Amritsar"));
   });
 });
+
+describe("audit trail for members", () => {
+  it("loads everything else when the server says the trail is admin-only", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const real = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url, init) =>
+      String(url).includes("/audit")
+        ? new Response(JSON.stringify({ detail: "The audit trail is for admins only" }), { status: 403 })
+        : real(url as string, init as RequestInit)
+    );
+    await actions.syncFromApi();
+    expect(getState().audit).toEqual([]);
+    expect(getState().trips.find((t) => t.id === TRIP_ID)).toBeDefined();
+  });
+});
