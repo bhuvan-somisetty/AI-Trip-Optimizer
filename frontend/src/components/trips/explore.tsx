@@ -85,7 +85,7 @@ export function ExploreTab({ tripId }: { tripId: string }) {
           <CardTitle>Explore {x.city_name}</CardTitle>
           <CardDescription>
             Places and restaurants are map data{x.source ? ` from ${x.source}` : ""}
-            {x.fetched_at ? `, fetched ${formatDate(x.fetched_at)}` : ""}. Local food is an AI suggestion, with photos from Wikipedia. None of this changes the
+            {x.fetched_at ? `, fetched ${formatDate(x.fetched_at)}` : ""}. Local food is only shown when Wikipedia has an article on it, with Wikipedia&apos;s text and photo. None of this changes the
             trip&apos;s prices, budget check or Trade-off Ledger.
           </CardDescription>
         </CardHeader>
