@@ -5,7 +5,7 @@ import type { GroundOptionResponse, TransportResponse } from "@/lib/api";
 const getTransport = vi.fn();
 
 vi.mock("@/lib/api", () => ({ getTransport: (...a: unknown[]) => getTransport(...a) }));
-vi.mock("@/lib/store", () => ({ useStore: () => ({ session: { token: "tok" } }) }));
+vi.mock("@/lib/store", () => ({ useStore: () => ({ session: { token: "tok" } }), cityName: (code: string) => code }));
 
 const { TransportTab } = await import("./transport");
 
@@ -126,5 +126,31 @@ describe("TransportTab", () => {
     render(<TransportTab tripId="t1" />);
     expect(await screen.findByText("Indian Railways · 303 km · Direct")).toBeInTheDocument();
     expect(screen.queryByText("Ferries")).not.toBeInTheDocument();
+  });
+  it("marks the recommended way to travel and says how each end is reached", async () => {
+    getTransport.mockResolvedValue(
+      transport({
+        recommended: { mode: "Train", reason: "Best value: cheapest and quick enough, counting each hour of travel as Rs 300" },
+        access: {
+          origin: null,
+          destination: {
+            code: "kedarnath",
+            name: "Kedarnath",
+            state: "Uttarakhand",
+            serves: [],
+            airport: { code: "DED", name: "Jolly Grant Airport", km: 105 },
+            station: null,
+            bus_station: { name: "Sonprayag Parking", km: 14 },
+          },
+        },
+      })
+    );
+    render(<TransportTab tripId="t1" />);
+    expect(await screen.findByText("Recommended: train")).toBeInTheDocument();
+    expect(screen.getByText(/counting each hour of travel as Rs 300\./)).toBeInTheDocument();
+    expect(screen.getByText("Recommended")).toBeInTheDocument(); // the badge on the train row
+    expect(screen.getByText("Kedarnath, Uttarakhand")).toBeInTheDocument();
+    expect(screen.getByText("Nearest airport: DED (Jolly Grant Airport), 105 km")).toBeInTheDocument();
+    expect(screen.getByText("Sonprayag Parking, 14 km")).toBeInTheDocument();
   });
 });
