@@ -146,8 +146,8 @@ export default function SearchPage() {
       <div>
         <h1 className="text-3xl font-semibold">Flights, trains and buses</h1>
         <p className="text-sm text-muted-foreground">
-          Live schedules and fares, cheapest first. Add a budget to see what fits it. A fare is shown only when the provider publishes one; trains and buses without one get a
-          typical range, marked as an estimate.
+          Live schedules and fares, cheapest first. Add a budget to see what fits it. Only real fares are shown: a train or bus whose fare isn&apos;t published says so,
+          with a link to check it with the operator.
         </p>
       </div>
 
@@ -528,12 +528,16 @@ function Results({ title, data, sort, maxTransfers, maxHours, budget, onlyBudget
             {saving > 0 ? (
               <>
                 <p className="font-medium text-foreground">
-                  {routeOf(connecting)}: {money(connecting.fare!, connecting.currency)} instead of {money(direct!.fare!, direct!.currency)}
+                  {routeOf(connecting)}
+                  {connecting.via.length === 0 && connecting.transfers > 0 ? ` (${connecting.legs[0].service ?? "one ticket"}, ${connecting.transfers} stop${connecting.transfers > 1 ? "s" : ""})` : ""}:{" "}
+                  {money(connecting.fare!, connecting.currency)} instead of {money(direct!.fare!, direct!.currency)}
                 </p>
                 <p>
                   {minutesLabel(connecting.duration_minutes)} door to door instead of {minutesLabel(direct!.duration_minutes)}
                   {connecting.transfer_waits.length ? `, changing in ${connecting.transfer_waits.map((w) => `${w.city.name} (${minutesLabel(w.minutes)})`).join(" and ")}` : ""}.{" "}
-                  {connecting.legs.length} separate tickets, so leave enough time between them and pack light.
+                  {connecting.separate_tickets
+                    ? `${connecting.legs.length} separate tickets, so leave enough time between them and pack light.`
+                    : "One ticket with a stop: the airline rebooks you if the first flight is late."}
                 </p>
               </>
             ) : (
@@ -572,7 +576,7 @@ function Results({ title, data, sort, maxTransfers, maxHours, budget, onlyBudget
                         {m.count === 0
                           ? "None found on this day"
                           : `${m.fitting} of ${m.count} within budget${m.cheapestFare !== null ? `, from ${formatInr(m.cheapestFare)}` : ""}${
-                              m.estimate ? `${m.cheapestFare !== null ? ";" : ","} typically ${formatInr(m.estimate.low)} – ${formatInr(m.estimate.high)} (estimate)` : ""
+                              m.unpriced ? `; ${m.unpriced} with no published fare` : ""
                             }`}
                       </p>
                     </div>
