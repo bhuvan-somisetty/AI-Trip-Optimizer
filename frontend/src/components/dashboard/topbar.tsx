@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Search, Settings, LogOut, Menu, Moon, Sun, Plus, Plane, User, FileText, CornerDownLeft } from "lucide-react";
+import { Bell, Search, Settings, LogOut, Menu, Plus, Plane, User, FileText, CornerDownLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -86,7 +86,6 @@ export function Topbar() {
     router.push(href);
   }
 
-  const dark = s.settings.theme === "dark";
   const kindIcon = { Trip: Plane, Traveler: User, Document: FileText };
 
   return (
@@ -174,14 +173,6 @@ export function Topbar() {
           <Plus />
           New trip
         </Link>
-
-        <button
-          onClick={() => actions.updateSettings({ theme: dark ? "light" : "dark" })}
-          className="flex size-9 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          {dark ? <Sun className="size-5" /> : <Moon className="size-5" />}
-        </button>
 
         <DropdownMenu onOpenChange={(open) => !open && unread > 0 && actions.markNotificationsRead()}>
           <DropdownMenuTrigger
