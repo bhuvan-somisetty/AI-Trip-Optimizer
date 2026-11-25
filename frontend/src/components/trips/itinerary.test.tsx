@@ -92,7 +92,7 @@ describe("FlightCard", () => {
     expect(screen.queryByText(/Fares: high/)).not.toBeInTheDocument();
   });
 
-  it("shows a train of a trip by train, with its typical fare when none is published", () => {
+  it("shows a train of a trip by train, and says when its fare isn't published", () => {
     const train = flight({
       mode: "train",
       airline: "Indian Railways",
@@ -101,7 +101,6 @@ describe("FlightCard", () => {
       toStation: "New Delhi",
       price: 0,
       priceKnown: false,
-      fareEstimate: { low: 1200, high: 4900, label: "Estimate from about 2,150 km (sleeper to AC 2-tier)" },
       bookingLink: "https://www.irctc.co.in",
       bookingLabel: "Book on IRCTC",
     });
@@ -109,7 +108,7 @@ describe("FlightCard", () => {
     expect(screen.getByText(/Outbound train/)).toBeInTheDocument();
     expect(screen.getByText("KSR Bengaluru")).toBeInTheDocument();
     expect(screen.getByText("Fare not published")).toBeInTheDocument();
-    expect(screen.getByText(/Typically ₹1,200 – ₹4,900 \/traveler \(estimate, not in the total\)/)).toBeInTheDocument();
+    expect(screen.getByText("Not in the total: check it with the operator before booking")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Book on IRCTC/ })).toHaveAttribute("href", "https://www.irctc.co.in");
     expect(screen.queryByText("Economy")).not.toBeInTheDocument();
     expect(screen.queryByText("₹0")).not.toBeInTheDocument();
