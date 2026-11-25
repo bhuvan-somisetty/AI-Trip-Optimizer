@@ -24,8 +24,9 @@ function journey(id: string, modes: JourneyMode[], fare: number | null, extra: P
 
 const flight = journey("J-1", ["flight"], 30000);
 const cheaper = journey("J-2", ["flight", "flight", "flight"], 18000, { duration_minutes: 600 });
-const train = journey("J-3", ["train"], null, { fare_estimate: { low: 1100, high: 4600, currency: "INR", label: "Estimate" } });
-const bus = journey("J-4", ["bus"], null);
+const train = journey("J-3", ["train"], 1200);
+const unpricedTrain = journey("J-4", ["train"], null);
+const bus = journey("J-5", ["bus"], null);
 
 describe("budget fit", () => {
   it("compares real fares exactly", () => {
@@ -34,32 +35,30 @@ describe("budget fit", () => {
     expect(budgetFit(flight, null)).toBeNull();
   });
 
-  it("says likely for an estimate, and never compares a fare in another currency", () => {
-    expect(budgetFit(train, 5000)?.status).toBe("likely");
-    expect(budgetFit(train, 2000)?.status).toBe("partly");
-    expect(budgetFit(train, 1000)).toEqual({ status: "over", label: "Likely over budget (estimate)" });
-    expect(budgetFit(bus, 1000)?.status).toBe("unknown");
+  it("never guesses a fare that isn't published, or compares one in another currency", () => {
+    expect(budgetFit(unpricedTrain, 5000)).toEqual({ status: "unknown", label: "Fare not published: check with the operator" });
     expect(budgetFit({ ...flight, currency: "EUR", fare: 100 }, 20000)?.status).toBe("unknown");
     expect(fitsBudget(train, 2000)).toBe(true);
-    expect(fitsBudget(flight, 20000)).toBe(false);
+    expect(fitsBudget(unpricedTrain, 2000)).toBe(false);
+    expect(fitsBudget(unpricedTrain, null)).toBe(true);
   });
 
-  it("sorts estimates by their low end and unknown fares last", () => {
-    expect([flight, bus, train, cheaper].sort((a, b) => sortCost(a) - sortCost(b)).map((j) => j.id)).toEqual(["J-3", "J-2", "J-1", "J-4"]);
+  it("sorts by real fare, unpublished fares last", () => {
+    expect([flight, bus, train, cheaper].sort((a, b) => sortCost(a) - sortCost(b)).map((j) => j.id)).toEqual(["J-3", "J-2", "J-1", "J-5"]);
   });
 
   it("summarises each mode against the budget", () => {
-    const rows = modeSummary([flight, cheaper, train, bus], ["flight", "train", "bus"], 20000);
-    expect(rows[0]).toEqual({ mode: "flight", count: 2, fitting: 1, cheapestFare: 18000, estimate: null });
-    expect(rows[1]).toEqual({ mode: "train", count: 1, fitting: 1, cheapestFare: null, estimate: { low: 1100, high: 4600 } });
-    expect(rows[2]).toMatchObject({ mode: "bus", count: 1, fitting: 0 });
+    const rows = modeSummary([flight, cheaper, train, unpricedTrain, bus], ["flight", "train", "bus"], 20000);
+    expect(rows[0]).toEqual({ mode: "flight", count: 2, fitting: 1, unpriced: 0, cheapestFare: 18000 });
+    expect(rows[1]).toEqual({ mode: "train", count: 2, fitting: 1, unpriced: 1, cheapestFare: 1200 });
+    expect(rows[2]).toEqual({ mode: "bus", count: 1, fitting: 0, unpriced: 1, cheapestFare: null });
   });
 
   it("picks the cheapest and the best value within the budget", () => {
-    const fast = journey("J-5", ["flight"], 19000, { duration_minutes: 150 });
-    const { cheapest, bestValue } = bestWithinBudget([flight, cheaper, fast, train], 20000, 300);
+    const fast = journey("J-6", ["flight"], 19000, { duration_minutes: 150 });
+    const { cheapest, bestValue } = bestWithinBudget([flight, cheaper, fast, unpricedTrain], 20000, 300);
     expect(cheapest?.id).toBe("J-2");
-    expect(bestValue?.id).toBe("J-5"); // ₹1,000 more but 7.5 hours shorter
+    expect(bestValue?.id).toBe("J-6"); // ₹1,000 more but 7.5 hours shorter
     expect(bestWithinBudget([flight], 20000).cheapest).toBeNull();
   });
 });
