@@ -702,6 +702,17 @@ def with_policy_preferences(request: dict) -> dict:
     return {**preferences, "preferred_airlines": list(trip_preferred) + list(policy["preferred_airlines"])}
 
 
+def airport_flags(request: dict) -> list[str]:
+    """A town with no airport of its own is flown to and from its nearest one: say which, and how far."""
+    flags = []
+    for code in (request["origin"], request["destination"]):
+        p = travel_data.PLACES.get(code)
+        if p and p["kind"] == "place" and "flight" not in p["serves"]:
+            flags.append(f"{p['city']} has no airport: the flights use {p['airport_code']} ({p['airport']}), "
+                         f"{p['airport_km']} km away, so the last stretch is by train, bus or road")
+    return flags
+
+
 def check_node(state: PipelineState) -> dict:
     # Pure Python, no LLM: picks, per the trip's priority, among the options that pass every
     # rule (the cheapest, by default) and does the money maths here, so the verdict is reproducible.
@@ -825,6 +836,7 @@ def check_node(state: PipelineState) -> dict:
         flags.append(budget_flag)
     flags += policy_flags(request, flight, return_flight)
     flags += fare_flags(state, request, flight, return_flight)
+    flags += airport_flags(request)
 
     return {
         "check": {
