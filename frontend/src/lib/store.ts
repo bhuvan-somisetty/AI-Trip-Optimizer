@@ -81,7 +81,7 @@ const empty: State = {
   trips: [],
   audit: [],
   policy: defaultPolicy,
-  settings: { theme: "light", notifyDecisions: true, notifyPipeline: true, compactTables: false },
+  settings: { notifyDecisions: true, notifyPipeline: true, compactTables: false },
   readNotificationsAt: new Date(0).toISOString(),
   tripSeq: 0,
   cities: {},
