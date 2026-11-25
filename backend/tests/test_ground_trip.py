@@ -50,17 +50,18 @@ def test_modes_without_flight_make_a_ground_trip():
     assert graph.ground_modes({"filters": {}}) is None and graph.ground_modes({}) is None
 
 
-def test_no_fare_published_picks_the_fastest_and_estimates_the_fare(client, auth_headers, trip_payload):
+def test_no_fare_published_picks_the_fastest_and_says_so(client, auth_headers, trip_payload):
     body, _ = by_train(client, auth_headers, trip_payload)
     assert body["status"] == "OPTIMIZED", body["reason"]
     it = body["itinerary"]
     out, back = it["flight"], it["return_flight"]
     assert out["mode"] == "train" and out["service"] == "22691 Rajdhani Express"  # fastest; the bus is left out
     assert out["price"] is None and out["fare_label"] == "Fare not published"
-    assert out["fare_estimate"]["low"] < out["fare_estimate"]["high"] and back["service"] == "22692 Rajdhani Express"
-    # The total holds the hotel only; the train fare is flagged as an estimate, never added.
+    assert "fare_estimate" not in out and back["service"] == "22692 Rajdhani Express"
+    # The total holds the hotel only; the missing train fare is flagged, never guessed.
     assert it["total_cost"] == it["hotel"]["price_per_night"] * 4
-    assert any(f.startswith("The train fare isn't published, so it isn't in the total: typically") for f in it["flags"])
+    assert "The train fare isn't published, so it isn't in the total; check it on the operator's site before booking" in it["flags"]
+    assert not any("typically" in f or "estimate" in f for f in it["flags"])
     assert "Chose train" in it["rationale"] and "fare not published" in it["rationale"]
     trains = [e for e in body["tradeoff_ledger"] if e["kind"] == "flight"]
     assert [e["won"] for e in trains] == [True, False] and trains[0]["price"] is None
