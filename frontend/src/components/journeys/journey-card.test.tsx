@@ -20,7 +20,6 @@ const leg = (over: Partial<JourneyLegResponse> = {}): JourneyLegResponse => ({
   link: null,
   source: "Google Maps transit via SerpApi",
   data_label: "Live schedule",
-  fare_estimate: { low: 1130, high: 4640, currency: "INR", label: "Estimate from about 1,975 km (sleeper to AC 2-tier)" },
   ...over,
 });
 
@@ -38,23 +37,21 @@ const train: JourneyResponse = {
   fare: null,
   currency: null,
   fare_label: "Not available: a leg has no published fare",
-  fare_estimate: { low: 1130, high: 4640, currency: "INR", label: "Estimate" },
   legs: [leg()],
 };
 
 describe("JourneyCard", () => {
-  it("shows a typical range, marked as an estimate, when there is no fare", () => {
+  it("says so when no fare is published, and never guesses one", () => {
     render(<JourneyCard journey={train} />);
-    expect(screen.getByText("₹1,130 – ₹4,640")).toBeInTheDocument();
-    expect(screen.getByText("Typical fare, estimate")).toBeInTheDocument();
+    expect(screen.getByText("Not available: a leg has no published fare")).toBeInTheDocument();
+    expect(screen.queryByText(/₹/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Show details/ }));
-    expect(screen.getByText(/No published fare. Typically ₹1,130 – ₹4,640 per person \(estimate from about 1,975 km/)).toBeInTheDocument();
+    expect(screen.getByText("Not available")).toBeInTheDocument();
   });
 
   it("shows how the journey fits the budget", () => {
-    render(<JourneyCard journey={{ ...train, fare: 18000, currency: "INR", fare_estimate: null }} fit={{ status: "within", label: "Within budget · ₹2,000 left" }} />);
+    render(<JourneyCard journey={{ ...train, fare: 18000, currency: "INR" }} fit={{ status: "within", label: "Within budget · ₹2,000 left" }} />);
     expect(screen.getByText("₹18,000")).toBeInTheDocument();
     expect(screen.getByText("Within budget · ₹2,000 left")).toBeInTheDocument();
-    expect(screen.queryByText(/Typical fare/)).not.toBeInTheDocument();
   });
 });
