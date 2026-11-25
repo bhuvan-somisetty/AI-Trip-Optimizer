@@ -18,8 +18,9 @@ from app.ground import search_ground
 from app.models import CityPlaces, Trip
 from app.places import PlacesUnavailable, explore_city
 from app.routers.trips import get_owned_trip, saved_itinerary
+from app.journeys import DEFAULT_VALUE_OF_TIME
 from app.routing import haversine_m, path_to, road_matrix, visiting_order
-from app.travel_data import AIRPORTS, CITIES, TravelDataError, country_name
+from app.travel_data import CITIES, PLACES, TravelDataError, country_name
 
 router = APIRouter(tags=["explore"])
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ SAME_PLACE_M = 1500  # a day trip this close to a listed attraction is the same 
 def around_city(city: str, centre: dict | None, attractions: list[dict]) -> dict:
     """Day trips (famous places 15 to 150 km away) and famous hotels around the city centre
     (the airport when the centre isn't known), without the attractions already listed."""
-    airport = AIRPORTS.get(city)
+    airport = PLACES.get(city)
     point = centre or (airport and {"latitude": airport["latitude"], "longitude": airport["longitude"]})
     if not point:
         return {"day_trips": [], "famous_stays": [], "around_source": None, "around_from": None, "around_notice": None}
@@ -222,6 +223,35 @@ def flight_option(flight: dict | None) -> dict | None:
     }
 
 
+def access(code: str) -> dict | None:
+    """How a trip end is reached: its nearest airport, railway station and bus station, with distances."""
+    p = PLACES.get(code)
+    if p is None:
+        return None
+    return {"code": code, "name": p["city"], "state": p.get("state"), "serves": p["serves"],
+            "airport": {"code": p["airport_code"], "name": p.get("airport"), "km": p["airport_km"]},
+            "station": p.get("station"), "bus_station": p.get("bus_station")}
+
+
+def recommended(rows: list[dict]) -> dict | None:
+    """The row to take: the best balance of fare and time among the ones with a fare, counting each
+    hour of travel as DEFAULT_VALUE_OF_TIME rupees (the journeys search's "best value"); the fastest
+    when no row has a fare to compare."""
+    priced = [r for r in rows if r["fare"] is not None and r["duration_minutes"] is not None]
+    if priced:
+        best = min(priced, key=lambda r: r["fare"] + DEFAULT_VALUE_OF_TIME * r["duration_minutes"] / 60)
+        cheapest = min(priced, key=lambda r: r["fare"])
+        why = ("cheapest and quick enough" if best is cheapest else
+               f"worth the extra over the {cheapest['mode'].lower()} for the time it saves")
+        return {"mode": best["mode"], "reason": f"Best value: {why}, counting each hour of travel as "
+                                                f"Rs {DEFAULT_VALUE_OF_TIME:,}"}
+    timed = [r for r in rows if r["duration_minutes"] is not None]
+    if timed:
+        best = min(timed, key=lambda r: r["duration_minutes"])
+        return {"mode": best["mode"], "reason": "Fastest; no fares are published to compare"}
+    return None
+
+
 @router.get("/trips/{trip_id}/transport")
 def transport_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depends(get_session)):
     """Flight, train, bus and ferry for the trip's outbound day, side by side.
@@ -234,7 +264,8 @@ def transport_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depe
     flight = flight_option(itinerary.flight if itinerary else None)
     result = {"origin": trip.origin, "destination": trip.destination, "date": trip.start_date.isoformat(),
               "flight": flight, "trains": [], "buses": [], "ferries": [], "comparison": [],
-              "notice": None}
+              "recommended": None, "notice": None,
+              "access": {"origin": access(trip.origin), "destination": access(trip.destination)}}
     try:
         options = search_ground(trip.origin, trip.destination, trip.start_date)
     except TravelDataError as e:
@@ -251,6 +282,7 @@ def transport_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depe
          "fare": o["fare"], "currency": o["currency"], "fare_label": o["fare_label"]}
         for mode, o in rows if o
     ]
+    result["recommended"] = recommended(result["comparison"])
     if not options and result["notice"] is None:
         result["notice"] = "Google Maps lists no trains, buses or ferries for this route and day"
     return {**result, "trains": trains, "buses": buses, "ferries": ferries}
