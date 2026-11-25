@@ -4,7 +4,8 @@
 
 ### Explainable AI decision support for business travel
 
-A team enters a trip request. A LangGraph pipeline searches **real flight fares and live hotel prices**, checks
+A team enters a trip request, by flight, train, bus or all three, to any airport or **any Indian city or town**. A
+LangGraph pipeline searches **real flight fares, live hotel prices and real train and bus schedules**, checks
 every option against the budget and the traveler's rules, and composes an itinerary with a **Trade-off Ledger**
 that says why each alternative won or lost. A human then edits it, tries what-ifs, and approves or rejects it. Nothing is ever booked
 automatically, and every step lands in an **append-only audit trail**.
@@ -22,8 +23,8 @@ automatically, and every step lands in an **append-only audit trail**.
 ![Gemini](https://img.shields.io/badge/Gemini-8e75b2?style=flat-square&logo=googlegemini&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169e1?style=flat-square&logo=postgresql&logoColor=white)
 ![Neon](https://img.shields.io/badge/Neon-00e599?style=flat-square&logo=neon&logoColor=black)
-![pytest](https://img.shields.io/badge/pytest-292_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
-![Vitest](https://img.shields.io/badge/Vitest-32_passing-729b1b?style=flat-square&logo=vitest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-376_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-100_passing-729b1b?style=flat-square&logo=vitest&logoColor=white)
 
 **[Open the app](https://ai-trip-optimizer.vercel.app)** · [Why](#-why-ai-trip-optimizer) · [How it works](#-how-it-works) · [Architecture](#-architecture) · [Tech stack](#-tech-stack) · [Run locally](#-run-it-locally) · [Status](#-project-status) · [Docs](docs/)
 
@@ -49,9 +50,9 @@ has to approve the spend, and someone will later ask *why this flight and not th
 
 <div align="center">
 
-| **9 / 9** | **27** | **292 + 32** | **8** | **14** | **5–40 s** |
+| **9 / 9** | **37** | **376 + 100** | **11,818** | **4,007** | **15** |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| PRD user stories built, stretch included | API endpoints | backend + frontend tests | database tables | migrations | optimizer run, live (cached vs fresh search) |
+| PRD user stories built, stretch included | API endpoints | backend + frontend tests | Indian cities and towns | airports | migrations |
 
 </div>
 
@@ -74,8 +75,8 @@ flowchart LR
 
 | Step | What happens |
 | :--- | :--- |
-| **1. Request** | A traveler, IATA route (e.g. `DEL → BOM`), dates, budget, rules (stops, cabin, hotel rating, departure time, red-eyes, airlines, nightly rate, amenities) and a priority: lowest cost, balanced, comfort or fastest. The trip starts as `DRAFT` and can be edited until it goes to review. |
-| **2. Search** | Flights both ways from **Google Flights via SerpApi**, with **Travelpayouts** cached fares as the fallback, and hotel prices from **Google Hotels via SerpApi**. If the start date has no fare, the run fails and names the nearest dates that do; if only the return is missing, the trip is built and flagged. |
+| **1. Request** | A way to travel (Flights, Trains, Buses or Compare all), a traveler, a route between any airport or Indian town (e.g. `BLR → Ayodhya`), dates, budget, rules (stops, cabin, hotel rating, departure time, red-eyes, airlines, nightly rate, amenities) and a priority: lowest cost, balanced, comfort or fastest. The trip starts as `DRAFT` and can be edited until it goes to review. |
+| **2. Search** | Flights both ways from **Google Flights via SerpApi**, with **Travelpayouts** cached fares as the fallback, hotel prices from **Google Hotels via SerpApi**, and trains and buses from **Google Maps transit via SerpApi**, with official **Indian Railways fares** per class. A town without an airport flies from its nearest one. If the start date has no fare, the run fails and names the nearest dates that do; if only the return is missing, the trip is built and flagged. |
 | **3. Check** | Pure Python: every option is tested against the trip's rules and the **company travel policy**. Each flag names the rule and the exact line item, e.g. *"Total 41,600 is 29,600 over the 12,000 budget"*. |
 | **4. Compose** | Among the options meeting every rule, the trip's priority picks the outbound flight, the return flight and the stay (the cheapest, by default), never spending more than the budget allows. The total and the savings (against the median valid option) are computed in code. Every other option gets a ledger row: *"Price: 1,199 more than HT-c5ed804f"*, *"Slower: 5h 00m vs 2h 15m for FL-…"*, *"Different day: departs 2026-12-19, 3 day(s) before the trip starts"*. |
 | **5. Explain** | Gemini writes a short rationale from those facts only. Any number in it that isn't a computed figure fails the run; if the LLM is off or errors, a template rationale is used. |
@@ -114,6 +115,10 @@ flowchart LR
 | **Savings that mean something** | Savings are measured against the median option that met every rule, not the priciest one, so one luxury hotel can't inflate the figure. |
 | **"What if" without side effects** | A preview reruns the same checks on the saved search results: no new search, no LLM call, nothing saved. Applying it is one audited action. |
 | **A trail you can trust** | Audit events are written in the same database transaction as the action, never edited, and kept even when a re-run replaces the itinerary. |
+| **Towns without an airport** | Every Indian city and town (OpenStreetMap) carries its nearest airport, railway station and bus stand with distances. Flights use the nearest airport and say how far it is; trains and buses are searched by the town itself. |
+| **Cheaper than direct** | The journeys search (multi-criteria Dijkstra) compares direct trips with routes through other cities, including stopovers the traveler names, and shows the saving and the extra time. |
+| **Which way to go?** | Compare all ranks flight, train and bus on fare and time together (each hour of travel counted as a fixed rupee value) and names the recommended one with its reason. |
+| **Real data only** | No estimated fares or driving times: a fare is shown only when a provider or the official rail fare table gives it, otherwise "Not available". |
 | **Privacy between users** | Every trip and traveler is owner-checked; someone else's ID returns 404, so IDs can't be probed. Admins see everyone's audit events, members only their own. |
 
 ## ✦ Features
@@ -126,10 +131,14 @@ flowchart LR
 - Travelers with saved preferences
 - Trip requests with route, dates, budget, rules and a priority, editable until review
 - Company travel policy, set by admins and applied on every run
+- Four ways to travel: Flights, Trains, Buses or Compare all, with a recommended pick
+- Any Indian city or town as a trip end, searched by the way of travel, with its nearest airport, station and bus stand
 - Real fares and live hotel prices, with layovers, price level and optional flexible dates
-- Explore: famous places, restaurants and local dishes with photos
+- Cheaper routes through other cities, including your own stopovers
+- Official Indian Railways fares for every class, and a festival rush notice
+- Explore: famous places, day trips, famous stays, restaurants and local dishes with photos
 - Shortest road routes from the hotel to attractions (Dijkstra on OpenStreetMap roads)
-- Sign in with Google, or email and password
+- Sign in with Google, or email and password, on an animated split-card page
 
 </td>
 <td width="33%" valign="top">
@@ -149,6 +158,7 @@ flowchart LR
 - Analytics: spend, average savings, turnaround and approval rate per period
 - `GET /dashboard` for the same figures by year, quarter or month
 - Trip status timeline
+- Dark, editorial dashboard: next departure as a boarding pass, key numbers with trends
 - Optional in-browser demo mode
 
 </td>
@@ -164,8 +174,8 @@ flowchart LR
 | **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui, TanStack React Query, Zod, `@react-oauth/google` |
 | **API** | FastAPI, SQLModel, Alembic, Pydantic, `python-jose` JWT + `passlib` bcrypt, `google-auth` |
 | **AI** | LangGraph (`search → check → compose`), `langchain-openai` against Gemini's OpenAI-compatible endpoint (`gemini-3.5-flash-lite`) |
-| **Data** | PostgreSQL 16 (Neon in production), Google Flights and Google Hotels via SerpApi, Travelpayouts fares as the flight fallback |
-| **Quality** | pytest (292 tests, no network or keys needed), Vitest + Testing Library (32 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
+| **Data** | PostgreSQL 16 (Neon in production), Google Flights, Google Hotels and Google Maps transit via SerpApi, Travelpayouts fares as the flight fallback, OurAirports and OpenStreetMap (bundled), Indian Railways fare tables, Wikidata and OpenTripMap |
+| **Quality** | pytest (376 tests, no network or keys needed), Vitest + Testing Library (100 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
 | **Delivery** | Frontend and API as two Vercel projects (API in `sin1`), Neon Postgres, Docker Compose for local dev |
 
 ## ✦ Architecture
@@ -182,6 +192,8 @@ flowchart LR
     API --> PG[(PostgreSQL · Neon<br/>8 tables)]
     PL --> SA[SerpApi<br/>Google Flights + Hotels]
     PL --> TP[Travelpayouts<br/>fallback flight fares]
+    API --> GT[SerpApi<br/>Google Maps transit]
+    API --> DS[Bundled data<br/>OurAirports · OpenStreetMap · rail fares]
     PL --> GM[Gemini<br/>rationale only]
     GH[GitHub Actions] -- "pytest · vitest · lint · build" --> API
 ```
@@ -197,6 +209,9 @@ flowchart LR
 | What-if | `POST /trips/{id}/preview` · `POST /trips/{id}/preview/apply` |
 | Review | `POST /trips/{id}/review` · `POST /trips/{id}/decision` · `GET /trips/{id}/decision` |
 | Settings | `GET /me` · `PATCH /me` · `GET /policy` · `PUT /policy` (admins) |
+| Places | `GET /airports` · `GET /airports/{code}` · `GET /locations` (`mode`: `flight`, `train`, `bus`, `all`) · `GET /locations/{code}` |
+| Transport & routes | `GET /trips/{id}/transport` (trains, buses, ferries and the recommended way) · `GET /journeys` · `GET /trips/{id}/journeys` (cheaper routes through other cities) |
+| Discover | `GET /destinations/{code}` · `GET /places/nearby` |
 | Explore & route | `GET /trips/{id}/explore` (places, restaurants, dishes) · `GET /trips/{id}/route` (`stops`: 1 to 10) |
 | Dashboard & audit | `GET /dashboard` (`period`: `2026`, `2026-Q4`, `2026-11`) · `GET /audit` (filters: `trip_id`, `event_type`, `limit`) |
 
@@ -232,7 +247,7 @@ Every key except `JWT_SECRET` and `DATABASE_URL` switches on one feature and can
 
 | Command | What it does |
 | :--- | :--- |
-| `cd backend && python -m pytest -q` | 292 backend tests on in-memory SQLite, with fixture fares and no LLM |
+| `cd backend && python -m pytest -q` | 376 backend tests on in-memory SQLite, with fixture fares and no LLM |
 | `cd frontend && npm run lint && npm test && npm run build` | the frontend checks CI runs (Vitest in jsdom, no backend needed) |
 | `cd backend && alembic upgrade head` | apply migrations when running the API outside Docker |
 
@@ -246,11 +261,15 @@ AI-Trip-Optimizer/
 │   ├── app/
 │   │   ├── pipeline/         # LangGraph graph: search, check, compose, guardrail, edits
 │   │   ├── routers/          # auth, travelers, trips (+ what-if), settings, dashboard, audit
-│   │   ├── travel_data.py    # SerpApi (Google Flights, Hotels) and Travelpayouts clients, with caching
+│   │   ├── travel_data.py    # SerpApi (Google Flights, Hotels) and Travelpayouts clients; airports and Indian places
+│   │   ├── ground.py         # trains, buses and ferries from Google Maps transit, with official rail fares
+│   │   ├── journeys.py       # cheaper multi-city routes (multi-criteria Dijkstra)
+│   │   ├── data/             # airports, Indian places, rail fares and distances
 │   │   ├── audit.py          # writes audit events in the caller's transaction
-│   │   └── models.py         # 7 SQLModel tables
-│   ├── alembic/versions/     # 14 migrations
-│   └── tests/                # 292 tests, fixture fares in tests/fixtures
+│   │   └── models.py         # 8 SQLModel tables
+│   ├── alembic/versions/     # 15 migrations
+│   ├── scripts/              # builds the airport and Indian place data
+│   └── tests/                # 376 tests, fixture fares in tests/fixtures
 ├── frontend/                 # Next.js 16 app
 │   └── src/
 │       ├── app/              # dashboard, planning, trips, analytics, audit, travelers, settings
@@ -287,6 +306,10 @@ AI-Trip-Optimizer/
 - [x] Dashboard: spend, average savings and turnaround per period (US-010)
 - [x] Round-trip totals: outbound, return and stay
 - [x] What-If Simulator (US-011, stretch)
+- [x] Trains, buses and Compare all, with a recommended way to travel
+- [x] Any Indian city or town as a trip end, with its nearest airport, station and bus stand
+- [x] Cheaper routes through other cities, and official Indian Railways fares
+- [x] Dark editorial dashboard and an animated sign-in page
 - [x] Deployed on Vercel + Neon, CI with backend and frontend tests on every pull request
 - [ ] Demo video (due Nov 25)
 - [ ] Usability sessions with 2–3 outside users (kit ready in `docs/25_Usability_Check.md`)
