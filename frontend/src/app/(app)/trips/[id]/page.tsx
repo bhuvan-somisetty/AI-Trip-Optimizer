@@ -357,7 +357,7 @@ export default function TripDetailPage() {
 
       {tab === "itinerary" && (
         <div className="space-y-6">
-          {t.status === "OPTIMIZING" && <PipelineProgress />}
+          {t.status === "OPTIMIZING" && <PipelineProgress modes={t.filters.modes} />}
 
           {t.status === "DRAFT" && (
             <Card>
