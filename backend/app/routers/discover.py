@@ -16,7 +16,7 @@ from app.database import get_session
 from app.models import User
 from app.routers.explore import destination_view
 from app.security import get_current_user
-from app.travel_data import AIRPORTS, TravelDataError, _cached, country_name
+from app.travel_data import PLACES, TravelDataError, _cached, country_name
 
 router = APIRouter(tags=["discover"])
 
@@ -51,10 +51,10 @@ def city_overview(city: str, country: str) -> dict | None:
 
 @router.get("/destinations/{code}")
 def destination(code: str, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    """A destination page for any airport city: overview, places by section, food and restaurants."""
-    airport = AIRPORTS.get(code.upper())
+    """A destination page for any airport city or Indian town: overview, places by section, food."""
+    airport = PLACES.get(code) or PLACES.get(code.upper())
     if airport is None:
-        raise HTTPException(status_code=404, detail="Unknown airport code")
+        raise HTTPException(status_code=404, detail="Unknown place")
     view = destination_view(session, airport["code"])
     country = country_name(airport["country"])
     return {
