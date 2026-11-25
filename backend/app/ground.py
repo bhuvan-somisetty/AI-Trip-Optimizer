@@ -11,14 +11,18 @@ time zone) and the answers are merged without repeats: night trains and buses ar
 That is up to three searches per route and day, each cached like the other searches.
 
 What is never invented: the vehicle kind comes from Google's own icon (rail / bus / ferry), the
-operator from `service_run_by`, the fare only from Google's `cost` + `currency` on the routes that
-carry one ("Google Maps fare"); everywhere else the fare is None and labelled "Not available".
+operator from `service_run_by`, the fare from Google's `cost` + `currency` on the routes that
+carry one ("Google Maps fare"). An Indian train without a change gets its official fare per class
+from the Railway Board fare table and the train's own timetable distance (app/rail_fares.py,
+`class_fares`); the main `fare` is then its Sleeper fare (Second sitting under 200 km), named so
+in `fare_label`. Everywhere else the fare is None and labelled "Not available".
 A route Google has no public transport for (e.g. across an ocean) comes back empty.
 """
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app import config
+from app.rail_fares import CLASS_NAMES, official_fares
 from app.travel_data import (
     AIRPORTS, SERPAPI_NO_RESULTS, SERPAPI_URL, TravelDataError, _cached, _request, country_name,
 )
@@ -146,6 +150,24 @@ def provider_link(route: dict, country: str) -> dict:
     return {"link": None, "link_label": None}
 
 
+def with_official_fares(route: dict, country: str) -> dict:
+    """An Indian train without a change: its official fare per class, and the Sleeper fare (Second
+    sitting under 200 km) as its fare when Google gave none. Anything else is left as it is."""
+    if route.get("kind") != "train" or country != "IN" or route.get("changes"):
+        return route
+    found = official_fares(route.get("service"), route["from"].get("code"), route["to"].get("code"))
+    if not found["fares"]:
+        return {**route, "class_fares": None, "class_fares_note": found["reason"]}
+    out = {**route, "class_fares": found["fares"], "class_fares_label": found["label"],
+           "class_fares_source": found["source"], "rail_distance_km": found["distance_km"]}
+    if route.get("fare") is None:
+        main = "SL" if found["distance_km"] >= 200 else "2S"
+        out.update({"fare": float(found["fares"][main]), "currency": "INR",
+                    "fare_label": f"{CLASS_NAMES[main]}: {found['label'].lower()}",
+                    "fare_class": main})
+    return out
+
+
 def place(airport: dict) -> str:
     return f"{airport['city']}, {country_name(airport['country'])}"
 
@@ -193,5 +215,6 @@ def search_ground(origin: str, destination: str, day: date, hours: tuple[int, ..
             if key in seen:
                 continue  # the same departure, found again from a later search time
             seen.add(key)
+            route = with_official_fares(route, start["country"])
             found.append({**route, **provider_link(route, start["country"]), "id": f"GT-{len(found) + 1}"})
     return found
