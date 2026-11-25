@@ -126,7 +126,7 @@ def test_same_route_and_day_is_cached(serp):
 
 
 def test_unknown_or_same_city_is_not_searched(serp):
-    with pytest.raises(ground.GroundUnavailable, match="known airport"):
+    with pytest.raises(ground.GroundUnavailable, match="known cities"):
         ground.search_ground("DEL", "ZZZ", date(2026, 12, 12))
     with pytest.raises(ground.GroundUnavailable, match="same city"):
         ground.search_ground("JFK", "LGA", date(2026, 12, 12))  # both New York

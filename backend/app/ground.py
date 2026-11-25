@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app import config
 from app.rail_fares import CLASS_NAMES, official_fares
 from app.travel_data import (
-    AIRPORTS, SERPAPI_NO_RESULTS, SERPAPI_URL, TravelDataError, _cached, _request, country_name,
+    PLACES, SERPAPI_NO_RESULTS, SERPAPI_URL, TravelDataError, _cached, _request, country_name,
 )
 
 DEPART_HOURS = (5, 12, 19)  # local times the day is searched from: morning, midday, evening
@@ -168,19 +168,22 @@ def with_official_fares(route: dict, country: str) -> dict:
     return out
 
 
-def place(airport: dict) -> str:
-    return f"{airport['city']}, {country_name(airport['country'])}"
+def place(where: dict) -> str:
+    """The text Google Maps is searched with: "Ayodhya, Uttar Pradesh, India", "Goa, India"."""
+    if where.get("kind") == "place" and where.get("state"):
+        return f"{where['city']}, {where['state']}, {country_name(where['country'])}"
+    return f"{where['city']}, {country_name(where['country'])}"
 
 
 def search_ground(origin: str, destination: str, day: date, hours: tuple[int, ...] = DEPART_HOURS) -> list[dict]:
-    """Trains, buses and ferries from `origin` to `destination` (airport codes) on `day`.
+    """Trains, buses and ferries from `origin` to `destination` (airport or place codes) on `day`.
 
     `hours` are the local times the day is searched from (one SerpApi search each)."""
     if not config.SERPAPI_API_KEY:
         raise GroundUnavailable("Train and bus search isn't set up on the server (no SERPAPI_API_KEY)")
-    start, end = AIRPORTS.get(origin), AIRPORTS.get(destination)
+    start, end = PLACES.get(origin), PLACES.get(destination)
     if start is None or end is None:
-        raise GroundUnavailable("Trains and buses can only be searched between known airport cities")
+        raise GroundUnavailable("Trains and buses can only be searched between known cities and towns")
     if place(start) == place(end):
         raise GroundUnavailable("The origin and destination are the same city")
 
