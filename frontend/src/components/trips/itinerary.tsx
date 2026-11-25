@@ -11,6 +11,7 @@ import { cityName } from "@/lib/store";
 import { formatDate, formatDuration, formatInr, formatTime } from "@/lib/format";
 import type { Flight, Hotel, Itinerary, Layover, Trip } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { CLASS_NAMES, ClassFares } from "@/components/journeys/class-fares";
 
 export function CostSummary({ trip, it }: { trip: Trip; it: Itinerary }) {
   const pct = Math.round((it.totalCost / trip.budget) * 100);
@@ -93,7 +94,7 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
         <div className="flex items-center gap-4">
           <div>
             <p className="text-2xl font-semibold tabular-nums">{formatTime(flight.departure)}</p>
-            <p className="text-sm text-muted-foreground">{flight.fromStation ?? `${flight.origin} · ${cityName(flight.origin)}`}</p>
+            <p className="text-sm text-muted-foreground">{(flight.stops === 0 && flight.fromStation) || `${flight.origin} · ${cityName(flight.origin)}`}</p>
           </div>
           <div className="flex flex-1 flex-col items-center gap-1">
             <span className="text-xs text-muted-foreground">{flight.durationMin ? formatDuration(flight.durationMin) : "Duration not given"}</span>
@@ -106,10 +107,11 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
           </div>
           <div className="text-right">
             <p className="text-2xl font-semibold tabular-nums">{flight.arrival ? formatTime(flight.arrival) : "-"}</p>
-            <p className="text-sm text-muted-foreground">{flight.toStation ?? `${flight.destination} · ${cityName(flight.destination)}`}</p>
+            <p className="text-sm text-muted-foreground">{(flight.stops === 0 && flight.toStation) || `${flight.destination} · ${cityName(flight.destination)}`}</p>
           </div>
         </div>
         {!!flight.layovers?.length && <p className="text-xs text-muted-foreground">{layoverText(flight.layovers)}</p>}
+        {flight.mode === "train" && <ClassFares fares={flight.classFares} label={flight.classFaresLabel} note={flight.classFaresNote} />}
         <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs">
           {!flight.mode && <Badge variant="outline">{cabinLabel[flight.cabin]}</Badge>}
           {flight.baggageKg !== undefined && <Badge variant="outline" className="gap-1"><Luggage className="size-3" />{flight.baggageKg} kg</Badge>}
@@ -143,16 +145,14 @@ export function FlightCard({ flight, label, pax, onChange, editable }: { flight:
           {flight.priceKnown === false ? (
             <span className="ml-auto max-w-[16rem] text-right">
               <span className="block font-medium">Fare not published</span>
-              {flight.fareEstimate && (
-                <span className="text-muted-foreground" title={flight.fareEstimate.label}>
-                  Typically {formatInr(flight.fareEstimate.low)} – {formatInr(flight.fareEstimate.high)} /traveler (estimate, not in the total)
-                </span>
-              )}
+              <span className="text-muted-foreground">Not in the total: check it with the operator before booking</span>
             </span>
           ) : (
             <span className="ml-auto text-right">
               <span className="text-base font-semibold tabular-nums">{formatInr(flight.price)}</span>
-              <span className="text-muted-foreground"> /traveler{pax > 1 ? ` · ${formatInr(flight.price * pax)} total` : ""}</span>
+              <span className="text-muted-foreground">
+                {flight.fareClass ? ` ${CLASS_NAMES[flight.fareClass] ?? flight.fareClass}` : ""} /traveler{pax > 1 ? ` · ${formatInr(flight.price * pax)} total` : ""}
+              </span>
             </span>
           )}
         </div>
