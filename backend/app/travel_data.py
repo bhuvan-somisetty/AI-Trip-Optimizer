@@ -52,6 +52,7 @@ CITY_NAMES = {
     "STN": "London", "LGW": "London", "LTN": "London", "ORY": "Paris", "DMK": "Bangkok",
     "BKK": "Bangkok", "ICN": "Seoul", "KIX": "Osaka", "PVG": "Shanghai", "PEK": "Beijing",
     "PKX": "Beijing", "DWC": "Dubai", "IAD": "Washington", "DCA": "Washington",
+    "AYJ": "Ayodhya",  # OurAirports still files it under Faizabad, renamed Ayodhya in 2018
 }
 
 
@@ -66,8 +67,57 @@ def _load_airports() -> tuple[dict[str, dict], dict[str, str]]:
 
 
 AIRPORTS, COUNTRY_NAMES = _load_airports()
-# Airport code -> (city name, ISO country code), the shape every search here uses.
-CITIES: dict[str, tuple[str, str]] = {code: (a["city"], a["country"]) for code, a in AIRPORTS.items()}
+
+# ---- every Indian city and town --------------------------------------------------------
+# A trip can also start or end at any Indian city or town (app/data/places_in.json, built from
+# OpenStreetMap by scripts/build_places.py), whether or not it has an airport: Ayodhya, Shirdi,
+# Katra. Its code is a lowercase slug ("ayodhya"); airport codes stay upper case ("BLR"). Each
+# place names its nearest airport, railway station and bus station with their distances, and
+# which of the three serve it (within a few km).
+
+PLACES_FILE = Path(__file__).resolve().parent / "data" / "places_in.json"
+SERVES = (("flight", 1), ("train", 2), ("bus", 4))
+
+
+def _load_places() -> dict[str, dict]:
+    data = json.loads(PLACES_FILE.read_text(encoding="utf-8"))
+    places = {}
+    for code, (name, state, lat, lon, flags, pop, airport, station, bus, aka) in data["places"].items():
+        near = AIRPORTS.get(airport[0], {})
+        places[code] = {
+            "code": code, "city": name, "state": state, "country": "IN", "latitude": lat, "longitude": lon,
+            "timezone": "Asia/Kolkata", "kind": "place", "population": pop, "aka": aka,
+            "serves": [mode for mode, bit in SERVES if flags & bit],
+            "airport_code": airport[0], "airport": near.get("airport"), "airport_km": airport[1],
+            "station": {"name": station[0], "code": station[1] or None, "km": station[2]} if station else None,
+            "bus_station": {"name": bus[0], "km": bus[1]} if bus else None,
+        }
+    return places
+
+
+INDIA_PLACES = _load_places()
+# Every code a trip can use: airports everywhere, plus India's cities and towns.
+PLACES: dict[str, dict] = {
+    **{code: {**a, "kind": "airport", "serves": ["flight"], "airport_code": code, "airport_km": 0}
+       for code, a in AIRPORTS.items()},
+    **INDIA_PLACES,
+}
+# Trip code -> (city name, ISO country code), the shape every search here uses.
+CITIES: dict[str, tuple[str, str]] = {code: (p["city"], p["country"]) for code, p in PLACES.items()}
+
+
+def flight_airport(code: str) -> str:
+    """The airport a flight for this trip end uses: the code itself, or a town's nearest airport."""
+    place = PLACES.get(code)
+    return place["airport_code"] if place else code
+
+
+def place_label(code: str) -> str:
+    """How Google Maps and Google Hotels should read the place: "Ayodhya, Uttar Pradesh, India"."""
+    p = PLACES[code]
+    if p["kind"] == "place":
+        return f"{p['city']}, {p['state']}, India" if p["state"] else f"{p['city']}, India"
+    return f"{p['city']}, {country_name(p['country'])}"
 
 
 def country_name(code: str) -> str:
@@ -97,6 +147,71 @@ def search_airports(query: str, limit: int = 10) -> list[dict]:
 
     ranked = sorted((r, a) for a in AIRPORTS.values() if (r := rank(a)) is not None)
     return [{**a, "country_name": country_name(a["country"])} for _, a in ranked[:limit]]
+
+
+def _text_match(q: str, names: list[str]) -> int | None:
+    """0 exact, 1 starts with, 2 a word starts with, 3 contains; None when no name matches."""
+    best = None
+    for name in names:
+        n = name.lower()
+        if n == q:
+            m = 0
+        elif n.startswith(q):
+            m = 1
+        elif any(w.startswith(q) for w in n.split()):
+            m = 2
+        elif q in n:
+            m = 3
+        else:
+            continue
+        best = m if best is None else min(best, m)
+    return best
+
+
+def search_places(query: str, mode: str = "all", limit: int = 10) -> list[dict]:
+    """Trip ends for the form's From and To boxes, for the way of travel the trip uses.
+
+    flight: airports anywhere, found by their own names or by an Indian town they serve
+    ("Ayodhya" finds AYJ, which OurAirports files under Faizabad). train / bus: Indian places
+    with a railway station / bus station of their own. all: every Indian city and town (each
+    with its nearest airport, station and bus station), plus airports abroad."""
+    q = query.strip().lower()
+    if not q:
+        return []
+    ranked: list[tuple] = []
+    if mode == "flight":
+        best: dict[str, tuple] = {}
+        for a in AIRPORTS.values():
+            m = _text_match(q, [a["city"], a["airport"], a["code"]])
+            if m is not None:
+                best[a["code"]] = ((m, -a["size"], a["country"] != "IN", a["city"]), None)
+        for p in INDIA_PLACES.values():
+            code = p["airport_code"]
+            if "flight" not in p["serves"] or code not in AIRPORTS:
+                continue
+            m = _text_match(q, [p["city"], *p["aka"]])
+            if m is not None and (code not in best or m < best[code][0][0]):
+                best[code] = ((m, -AIRPORTS[code]["size"], False, AIRPORTS[code]["city"]), p["city"])
+        for code, (key, town) in best.items():
+            ranked.append((key, {**PLACES[code], "country_name": country_name(PLACES[code]["country"]),
+                                 "for_place": town}))
+    else:
+        for p in INDIA_PLACES.values():
+            if mode != "all" and mode not in p["serves"]:
+                continue
+            m = _text_match(q, [p["city"], *p["aka"]])
+            if m is not None:
+                ranked.append(((m, -len(p["serves"]), -p["population"], p["city"]), {**p, "country_name": "India"}))
+        if mode == "all":
+            for a in AIRPORTS.values():
+                if a["country"] == "IN":
+                    continue
+                m = _text_match(q, [a["city"], a["airport"], a["code"]])
+                if m is not None:
+                    ranked.append(((m, 0, -a["size"], a["city"]),
+                                   {**PLACES[a["code"]], "country_name": country_name(a["country"])}))
+    ranked.sort(key=lambda r: r[0])
+    return [p for _, p in ranked[:limit]]
 
 
 class TravelDataError(Exception):
@@ -166,6 +281,8 @@ def search_flights(origin: str, destination: str, day: date, cabin_class: str | 
     for `day` itself. When it isn't set up, fails, or finds nothing, Travelpayouts is tried:
     its cached fares also cover nearby days, so a failed trip can still name the nearest fares.
     """
+    # A town without an airport of its own flies to and from its nearest one.
+    origin, destination = flight_airport(origin), flight_airport(destination)
     google_tried = config.FLIGHT_SOURCE == "google" and bool(config.SERPAPI_API_KEY)
     google_error = None
     if google_tried:
@@ -363,6 +480,8 @@ def search_hotels(city: str, check_in: date, check_out: date) -> list[dict]:
     if city not in CITIES:
         raise TravelDataError(f"Hotel search doesn't know the city for airport {city} yet")
     city_name, _country = CITIES[city]
+    if PLACES[city]["kind"] == "place" and PLACES[city]["state"]:
+        city_name = f"{city_name}, {PLACES[city]['state']}"
     nights = (check_out - check_in).days
     params = {
         "engine": "google_hotels",
