@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Check, Loader2, Plane, Hotel, ShieldCheck, Layers, FileText } from "lucide-react";
+import { Check, Loader2, Plane, Hotel, ShieldCheck, Layers, FileText, TrainFront, Bus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import type { TransportMode } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const stages = [
+const flightStages = [
   { icon: Plane, label: "Searching flights", sub: "Fares for the outbound and return legs" },
   { icon: Hotel, label: "Searching stays", sub: "Hotel prices for the stay dates" },
   { icon: ShieldCheck, label: "Screening constraints", sub: "Applying stops, time-window, rating and policy rules" },
@@ -14,10 +15,21 @@ const stages = [
   { icon: FileText, label: "Composing itinerary", sub: "Building the Trade-off Ledger and rationale" },
 ];
 
-export function PipelineProgress() {
+/** A trip by train or bus (no flight in its modes) searches schedules instead of flights. */
+function stagesFor(modes?: TransportMode[]) {
+  if (!modes?.length || modes.includes("flight")) return flightStages;
+  const bus = !modes.includes("train");
+  return [
+    { icon: bus ? Bus : TrainFront, label: bus ? "Searching buses" : "Searching trains", sub: "Real schedules for the outbound and return days" },
+    ...flightStages.slice(1),
+  ];
+}
+
+export function PipelineProgress({ modes }: { modes?: TransportMode[] } = {}) {
+  const stages = stagesFor(modes);
   const [i, setI] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setI((x) => Math.min(x + 1, stages.length - 1)), 520);
+    const t = setInterval(() => setI((x) => Math.min(x + 1, flightStages.length - 1)), 520);
     return () => clearInterval(t);
   }, []);
 
