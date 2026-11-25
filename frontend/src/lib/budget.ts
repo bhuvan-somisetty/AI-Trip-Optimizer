@@ -2,64 +2,57 @@ import type { JourneyMode, JourneyResponse } from "@/lib/api";
 import { formatInr } from "@/lib/format";
 
 /**
- * How journeys fit a travel budget (in rupees, for all travellers). A real fare is compared
- * exactly; a train or bus with only a distance-based estimate is "likely" within or over, and
- * says so; a journey with neither, or a fare in another currency, can't be compared.
+ * How journeys fit a travel budget (in rupees, for all travellers). Only real fares are compared:
+ * a journey whose fare isn't published, or is in another currency, can't be compared and says so.
  */
 
-export type BudgetStatus = "within" | "likely" | "partly" | "over" | "unknown";
+export type BudgetStatus = "within" | "over" | "unknown";
 export type BudgetFit = { status: BudgetStatus; label: string };
 
 export function budgetFit(j: JourneyResponse, budget: number | null): BudgetFit | null {
   if (!budget || budget <= 0) return null;
-  if (j.fare !== null) {
-    if (j.currency && j.currency !== "INR") return { status: "unknown", label: `Fare in ${j.currency}, not compared` };
-    return j.fare <= budget
-      ? { status: "within", label: `Within budget · ${formatInr(budget - j.fare)} left` }
-      : { status: "over", label: `${formatInr(j.fare - budget)} over budget` };
-  }
-  const e = j.fare_estimate;
-  if (!e) return { status: "unknown", label: "No fare to compare" };
-  if (e.high <= budget) return { status: "likely", label: "Likely within budget (estimate)" };
-  if (e.low > budget) return { status: "over", label: "Likely over budget (estimate)" };
-  return { status: "partly", label: "Within budget in cheaper classes (estimate)" };
+  if (j.fare === null) return { status: "unknown", label: "Fare not published: check with the operator" };
+  if (j.currency && j.currency !== "INR") return { status: "unknown", label: `Fare in ${j.currency}, not compared` };
+  return j.fare <= budget
+    ? { status: "within", label: `Within budget · ${formatInr(budget - j.fare)} left` }
+    : { status: "over", label: `${formatInr(j.fare - budget)} over budget` };
 }
 
-/** What a journey costs for sorting cheapest first: the fare, else the low end of the estimate. */
+/** What a journey costs for sorting cheapest first: its fare; a journey without one goes last. */
 export function sortCost(j: JourneyResponse): number {
-  return j.fare ?? j.fare_estimate?.low ?? Number.POSITIVE_INFINITY;
+  return j.fare ?? Number.POSITIVE_INFINITY;
 }
 
+/** With "Only within budget": journeys whose real fare fits (all of them without a budget). */
 export function fitsBudget(j: JourneyResponse, budget: number | null): boolean {
   const fit = budgetFit(j, budget);
-  return !fit || fit.status === "within" || fit.status === "likely" || fit.status === "partly";
+  return !fit || fit.status === "within";
 }
 
 export type ModeSummary = {
   mode: JourneyMode;
   /** journeys using only this mode */
   count: number;
-  /** of those, how many fit the budget (all of them without a budget) */
+  /** of those, how many have a real fare within the budget (all priced ones without a budget) */
   fitting: number;
+  /** of those, how many have no published fare */
+  unpriced: number;
   /** cheapest real fare among the fitting ones */
   cheapestFare: number | null;
-  /** lowest and highest estimate among fitting ones without a fare */
-  estimate: { low: number; high: number } | null;
 };
 
 /** One row per mode for "Compare all": how many options fit the budget and from what price. */
 export function modeSummary(journeys: JourneyResponse[], modes: JourneyMode[], budget: number | null): ModeSummary[] {
   return modes.map((mode) => {
     const mine = journeys.filter((j) => j.modes.every((m) => m === mode));
-    const fitting = mine.filter((j) => fitsBudget(j, budget));
-    const fares = fitting.filter((j) => j.fare !== null && (!j.currency || j.currency === "INR")).map((j) => j.fare as number);
-    const estimates = fitting.filter((j) => j.fare === null && j.fare_estimate).map((j) => j.fare_estimate!);
+    const priced = mine.filter((j) => j.fare !== null && (!j.currency || j.currency === "INR"));
+    const fitting = priced.filter((j) => !budget || (j.fare as number) <= budget);
     return {
       mode,
       count: mine.length,
       fitting: fitting.length,
-      cheapestFare: fares.length ? Math.min(...fares) : null,
-      estimate: estimates.length ? { low: Math.min(...estimates.map((e) => e.low)), high: Math.max(...estimates.map((e) => e.high)) } : null,
+      unpriced: mine.length - priced.length,
+      cheapestFare: fitting.length ? Math.min(...fitting.map((j) => j.fare as number)) : null,
     };
   });
 }
