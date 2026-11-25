@@ -42,7 +42,8 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </Link>
 
-      <nav className="scrollbar-thin flex-1 space-y-5 overflow-y-auto px-3 py-4">
+      {/* Never scrolls: the menu keeps fixed positions at the top; the note and account sit at the bottom. */}
+      <nav className="min-h-0 flex-1 space-y-4 overflow-hidden px-3 py-3">
         {sections.map((section) => (
           <div key={section} className="space-y-1">
             <p className="px-3 pb-1 text-[10px] font-semibold tracking-[0.2em] text-sidebar-foreground/35 uppercase">{section}</p>
@@ -59,7 +60,7 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
                     aria-current={isActive ? "page" : undefined}
                     onClick={onNavigate}
                     className={cn(
-                      "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200",
+                      "group flex items-center gap-3 rounded-lg px-3 py-[7px] text-sm font-medium transition-all duration-200",
                       isActive
                         ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-sidebar-primary/25"
                         : "text-sidebar-foreground/70 hover:bg-white/5 hover:text-sidebar-foreground"
@@ -84,7 +85,10 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
               })}
           </div>
         ))}
+      </nav>
 
+      {/* Shown only when the window is tall enough, so it never pushes the menu into a scroll. */}
+      <div className="hidden shrink-0 px-3 pb-3 [@media(min-height:760px)]:block">
         <div className="mx-1 flex items-center gap-3 rounded-2xl border border-white/10 bg-gradient-to-br from-[#ff693d]/[0.10] to-white/[0.02] p-3">
           <MiniWindow className="w-12 shrink-0" />
           <div>
@@ -97,9 +101,9 @@ export function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
             </p>
           </div>
         </div>
-      </nav>
+      </div>
 
-      <div className="border-t border-sidebar-border p-3">
+      <div className="shrink-0 border-t border-sidebar-border p-3">
         <DropdownMenu>
           <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left outline-none hover:bg-white/5 data-popup-open:bg-white/5">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">
