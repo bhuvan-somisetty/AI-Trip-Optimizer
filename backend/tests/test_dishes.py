@@ -1,6 +1,7 @@
 """Famous local dishes (app/dishes.py) and their place in GET /trips/{id}/explore.
 
-No network and no real LLM: the model's answer and Wikipedia's pages are canned.
+No network and no real LLM: the model's answer and Wikipedia's pages are canned. Only dishes with a
+Wikipedia article on that food are kept, described by Wikipedia.
 """
 import json
 
@@ -26,20 +27,26 @@ ANSWER = json.dumps([
     {"name": "Butter chicken", "description": "Chicken in a mild tomato and butter gravy."},
     {"name": "Pork Vindaloo", "description": "A hot and sour pork curry."},
     {"name": "Goan fish curry", "description": "Fish in a coconut and tamarind curry."},
+    {"name": "Sannas", "description": "Steamed rice cakes."},
     {"name": "Thali", "description": "A platter of 8 small dishes."},  # a number: dropped
     {"name": "butter chicken", "description": "Repeated."},  # duplicate: dropped
     {"name": "", "description": "No name."},  # dropped
 ])
 
 PAGES = {
-    "Butter_chicken": {"type": "standard", "title": "Butter chicken", "extract": "Butter chicken is a curry. " * 20,
+    "Butter_chicken": {"type": "standard", "title": "Butter chicken", "description": "Indian dish",
+                       "extract": "Butter chicken is a curry. " * 20,
                        "thumbnail": {"source": "https://upload.wikimedia.org/butter.jpg"},
                        "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Butter_chicken"}}},
-    "Vindaloo": {"type": "standard", "title": "Vindaloo", "extract": "Vindaloo is a curry from Goa.",
+    "Vindaloo": {"type": "standard", "title": "Vindaloo", "description": "Indian curry dish",
+                 "extract": "Vindaloo is a curry from Goa.",
                  "thumbnail": {"source": "https://upload.wikimedia.org/vindaloo.jpg"},
                  "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Vindaloo"}}},
-    "Fish_curry": {"type": "standard", "title": "Fish curry", "extract": "Any curry with fish.",
+    "Fish_curry": {"type": "standard", "title": "Fish curry", "description": "Dish", "extract": "Any curry with fish.",
                    "thumbnail": {"source": "https://upload.wikimedia.org/fish.jpg"}},
+    # The page titled "Sannas" is about a cloth, not the Goan rice cake: never shown as a dish.
+    "Sannas": {"type": "standard", "title": "Sannas", "description": "Cotton cloth", "extract": "A cloth.",
+               "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Sannas"}}},
 }
 SEARCH = {"Pork Vindaloo": ["Vindaloo", "Pork"], "Goan fish curry": ["Fish curry", "Goan cuisine"]}
 
@@ -67,25 +74,24 @@ def llm(monkeypatch):
     return fake
 
 
-def test_dishes_are_cleaned_and_labelled_as_ai_suggestions(llm, wiki):
+def test_only_dishes_with_a_wikipedia_article_are_kept(llm, wiki):
     found = dishes.local_dishes("Goa", "India")
-    assert [d["name"] for d in found] == ["Butter chicken", "Pork Vindaloo", "Goan fish curry"]
-    assert all(d["data_label"] == "AI suggestion" for d in found)
+    # Goan fish curry only matched pages sharing generic words, and "Sannas" is a cloth: both dropped.
+    assert [d["name"] for d in found] == ["Butter chicken", "Vindaloo"]
+    assert all(d["data_label"] == "Wikipedia" and d["ai_description"] is None for d in found)
     assert "Do not mention prices" in llm.prompts[0] and "Goa, India" in llm.prompts[0]
 
 
-def test_wikipedia_gives_photos_by_title_or_by_a_specific_search_match(llm, wiki):
-    butter, vindaloo, fish = dishes.local_dishes("Goa", "India")
+def test_wikipedia_gives_the_title_text_and_photo(llm, wiki):
+    butter, vindaloo = dishes.local_dishes("Goa", "India")
     assert butter["image"] == "https://upload.wikimedia.org/butter.jpg" and butter["image_label"] == "Photo: Wikipedia"
     assert butter["wikipedia_text"].endswith("...") and len(butter["wikipedia_text"]) <= dishes.WIKI_TEXT_CHARS + 3
-    assert vindaloo["wikipedia"] == "https://en.wikipedia.org/wiki/Vindaloo"  # found through search
-    # "Fish curry" and "Goan cuisine" share only generic words: no photo rather than a wrong one.
-    assert fish["image"] is None and fish["image_label"] is None and fish["ai_description"]
+    assert vindaloo["wikipedia"] == "https://en.wikipedia.org/wiki/Vindaloo"  # "Pork Vindaloo", found through search
 
 
 def test_a_fenced_answer_is_read_and_a_non_json_answer_gives_nothing(monkeypatch, wiki):
     monkeypatch.setattr(graph, "get_llm", lambda: FakeLLM(f"```json\n{ANSWER}\n```"))
-    assert len(dishes.local_dishes("Goa", "India")) == 3
+    assert len(dishes.local_dishes("Goa", "India")) == 2
     monkeypatch.setattr(graph, "get_llm", lambda: FakeLLM("Sorry, I can't help with that."))
     assert dishes.local_dishes("Goa", "India") == []
 
@@ -117,7 +123,7 @@ def test_explore_includes_dishes_even_without_places(client, auth_headers, trip_
     trip_id = trip_to_delhi(client, auth_headers, trip_payload)
     body = client.get(f"/trips/{trip_id}/explore", headers=auth_headers).json()
     assert "OPENTRIPMAP_API_KEY" in body["notice"]
-    assert [d["name"] for d in body["dishes"]] == ["Butter chicken", "Pork Vindaloo", "Goan fish curry"]
+    assert [d["name"] for d in body["dishes"]] == ["Butter chicken", "Vindaloo"]
     assert body["dishes_notice"] is None
     assert "New Delhi, India" in llm.prompts[0]
 
@@ -129,8 +135,21 @@ def test_dishes_are_saved_with_the_citys_places(client, db, auth_headers, trip_p
     client.get(f"/trips/{trip_id}/explore", headers=auth_headers)
     again = client.get(f"/trips/{trip_id}/explore", headers=auth_headers).json()
     assert len(llm.prompts) == 1  # the second view used the saved dishes
-    assert len(again["dishes"]) == 3
-    assert "dishes" in db.get(CityPlaces, "DEL").payload
+    assert len(again["dishes"]) == 2
+    assert db.get(CityPlaces, "DEL").payload["dishes_version"] == 2
+
+
+def test_dishes_saved_before_wikipedia_only_are_fetched_again(client, db, auth_headers, trip_payload, llm, wiki, monkeypatch):
+    monkeypatch.setattr(places, "fetch_city", lambda city: {"version": places.PAYLOAD_VERSION, "city": city, "attractions": [], "restaurants": []})
+    monkeypatch.setattr(config, "OPENTRIPMAP_API_KEY", "key")
+    trip_id = trip_to_delhi(client, auth_headers, trip_payload)
+    client.get(f"/trips/{trip_id}/explore", headers=auth_headers)
+    row = db.get(CityPlaces, "DEL")
+    row.payload = {**row.payload, "dishes": [{"name": "Old AI dish", "data_label": "AI suggestion"}], "dishes_version": None}
+    db.add(row)
+    db.commit()
+    again = client.get(f"/trips/{trip_id}/explore", headers=auth_headers).json()
+    assert [d["name"] for d in again["dishes"]] == ["Butter chicken", "Vindaloo"]
 
 
 def test_explore_says_why_there_are_no_dishes(client, auth_headers, trip_payload, no_places):
