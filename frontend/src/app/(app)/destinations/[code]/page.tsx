@@ -274,7 +274,7 @@ export default function DestinationPage() {
       )}
 
       <section className="space-y-6">
-        <SectionTitle icon={UtensilsCrossed} title="Taste the Destination" hint="Famous local dishes (AI suggestions with Wikipedia photos), restaurants and food markets from the map." />
+        <SectionTitle icon={UtensilsCrossed} title="Taste the Destination" hint="Famous local dishes as Wikipedia describes them, restaurants and food markets from the map." />
         <div className="space-y-3">
           <h3 className="font-semibold">Famous local dishes</h3>
           {d.dishes.length ? (
@@ -319,7 +319,7 @@ export default function DestinationPage() {
           <CardTitle className="text-base">Where this comes from</CardTitle>
           <CardDescription>
             Places and restaurants: {d.source ?? "OpenTripMap"} and OpenStreetMap (map data). Day trips and famous hotels: {d.around_source ?? "Wikidata and Wikipedia"},
-            ranked by how many Wikipedia languages write about them. Dishes: AI suggestions, photos from Wikipedia. Restaurant photos and ratings marked
+            ranked by how many Wikipedia languages write about them. Dishes: only those Wikipedia has an article on, with its text and photo from Wikipedia. Restaurant photos and ratings marked
             Google come from Google Places. Nothing here is invented: a missing photo shows an illustration and a missing field is left out.
           </CardDescription>
         </CardHeader>
