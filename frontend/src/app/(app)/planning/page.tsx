@@ -134,6 +134,9 @@ export default function PlanningPage() {
 
   const selected = s.travelers.filter((t) => d.travelerIds.includes(t.id));
   const modes: TransportMode[] = d.filters.modes?.length ? d.filters.modes : ["flight", "train", "bus"];
+  // A trip by train or bus books no flight (backend ground_check), so flight wording doesn't apply.
+  const byGround = !modes.includes("flight");
+  const groundLabel = modes.includes("train") && modes.includes("bus") ? "Trains or buses" : modes.includes("bus") ? "Buses" : "Trains";
   // Under 500 km a train or bus is often cheaper than flying: say so, without guessing a price.
   const shortTrip = (() => {
     const a = cityOf(d.origin);
@@ -486,8 +489,9 @@ export default function PlanningPage() {
                   <CardHeader>
                     <CardTitle>Transport</CardTitle>
                     <CardDescription>
-                      How the traveller is willing to go. The optimizer prices flights and hotels; trains and buses are compared on the results page and the trip&apos;s
-                      Transport tab, with real schedules.
+                      {byGround
+                        ? "How the traveller is willing to go. No flight is booked: the optimizer picks the hotel and the train or bus each way from real schedules."
+                        : "How the traveller is willing to go. The optimizer prices flights and hotels; trains and buses are compared on the results page and the trip's Transport tab, with real schedules."}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
@@ -736,11 +740,15 @@ export default function PlanningPage() {
                     <ReviewRow label="Travelers" value={selected.map((t) => t.name).join(", ")} onEdit={() => go(0)} />
                     <ReviewRow label="Route" value={`${cityName(d.origin)} → ${cityName(d.destination)}`} onEdit={() => go(1)} />
                     <ReviewRow label="Dates" value={formatDateRange(d.departDate, roundTrip ? d.returnDate : null)} onEdit={() => go(1)} />
+                    {byGround ? (
+                      <ReviewRow label="Travel by" value={`${groundLabel} · no flight booked · fare estimated when not published`} onEdit={() => go(2)} />
+                    ) : (
                     <ReviewRow
                       label="Flights"
                       value={`${cabinLabel[d.filters.cabin]} · ${d.filters.maxStops === 0 ? "non-stop" : `≤ ${d.filters.maxStops} stop`} · ${windowLabel[d.filters.departureWindow]}${d.filters.flexibleDays ? ` · ±${d.filters.flexibleDays} day${d.filters.flexibleDays > 1 ? "s" : ""}` : ""}${d.filters.avoidRedEye ? " · no red-eyes" : ""}${d.filters.excludedAirlines.length ? ` · excl. ${d.filters.excludedAirlines.join(", ")}` : ""}`}
                       onEdit={() => go(2)}
                     />
+                    )}
                     <ReviewRow
                       label="Stay"
                       value={`${d.rooms} room${d.rooms > 1 ? "s" : ""} · ${d.filters.minHotelRating.toFixed(1)}+ rating${d.filters.requiredAmenities.length ? ` · ${d.filters.requiredAmenities.map((a) => amenityLabel[a]).join(", ")}` : ""}${d.filters.maxNightlyRate ? ` · cap ${formatInr(d.filters.maxNightlyRate)}/night` : ""}`}
@@ -802,7 +810,7 @@ export default function PlanningPage() {
             <CardContent className="space-y-3 p-5 text-sm">
               <SummaryLine label="Travelers" value={selected.length ? `${selected.length} · ${selected.map((t) => t.name.split(" ")[0]).join(", ")}` : "None selected"} />
               <SummaryLine label="Nights × rooms" value={`${nights} × ${d.rooms}`} />
-              <SummaryLine label="Cabin" value={cabinLabel[d.filters.cabin]} />
+              {byGround ? <SummaryLine label="Travel by" value={groundLabel} /> : <SummaryLine label="Cabin" value={cabinLabel[d.filters.cabin]} />}
               <SummaryLine label="Priority" value={priorityLabel[d.filters.priority]} />
               <SummaryLine label="Budget" value={d.budget ? formatInr(d.budget) : "Not set"} />
             </CardContent>
