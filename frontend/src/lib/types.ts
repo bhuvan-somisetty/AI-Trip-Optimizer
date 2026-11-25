@@ -110,9 +110,13 @@ export type Flight = {
   mode?: "train" | "bus";
   /** false when the train or bus publishes no fare: `price` is then 0 and not a price */
   priceKnown?: boolean;
-  /** the typical fare range from the distance, when no fare is published */
-  fareEstimate?: { low: number; high: number; label: string };
   bookingLabel?: string;
+  /** Indian trains: official fare per class, what it is for, or why there is none */
+  classFares?: Record<string, number>;
+  /** the class `price` is for, e.g. "SL" */
+  fareClass?: string;
+  classFaresLabel?: string;
+  classFaresNote?: string;
   /** stations, for a train or bus */
   fromStation?: string;
   toStation?: string;
