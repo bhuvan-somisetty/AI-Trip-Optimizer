@@ -287,7 +287,7 @@ export const actions = {
     if (fresh.length) set((s) => ({ cities: { ...s.cities, ...Object.fromEntries(fresh.map((c) => [c.code, c])) } }));
   },
   /**
-   * Looks up codes that aren't in lib/catalog.ts (GET /airports/{code}, no login). API mode only:
+   * Looks up codes that aren't in lib/catalog.ts (GET /locations/{code}, no login). API mode only:
    * demo mode stays on the built-in list. An unknown code or a failed lookup just keeps the code.
    */
   async loadCities(codes: string[]) {
@@ -295,7 +295,7 @@ export const actions = {
     const missing = [...new Set(codes)].filter((c) => c && !cityByCode[c] && !state.cities[c] && !cityLookups.has(c));
     if (!missing.length) return;
     missing.forEach((c) => cityLookups.add(c));
-    const found = await Promise.allSettled(missing.map((c) => api.getAirport(c)));
+    const found = await Promise.allSettled(missing.map((c) => api.getLocation(c)));
     actions.rememberCities(found.flatMap((r) => (r.status === "fulfilled" ? [toCity(r.value)] : [])));
   },
 
@@ -700,6 +700,17 @@ export function travelerNames(trip: Trip, travelers: Traveler[]) {
 /** A city from the built-in list or one looked up from the API; undefined while unknown. */
 export function cityOf(code: string): City | undefined {
   return cityByCode[code] ?? getState().cities?.[code];
+}
+
+/**
+ * The short tag shown where a route reads "BLR → DEL": the airport code, or for an Indian town
+ * its own railway station's code (Ayodhya: AY), else its name. Never an invented code.
+ */
+export function placeTag(code: string): string {
+  if (/^[A-Z]{3}$/.test(code)) return code;
+  const c = cityOf(code);
+  if (c?.serves?.includes("train") && c.station?.code) return c.station.code;
+  return c?.name ?? code;
 }
 
 /** The city's name, or the bare code while it is unknown (never "undefined"). */

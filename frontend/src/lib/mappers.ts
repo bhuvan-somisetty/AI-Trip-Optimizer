@@ -1,4 +1,4 @@
-import type { AirportResponse, AuditEventResponse, FlightResponse, LedgerEntryResponse, PolicyBody, PolicyResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
+import type { AirportResponse, AuditEventResponse, LocationResponse, FlightResponse, LedgerEntryResponse, PolicyBody, PolicyResponse, TravelerBody, TravelerResponse, TripBody, TripResponse, TripResultResponse } from "./api";
 import type { City } from "./catalog";
 import { formatInr } from "./format";
 import type { AuditEvent, CabinClass, ConstraintIssue, Flight, Hotel, Itinerary, LedgerEntry, Policy, Traveler, Trip, TripFilters } from "./types";
@@ -356,8 +356,8 @@ export function toAuditEvent(r: AuditEventResponse): AuditEvent {
  * An airport from GET /airports as a City, so the forms and labels treat it like the built-in
  * list. hotelIndex only matters to demo mode's generated prices, which never use these.
  */
-export function toCity(a: AirportResponse): City {
-  return {
+export function toCity(a: AirportResponse | LocationResponse): City {
+  const city: City = {
     code: a.code,
     name: a.city,
     country: a.country_name,
@@ -365,5 +365,14 @@ export function toCity(a: AirportResponse): City {
     lon: a.longitude,
     international: a.country !== "IN",
     hotelIndex: 1,
+  };
+  if (!("kind" in a) || a.kind !== "place") return city;
+  return {
+    ...city,
+    state: a.state ?? undefined,
+    serves: a.serves,
+    airport: a.airport_code ? { code: a.airport_code, name: a.airport ?? null, km: a.airport_km ?? 0 } : undefined,
+    station: a.station ?? null,
+    busStation: a.bus_station ?? null,
   };
 }
