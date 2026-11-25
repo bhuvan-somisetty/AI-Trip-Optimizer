@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta
 
 from langgraph.graph import END, START, StateGraph
 
-from app import config, fares, ground
+from app import config, ground
 from app import travel_data
 from app.pipeline.state import PipelineState
 
@@ -98,7 +98,7 @@ def search_node(state: PipelineState) -> dict:
 # A trip whose traveller picked Trains or Buses (not Flights) in the trip form books no flight: the
 # outbound and return line items are the train or bus picked from Google Maps transit
 # (app/ground.py). Most trains and buses publish no fare, so the total holds only the fares that
-# are known and a flag gives the typical range from the distance (app/fares.py), as an estimate.
+# are known and a flag says which fare to check with the operator. Nothing is estimated.
 GROUND_MODES = ("train", "bus")
 MODE_WORDS = {"train": ("train", "trains"), "bus": ("bus", "buses")}
 
@@ -173,7 +173,10 @@ def transport_option(g: dict, frm: str, to: str, number: int) -> dict:
         "price": fare,
         "currency": "INR" if fare is not None else None,
         "fare_label": g.get("fare_label") if fare is not None else "Fare not published",
-        "fare_estimate": fares.estimate(g["kind"], frm, to) if fare is None else None,
+        "fare_class": g.get("fare_class"),
+        "class_fares": g.get("class_fares"),
+        "class_fares_label": g.get("class_fares_label"),
+        "class_fares_note": g.get("class_fares_note"),
         "link": g.get("link"),
         "link_label": g.get("link_label"),
         "source": g.get("source"),
@@ -258,19 +261,9 @@ def ground_check(state: PipelineState) -> dict:
     if not within_budget:
         flags.append(f"Total {total_cost:,.0f} is {total_cost - request['budget']:,.0f} over the {request['budget']:,.0f} budget")
     unknown = [o for o in (outbound, way_back) if o and o["price"] is None]
-    estimated = [o["fare_estimate"] for o in unknown if o.get("fare_estimate")]
     if unknown:
-        word = ground_word(unknown[0])
-        if len(estimated) == len(unknown):
-            low, high = sum(e["low"] for e in estimated), sum(e["high"] for e in estimated)
-            flags.append(f"The {word} fare isn't published, so it isn't in the total: typically {low:,.0f} to "
-                         f"{high:,.0f} per person for the {'two journeys' if len(unknown) > 1 else 'journey'} "
-                         f"(estimate from the distance)")
-            if within_budget and total_cost + high > request["budget"]:
-                flags.append(f"With the {word} fare at the top of its typical range the trip would be "
-                             f"{total_cost + high - request['budget']:,.0f} over budget")
-        else:
-            flags.append(f"The {word} fare isn't published, so it isn't in the total")
+        flags.append(f"The {ground_word(unknown[0])} fare isn't published, so it isn't in the total; "
+                     f"check it on the operator's site before booking")
 
     return {
         "check": {
@@ -1007,9 +1000,6 @@ def ground_fact(option: dict | None, compared: int) -> dict | None:
         else "fastest of the day; its fare isn't published",
         "options_compared": compared,
     }
-    if option.get("fare_estimate"):
-        fact["typical_fare_estimate"] = {"low": rupees(option["fare_estimate"]["low"]),
-                                         "high": rupees(option["fare_estimate"]["high"])}
     return fact
 
 
@@ -1064,9 +1054,6 @@ def leg_text(leg: dict, word: str) -> str:
     text = f"{leg.get('travel_by') or word} {leg['option']}"
     if leg["price"] is not None:
         return f"{text} at {leg['price']:,.0f}"
-    estimate = leg.get("typical_fare_estimate")
-    if estimate:
-        return f"{text} (fare not published, typically {estimate['low']:,.0f} to {estimate['high']:,.0f})"
     return f"{text} (fare not published)"
 
 
@@ -1107,7 +1094,7 @@ RATIONALE_PROMPT = """You explain a business trip itinerary to the manager who w
 Write 3 to 5 short sentences in plain, natural English: which flights and hotel were chosen and why
 (use why_chosen and options_compared), the total cost against the budget, and any flags or options
 ruled out. When a line item has travel_by (train or bus), it is a train or bus, not a flight; when its
-price is null, say its fare isn't published and give typical_fare_estimate as the usual range. Write like a helpful colleague, not a report: never mention field names such as
+price is null, say its fare isn't published and must be checked with the operator. Write like a helpful colleague, not a report: never mention field names such as
 price_per_night or within_budget, never say true or false, and skip anything that is empty.
 
 Use ONLY the facts below. Never introduce, round, convert or calculate a number that is not written
