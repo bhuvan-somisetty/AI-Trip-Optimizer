@@ -43,7 +43,8 @@ describe("RouteTab", () => {
     expect(screen.getByText("15.2 km by road (13.0 km straight) from Fort Aguada")).toBeInTheDocument();
     expect(screen.getByText("Total 26.5 km by road")).toBeInTheDocument();
     expect(screen.getByText("No road found to: Chapora Fort.")).toBeInTheDocument();
-    expect(screen.getByText(/Dijkstra's algorithm on OpenStreetMap roads. Driving times are estimates, not live traffic./)).toBeInTheDocument();
+    expect(screen.getByText(/Shortest road distances found with Dijkstra's algorithm on OpenStreetMap roads./)).toBeInTheDocument();
+    expect(screen.queryByText(/estimate|minutes|by car/i)).not.toBeInTheDocument();
     expect(screen.getByTestId("route-map")).toBeInTheDocument();
   });
 
