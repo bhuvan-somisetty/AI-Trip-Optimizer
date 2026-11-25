@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Plane, Plus } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDateRange, formatInr } from "@/lib/format";
-import { cityName } from "@/lib/store";
+import { cityName, placeTag } from "@/lib/store";
 import type { Trip } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -107,12 +107,12 @@ function BoardingPass({ trip }: { trip?: Trip }) {
         </div>
         <div className="mt-5 flex items-end justify-between gap-3">
           <div>
-            <p className="font-editorial text-5xl leading-none">{trip.origin}</p>
+            <p className="max-w-[8rem] truncate font-editorial text-5xl leading-none">{placeTag(trip.origin)}</p>
             <p className="mt-1.5 truncate text-xs text-[#ece6da]/55">{cityName(trip.origin)}</p>
           </div>
           <Plane className="mb-5 size-5 shrink-0 text-[#ff6a3d]" />
           <div className="text-right">
-            <p className="font-editorial text-5xl leading-none">{trip.destination}</p>
+            <p className="ml-auto max-w-[8rem] truncate font-editorial text-5xl leading-none">{placeTag(trip.destination)}</p>
             <p className="mt-1.5 truncate text-xs text-[#ece6da]/55">{cityName(trip.destination)}</p>
           </div>
         </div>
