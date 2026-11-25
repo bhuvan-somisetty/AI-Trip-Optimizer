@@ -6,6 +6,19 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, field_serializer, field_validator, model_validator
 
 from app.models import AuditEventType, DecisionOutcome, TripStatus, UserRole
+from app.travel_data import INDIA_PLACES
+
+# A trip end: an IATA airport code, or the code of an Indian city or town ("ayodhya", "rampur-up").
+PLACE_CODE = r"^([A-Za-z]{3}|[a-z0-9][a-z0-9-]{1,39})$"
+
+
+def place_code(value: str) -> str:
+    """Airport codes upper case ("blr" -> "BLR"); an Indian place's code as it is, if it exists."""
+    if value in INDIA_PLACES:
+        return value
+    if len(value) == 3 and value.isalpha():
+        return value.upper()
+    raise ValueError(f"Unknown place {value!r}")
 
 
 class RegisterRequest(BaseModel):
@@ -88,9 +101,10 @@ class TravelerResponse(BaseModel):
 
 class TripCreate(BaseModel):
     traveler_id: uuid.UUID
-    # 3-letter IATA airport codes, the format the flight and hotel APIs take.
-    origin: str = Field(pattern=r"^[A-Za-z]{3}$")
-    destination: str = Field(pattern=r"^[A-Za-z]{3}$")
+    # A 3-letter IATA airport code ("BLR"), or an Indian city or town ("ayodhya"); see
+    # travel_data.PLACES. A town without an airport flies from its nearest one.
+    origin: str = Field(pattern=PLACE_CODE)
+    destination: str = Field(pattern=PLACE_CODE)
     dates: tuple[date, date]  # [start, end], matches 07_API_Specification.md
     budget: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
     preferences: dict = {}
@@ -98,7 +112,7 @@ class TripCreate(BaseModel):
     @field_validator("origin", "destination")
     @classmethod
     def uppercase_code(cls, value: str) -> str:
-        return value.upper()
+        return place_code(value)
 
     @model_validator(mode="after")
     def end_not_before_start(self):
@@ -117,8 +131,8 @@ class TripUpdate(BaseModel):
     """PATCH /trips/{id}: send only the fields that change. `preferences` replaces the whole dict."""
 
     traveler_id: uuid.UUID | None = None
-    origin: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
-    destination: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
+    origin: str | None = Field(default=None, pattern=PLACE_CODE)
+    destination: str | None = Field(default=None, pattern=PLACE_CODE)
     dates: tuple[date, date] | None = None
     budget: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
     preferences: dict | None = None
@@ -126,7 +140,7 @@ class TripUpdate(BaseModel):
     @field_validator("origin", "destination")
     @classmethod
     def uppercase_code(cls, value: str | None) -> str | None:
-        return value.upper() if value else value
+        return place_code(value) if value else value
 
     @model_validator(mode="after")
     def end_not_before_start(self):
