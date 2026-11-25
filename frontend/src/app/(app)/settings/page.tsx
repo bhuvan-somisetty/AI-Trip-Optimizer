@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Save, ShieldCheck, User, Bell, Palette, Database, RotateCcw, Monitor, Moon, Sun, Server } from "lucide-react";
+import { Save, ShieldCheck, User, Bell, Database, RotateCcw, Server } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ChipToggle, Segmented, Switch } from "@/components/ui/fields";
+import { ChipToggle, Switch } from "@/components/ui/fields";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/app/common";
 import { actions, defaultPolicy, useStore } from "@/lib/store";
@@ -162,33 +162,15 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Palette className="size-4" />Appearance</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Segmented
-              value={s.settings.theme}
-              onChange={(v) => actions.updateSettings({ theme: v })}
-              options={[
-                { value: "light", label: <span className="flex items-center gap-1.5"><Sun className="size-4" />Light</span> },
-                { value: "dark", label: <span className="flex items-center gap-1.5"><Moon className="size-4" />Dark</span> },
-                { value: "system", label: <span className="flex items-center gap-1.5"><Monitor className="size-4" />System</span> },
-              ]}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Bell className="size-4" />Notifications</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Toggle label="Decisions" hint="When an itinerary is approved or rejected" checked={s.settings.notifyDecisions} onChange={(v) => actions.updateSettings({ notifyDecisions: v })} />
-            <Toggle label="Pipeline runs" hint="When the optimizer finishes or fails" checked={s.settings.notifyPipeline} onChange={(v) => actions.updateSettings({ notifyPipeline: v })} />
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Bell className="size-4" />Notifications</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Toggle label="Decisions" hint="When an itinerary is approved or rejected" checked={s.settings.notifyDecisions} onChange={(v) => actions.updateSettings({ notifyDecisions: v })} />
+          <Toggle label="Pipeline runs" hint="When the optimizer finishes or fails" checked={s.settings.notifyPipeline} onChange={(v) => actions.updateSettings({ notifyPipeline: v })} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
