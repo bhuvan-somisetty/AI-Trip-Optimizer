@@ -256,7 +256,6 @@ export type Session = {
 };
 
 export type Settings = {
-  theme: "light" | "dark" | "system";
   notifyDecisions: boolean;
   notifyPipeline: boolean;
   compactTables: boolean;
