@@ -54,8 +54,8 @@ class Trip(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     traveler_id: uuid.UUID = Field(foreign_key="travelers.id", index=True)
-    origin: str = Field(max_length=3)  # IATA airport code, e.g. "BLR"
-    destination: str = Field(max_length=3)
+    origin: str = Field(max_length=40)  # IATA airport code ("BLR") or an Indian place ("ayodhya")
+    destination: str = Field(max_length=40)
     start_date: date
     end_date: date
     budget: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))
@@ -173,6 +173,6 @@ class CityPlaces(SQLModel, table=True):
 
     __tablename__ = "city_places"
 
-    city: str = Field(primary_key=True, max_length=3)  # IATA code of the destination, e.g. "GOI"
+    city: str = Field(primary_key=True, max_length=40)  # the destination's code, e.g. "GOI" or "ayodhya"
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
