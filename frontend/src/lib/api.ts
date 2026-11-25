@@ -256,8 +256,13 @@ export type FlightResponse = {
   from_station?: string | null;
   to_station?: string | null;
   fare_label?: string | null;
-  fare_estimate?: FareEstimate | null;
   link_label?: string | null;
+  /** the class the main price is for (e.g. "SL"), when it is an official train fare */
+  fare_class?: string | null;
+  /** Indian trains: the official fare per class, or why there is none */
+  class_fares?: Record<string, number> | null;
+  class_fares_label?: string | null;
+  class_fares_note?: string | null;
   stops: number;
   /** Each connection, as Google Flights lists it; empty for non-stop, missing for cached fares. */
   layovers?: { airport: string | null; airport_name: string | null; minutes: number | null; overnight: boolean }[];
@@ -521,8 +526,6 @@ export type RouteLegResponse = {
   from: string;
   to: string;
   road_m: number;
-  /** estimated driving minutes (speed limits and typical road speeds, not traffic) */
-  estimated_minutes?: number;
   straight_m: number;
   /** [lat, lon] points along the road */
   path: [number, number][];
@@ -534,11 +537,6 @@ export type RouteResponse = {
   stops: RouteStopResponse[];
   legs: RouteLegResponse[];
   total_road_m: number | null;
-  total_estimated_minutes?: number | null;
-  /** what Dijkstra minimised */
-  weight?: RouteWeight;
-  /** says the minutes are an estimate */
-  time_label?: string;
   /** attractions no road from the hotel reaches */
   unreachable: string[];
   source: string;
@@ -547,10 +545,8 @@ export type RouteResponse = {
   notice: string | null;
 };
 
-export type RouteWeight = "distance" | "time";
-
-export const getRoute = (token: string, tripId: string, stops: number, weight: RouteWeight = "distance") =>
-  call<RouteResponse>("GET", `/trips/${id(tripId)}/route?stops=${stops}&weight=${weight}`, { token, timeoutMs: PLACES_TIMEOUT_MS });
+export const getRoute = (token: string, tripId: string, stops: number) =>
+  call<RouteResponse>("GET", `/trips/${id(tripId)}/route?stops=${stops}`, { token, timeoutMs: PLACES_TIMEOUT_MS });
 
 export type TransportStop = { name: string | null; code: string | null; time: string | null };
 
@@ -571,6 +567,10 @@ export type GroundOptionResponse = {
   fare: number | null;
   currency: string | null;
   fare_label: string;
+  /** Indian trains: the official fare per class, or why there is none */
+  class_fares?: Record<string, number> | null;
+  class_fares_label?: string | null;
+  class_fares_note?: string | null;
   /** the operator's own site (IRCTC, FlixBus, redBus...), only a link: no booking or price is read from it */
   link?: string | null;
   link_label?: string | null;
@@ -637,8 +637,6 @@ export const getAirport = (code: string) => call<AirportResponse>("GET", `/airpo
 // ---------------------------------------------------------------- journeys (cheaper routes)
 
 export type JourneyMode = "flight" | "train" | "bus" | "ferry";
-/** A typical fare range from the distance, for Indian trains and buses that publish no fare: never a price. */
-export type FareEstimate = { low: number; high: number; currency: string; label: string; distance_km?: number };
 export type JourneyPlace = { code: string; name: string; station?: string | null; station_code?: string | null };
 
 export type JourneyLegResponse = {
@@ -660,7 +658,10 @@ export type JourneyLegResponse = {
   link_label?: string | null;
   source: string | null;
   data_label: string | null;
-  fare_estimate?: FareEstimate | null;
+  /** Indian trains: the official fare per class, or why there is none */
+  class_fares?: Record<string, number> | null;
+  class_fares_label?: string | null;
+  class_fares_note?: string | null;
 };
 
 export type JourneyResponse = {
@@ -681,8 +682,6 @@ export type JourneyResponse = {
   fare: number | null;
   currency: string | null;
   fare_label: string;
-  /** only when fare is null: the journey's range for all travellers, from real fares and estimates */
-  fare_estimate?: FareEstimate | null;
   legs: JourneyLegResponse[];
 };
 
