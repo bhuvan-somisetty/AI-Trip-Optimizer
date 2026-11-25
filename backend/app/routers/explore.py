@@ -7,7 +7,6 @@ or Trade-off Ledger.
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
@@ -25,11 +24,15 @@ from app.travel_data import AIRPORTS, CITIES, TravelDataError, country_name
 router = APIRouter(tags=["explore"])
 logger = logging.getLogger(__name__)
 
+# Bumped when dishes changed shape: version 2 keeps only dishes with a Wikipedia article on them.
+DISHES_VERSION = 2
+
+
 def dishes_for(session: Session, city: str) -> tuple[list[dict], str | None]:
     """The city's dishes and, when there are none, why. Saved with the city's places, so the
     AI and Wikipedia are asked once per city; a failure is not saved, so it is retried."""
     row = session.get(CityPlaces, city)
-    if row is not None and "dishes" in (row.payload or {}):
+    if row is not None and "dishes" in (row.payload or {}) and row.payload.get("dishes_version") == DISHES_VERSION:
         return row.payload["dishes"], None
     if city not in CITIES:
         return [], f"Local dishes don't know the city for airport {city} yet"
@@ -42,9 +45,9 @@ def dishes_for(session: Session, city: str) -> tuple[list[dict], str | None]:
         logger.warning("Local dishes failed for %s", city, exc_info=True)
         return [], "Local dishes couldn't be loaded right now, please try again"
     if not found:
-        return [], "The AI model gave no usable dish suggestions, please try again"
+        return [], "No famous dishes with a Wikipedia article were found for this city"
     if row is not None:
-        row.payload = {**row.payload, "dishes": found}
+        row.payload = {**row.payload, "dishes": found, "dishes_version": DISHES_VERSION}
         session.add(row)
         session.commit()
     return found, None
@@ -134,20 +137,16 @@ def along(graph: dict, path: list[int]) -> float:
 @router.get("/trips/{trip_id}/route")
 def route_trip(
     stops: int = Query(default=6, ge=1, le=10),
-    weight: Literal["distance", "time"] = Query(default="distance", description="What Dijkstra minimises"),
     trip: Trip = Depends(get_owned_trip),
     session: Session = Depends(get_session),
 ):
     """Shortest road routes from the trip's hotel to its top attractions (Dijkstra on the real
     OpenStreetMap road network), and a visiting order: the nearest attraction by road next.
 
-    `weight=distance` (default) minimises road metres; `weight=time` minimises estimated driving
-    time (speed limits where mapped, typical speeds by road class otherwise). Every leg gives both
-    its road metres and its estimated minutes; the minutes are an estimate, not traffic data.
-    When a route can't be built, `notice` says why and nothing is made up."""
-    result = {"city": trip.destination, "weight": weight, "hotel": None, "stops": [], "legs": [], "total_road_m": None,
-              "total_estimated_minutes": None, "unreachable": [], "source": roads.SOURCE, "data_label": "Map data",
-              "time_label": "Estimated from speed limits and typical road speeds, not live traffic", "notice": None}
+    Every leg gives its real road metres; no driving time is guessed. When a route can't be
+    built, `notice` says why and nothing is made up."""
+    result = {"city": trip.destination, "hotel": None, "stops": [], "legs": [], "total_road_m": None,
+              "unreachable": [], "source": roads.SOURCE, "data_label": "Map data", "notice": None}
     itinerary = saved_itinerary(session, trip)
     hotel = itinerary.hotel if itinerary else None
     if not hotel:
@@ -170,8 +169,7 @@ def route_trip(
         return {**result, "notice": str(e)}
     snapped = [graph.nearest(lat, lon) for lat, lon in points]
     nodes = [node for node, _ in snapped]
-    weighted = graph.time_graph if weight == "time" else graph.graph
-    matrix, prevs = road_matrix(weighted, nodes)
+    matrix, prevs = road_matrix(graph.graph, nodes)
     order = visiting_order(matrix)
 
     legs, from_hotel = [], {}
@@ -181,7 +179,6 @@ def route_trip(
             "from": names[a],
             "to": names[b],
             "road_m": round(along(graph.graph, path)),
-            "estimated_minutes": round(along(graph.time_graph, path) / 60, 1),
             "straight_m": round(haversine_m(*points[a], *points[b])),
             "path": thin([list(graph.coords[n]) for n in path]),
         })
@@ -201,7 +198,6 @@ def route_trip(
         "stops": stops_out,
         "legs": legs,
         "total_road_m": round(sum(leg["road_m"] for leg in legs)),
-        "total_estimated_minutes": round(sum(leg["estimated_minutes"] for leg in legs), 1),
         "unreachable": [names[i] for i in range(1, len(names)) if i not in order],
     }
 
