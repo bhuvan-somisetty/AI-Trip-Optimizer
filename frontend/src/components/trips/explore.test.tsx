@@ -38,7 +38,7 @@ const goa = (overrides: Partial<ExploreResponse> = {}): ExploreResponse => ({
       image: "https://upload.wikimedia.org/bebinca.jpg",
       wikipedia_text: "Bebinca is a traditional Indo-Portuguese pudding.",
       wikipedia: "https://en.wikipedia.org/wiki/Bebinca",
-      data_label: "AI suggestion",
+      data_label: "Wikipedia",
       image_label: "Photo: Wikipedia",
     },
   ],
@@ -70,7 +70,7 @@ describe("ExploreTab", () => {
     expect(screen.getByText("Photo: Wikimedia Commons")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Read more on Wikipedia/ })[0]).toHaveAttribute("href", "https://en.wikipedia.org/wiki/Basilica_of_Bom_Jesus");
     expect(screen.getByText("Bebinca")).toBeInTheDocument();
-    expect(screen.getByText("AI suggestion")).toBeInTheDocument();
+    expect(screen.getAllByText("Wikipedia").length).toBeGreaterThan(0);
     expect(screen.getByText("Photo: Wikipedia")).toBeInTheDocument();
     expect(screen.getByText("Ritz Classic")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "OpenStreetMap" })).toBeInTheDocument();
