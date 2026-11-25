@@ -12,7 +12,7 @@ from app.journeys import DEFAULT_VALUE_OF_TIME, DEFAULT_VIAS, MAX_TRAVELLERS, MA
 from app.models import Trip, User
 from app.routers.trips import get_owned_trip
 from app.security import get_current_user
-from app.travel_data import TravelDataError
+from app.travel_data import TravelDataError, flight_airport
 
 router = APIRouter(tags=["journeys"])
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -69,5 +69,7 @@ def trip_journeys(
     trip: Trip = Depends(get_owned_trip),
 ):
     """The same search for a saved trip's route and first day (and last day with include_return)."""
-    return search(trip.origin, trip.destination, trip.start_date, modes, vias, value_of_time, travellers,
+    # A town without an airport (an Indian place code) is searched from its nearest airport.
+    return search(flight_airport(trip.origin), flight_airport(trip.destination), trip.start_date, modes, vias,
+                  value_of_time, travellers,
                   via_depth, trip.end_date if include_return else None, via)
