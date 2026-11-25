@@ -14,7 +14,7 @@ import { AuditTimeline } from "@/components/app/audit-timeline";
 import { TripSearch } from "@/components/dashboard/trip-search";
 import { PopularDestinations } from "@/components/dashboard/popular-destinations";
 import { TripStatusBadge } from "@/components/app/common";
-import { routeLabel, useStore } from "@/lib/store";
+import { placeTag, routeLabel, useStore } from "@/lib/store";
 import { formatCompactInr, formatDateRange, formatInr } from "@/lib/format";
 
 const MONTHS = 6;
@@ -137,9 +137,9 @@ export default function DashboardPage() {
                     <li key={t.id}>
                       <Link href={`/trips/${t.id}`} className="group flex items-center gap-3 px-4 py-4 transition-colors duration-300 hover:bg-foreground/[0.03] sm:gap-5 sm:px-5">
                         <div className="flex shrink-0 items-center gap-1.5 font-editorial text-xl leading-none sm:w-28 sm:gap-2 sm:text-2xl">
-                          {t.origin}
+                          {placeTag(t.origin)}
                           <ArrowRight className="size-3.5 text-primary" />
-                          {t.destination}
+                          {placeTag(t.destination)}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{t.title}</p>
