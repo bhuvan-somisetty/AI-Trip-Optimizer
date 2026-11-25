@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/app/common";
 import * as api from "@/lib/api";
 import type { DishResponse, ExploreResponse, PlaceResponse, RouteLegResponse, RouteResponse, RouteStopResponse } from "@/lib/api";
 import { addDays, formatDate, formatTime } from "@/lib/format";
-import { km, minutesLabel } from "@/lib/geo";
+import { km } from "@/lib/geo";
 import { useStore } from "@/lib/store";
 import type { Trip } from "@/lib/types";
 
@@ -19,11 +19,11 @@ const RouteMap = dynamic(() => import("./route-map"), {
   loading: () => <div className="h-[320px] animate-pulse rounded-xl border bg-muted" />,
 });
 
-// Sightseeing time per day: a shorter first day (arrival) and last day (departure).
-const FIRST_DAY_MIN = 180;
-const MIDDLE_DAY_MIN = 240;
-const LAST_DAY_MIN = 120;
-const VISIT_MIN = 60; // time at each place
+// Places to see per day: fewer on the first day (arrival) and the last day (departure). A plan,
+// not a measurement: no driving time is guessed, the road distances shown are the real ones.
+const FIRST_DAY_PLACES = 2;
+const MIDDLE_DAY_PLACES = 4;
+const LAST_DAY_PLACES = 2;
 const MAX_STOPS = 10;
 
 type Day = {
@@ -35,9 +35,9 @@ type Day = {
 };
 
 /**
- * Splits the route's ordered stops across the trip's days: each place costs its estimated driving
- * time plus an hour there, within a day's sightseeing time. Pure arithmetic on the route's own
- * numbers; exported so it can be checked on its own.
+ * Splits the route's ordered stops across the trip's days, in route order, up to a number of
+ * places a day (fewer on arrival and departure days); the last day takes whatever is left.
+ * Exported so it can be checked on its own.
  */
 export function splitDays(dates: string[], route: RouteResponse, explore?: ExploreResponse): Day[] {
   const days: Day[] = dates.map((date, i) => ({
@@ -47,19 +47,13 @@ export function splitDays(dates: string[], route: RouteResponse, explore?: Explo
     dish: explore?.dishes.length ? explore.dishes[i % explore.dishes.length] : undefined,
     restaurant: explore?.restaurants.length ? explore.restaurants[i % explore.restaurants.length] : undefined,
   }));
-  const budget = (i: number) => (dates.length === 1 ? MIDDLE_DAY_MIN : i === 0 ? FIRST_DAY_MIN : i === dates.length - 1 ? LAST_DAY_MIN : MIDDLE_DAY_MIN);
+  const room = (i: number) =>
+    dates.length === 1 ? MIDDLE_DAY_PLACES : i === 0 ? FIRST_DAY_PLACES : i === dates.length - 1 ? LAST_DAY_PLACES : MIDDLE_DAY_PLACES;
   let day = 0;
-  let used = 0;
   route.stops.forEach((stop, i) => {
-    const leg = route.legs[i];
-    const cost = (leg?.estimated_minutes ?? 0) + VISIT_MIN;
-    while (day < days.length - 1 && used + cost > budget(day) && days[day].stops.length > 0) {
-      day += 1;
-      used = 0;
-    }
+    while (day < days.length - 1 && days[day].stops.length >= room(day)) day += 1;
     days[day].stops.push(stop);
-    if (leg) days[day].legs.push(leg);
-    used += cost;
+    if (route.legs[i]) days[day].legs.push(route.legs[i]);
   });
   return days;
 }
@@ -148,7 +142,6 @@ export function DayPlanTab({ trip }: { trip: Trip }) {
       </Card>
       {days.map((day, i) => {
         const roadM = day.legs.reduce((a, l) => a + l.road_m, 0);
-        const minutes = day.legs.reduce((a, l) => a + (l.estimated_minutes ?? 0), 0);
         const transport = i === 0 ? it?.outbound : i === days.length - 1 ? it?.return : null;
         return (
           <Card key={day.date}>
@@ -159,7 +152,7 @@ export function DayPlanTab({ trip }: { trip: Trip }) {
               </div>
               {day.legs.length > 0 && (
                 <CardDescription>
-                  {km(roadM)} by road{minutes > 0 ? `, about ${minutesLabel(minutes)} of driving (estimate)` : ""}
+                  {km(roadM)} by road
                 </CardDescription>
               )}
             </CardHeader>
@@ -167,7 +160,7 @@ export function DayPlanTab({ trip }: { trip: Trip }) {
               {transport && (
                 <p className="flex items-center gap-2">
                   <Plane className="size-4 text-primary" />
-                  {i === 0 ? "Arrive" : "Fly home"}: {transport.airline} {transport.flightNo}, {transport.origin} {formatTime(transport.departure)}
+                  {i === 0 ? "Arrive" : transport.mode ? `${transport.mode === "bus" ? "Bus" : "Train"} home` : "Fly home"}: {transport.airline} {transport.flightNo}, {transport.origin} {formatTime(transport.departure)}
                   {transport.arrival ? ` → ${transport.destination} ${formatTime(transport.arrival)}` : ` → ${transport.destination}`}
                 </p>
               )}
@@ -188,8 +181,7 @@ export function DayPlanTab({ trip }: { trip: Trip }) {
                         {day.legs[n] && (
                           <span className="text-xs text-muted-foreground">
                             {" "}
-                            ({km(day.legs[n].road_m)}
-                            {day.legs[n].estimated_minutes !== undefined ? `, ~${minutesLabel(day.legs[n].estimated_minutes!)}` : ""} from {day.legs[n].from})
+                            ({km(day.legs[n].road_m)} from {day.legs[n].from})
                           </span>
                         )}
                       </span>
