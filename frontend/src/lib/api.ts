@@ -602,7 +602,21 @@ export type TransportResponse = {
   /** Missing from an API without ferry search; treat that as an empty list. */
   ferries?: GroundOptionResponse[];
   comparison: { mode: "Flight" | "Train" | "Bus" | "Ferry"; service: string | null; departs: string | null; duration_minutes: number | null; fare: number | null; currency: string | null; fare_label: string }[];
+  /** the row to take and why; missing from an older API */
+  recommended?: { mode: "Flight" | "Train" | "Bus" | "Ferry"; reason: string } | null;
+  /** how each end is reached: nearest airport, railway station and bus station */
+  access?: { origin: TransportAccess | null; destination: TransportAccess | null };
   notice: string | null;
+};
+
+export type TransportAccess = {
+  code: string;
+  name: string;
+  state?: string | null;
+  serves: ("flight" | "train" | "bus")[];
+  airport: { code: string; name: string | null; km: number };
+  station: { name: string; code: string | null; km: number } | null;
+  bus_station: { name: string; km: number } | null;
 };
 
 export const getTransport = (token: string, tripId: string) =>
@@ -630,6 +644,43 @@ export type AirportSearchResponse = { airports: AirportResponse[]; source: strin
 /** Type-ahead search: an exact code or city first, then names that start with the text. */
 export const searchAirports = (q: string, limit = 10) =>
   call<AirportSearchResponse>("GET", `/airports?q=${encodeURIComponent(q)}&limit=${limit}`, { timeoutMs: 8000 });
+
+/** How a way of travel reaches an Indian place: the nearest airport, railway station and bus station. */
+export type PlaceAccess = {
+  airport_code: string;
+  airport: string | null;
+  airport_km: number;
+  station: { name: string; code: string | null; km: number } | null;
+  bus_station: { name: string; km: number } | null;
+};
+
+/**
+ * A trip end from GET /locations: an airport anywhere (kind "airport", code "BLR"), or an Indian
+ * city or town from OpenStreetMap (kind "place", code "ayodhya") with its nearest services.
+ */
+export type LocationResponse = Partial<PlaceAccess> & {
+  code: string;
+  kind: "airport" | "place";
+  city: string;
+  country: string;
+  country_name: string;
+  state?: string | null;
+  latitude: number;
+  longitude: number;
+  /** which ways of travel serve the place itself (within a few km) */
+  serves: ("flight" | "train" | "bus")[];
+  /** an airport found through the town it serves, e.g. "Mysuru" for MYQ */
+  for_place?: string | null;
+};
+
+export type LocationSearchResponse = { locations: LocationResponse[]; source: string };
+
+/** Trip ends for a way of travel: flight, train, bus, or all (every Indian town plus airports abroad). */
+export const searchLocations = (q: string, mode: "flight" | "train" | "bus" | "all", limit = 10) =>
+  call<LocationSearchResponse>("GET", `/locations?q=${encodeURIComponent(q)}&mode=${mode}&limit=${limit}`, { timeoutMs: 8000 });
+
+/** One trip end by its code ("BLR" or "ayodhya"); ApiError 404 when the code is unknown. */
+export const getLocation = (code: string) => call<LocationResponse>("GET", `/locations/${encodeURIComponent(code)}`, { timeoutMs: 8000 });
 
 /** One airport by its code; ApiError 404 when the code is unknown. */
 export const getAirport = (code: string) => call<AirportResponse>("GET", `/airports/${encodeURIComponent(code)}`, { timeoutMs: 8000 });
