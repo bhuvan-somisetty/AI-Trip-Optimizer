@@ -1,18 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import type { Settings } from "@/lib/types";
 
-export function useApplyTheme(theme: Settings["theme"]) {
+/** The workspace is dark only: there is no light mode. Removed on unmount so the landing and login pages keep their own look. */
+export function useApplyTheme() {
   useEffect(() => {
     const root = document.documentElement;
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => root.classList.toggle("dark", theme === "dark" || (theme === "system" && media.matches));
-    apply();
-    media.addEventListener("change", apply);
-    return () => {
-      media.removeEventListener("change", apply);
-      root.classList.remove("dark");
-    };
-  }, [theme]);
+    root.classList.add("dark");
+    return () => root.classList.remove("dark");
+  }, []);
 }
