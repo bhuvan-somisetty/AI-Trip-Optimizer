@@ -32,7 +32,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChipToggle, NativeSelect, Range, Segmented, Switch, Textarea } from "@/components/ui/fields";
 import { PageHeader } from "@/components/app/common";
 import { TravelerDialog } from "@/components/travelers/traveler-form";
-import { actions, cityName, cityOf, defaultFilters, useStore } from "@/lib/store";
+import { actions, cityName, cityOf, defaultFilters, placeTag, useStore } from "@/lib/store";
 import { AirportPicker } from "@/components/trips/airport-picker";
 import { ModePicker, choiceOf, isTravelChoice, modesOf, type TravelChoice } from "@/components/trips/mode-picker";
 import { airlines, amenityLabel, amenityOptions, cabinLabel, cities } from "@/lib/catalog";
@@ -413,7 +413,7 @@ export default function PlanningPage() {
                       <div className="space-y-2">
                         <Label htmlFor="origin">From</Label>
                         {apiMode ? (
-                          <AirportPicker id="origin" value={d.origin} exclude={d.destination} onChange={(code) => up({ origin: code })} />
+                          <AirportPicker id="origin" value={d.origin} exclude={d.destination} mode={choiceOf(d.filters.modes)} onChange={(code) => up({ origin: code })} />
                         ) : (
                           <NativeSelect id="origin" value={d.origin} onChange={(e) => up({ origin: e.target.value })}>
                             {cityOptions.map((c) => (
@@ -430,7 +430,7 @@ export default function PlanningPage() {
                       <div className="space-y-2">
                         <Label htmlFor="destination">To</Label>
                         {apiMode ? (
-                          <AirportPicker id="destination" value={d.destination} exclude={d.origin} onChange={(code) => up({ destination: code })} />
+                          <AirportPicker id="destination" value={d.destination} exclude={d.origin} mode={choiceOf(d.filters.modes)} onChange={(code) => up({ destination: code })} />
                         ) : (
                           <NativeSelect id="destination" value={d.destination} onChange={(e) => up({ destination: e.target.value })}>
                             {cityOptions.map((c) => (
@@ -796,12 +796,12 @@ export default function PlanningPage() {
               <p className="text-xs tracking-wide text-white/60 uppercase">Trip summary</p>
               <div className="mt-3 flex items-center justify-between">
                 <div>
-                  <p className="text-2xl font-bold">{d.origin}</p>
+                  <p className="max-w-[9rem] truncate text-2xl font-bold">{placeTag(d.origin)}</p>
                   <p className="text-xs text-white/60">{cityName(d.origin)}</p>
                 </div>
                 <Plane className="size-5 rotate-45 text-sky-300" />
                 <div className="text-right">
-                  <p className="text-2xl font-bold">{d.destination}</p>
+                  <p className="ml-auto max-w-[9rem] truncate text-2xl font-bold">{placeTag(d.destination)}</p>
                   <p className="text-xs text-white/60">{cityName(d.destination)}</p>
                 </div>
               </div>
