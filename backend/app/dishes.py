@@ -1,14 +1,12 @@
-"""Famous local dishes for a trip's destination: names from the LLM, photos from Wikipedia.
+"""Famous local dishes for a trip's destination, as Wikipedia describes them.
 
-There is no free, structured data source for "what a city is known to eat", so the names and the
-one-line descriptions come from the same LLM that writes trip rationales (Gemini), and every dish
-is labelled "AI suggestion". The LLM is never asked for prices, ratings or any other number, and
-a line that contains a digit anyway is dropped.
-
-Each dish name is then looked up on Wikipedia (REST page summary: free, no key) for a real photo
-and a short description, labelled "Photo: Wikipedia". A dish Wikipedia has no page for keeps
-only the AI text. The result is saved with the city's places (city_places), so a city is asked
-about once per PLACES_CACHE_DAYS.
+There is no free, structured data source for "what a city is known to eat", so the LLM that writes
+trip rationales only proposes dish names. Each name is looked up on Wikipedia (REST page summary:
+free, no key), and a dish is kept only when Wikipedia has an article on that food (its short
+description names a dish, food, sweet, drink...): what is shown is Wikipedia's own title, text and
+photo, labelled "Wikipedia". A name without such an article is dropped, and no AI text is shown.
+The result is saved with the city's places (city_places), so a city is asked about once per
+PLACES_CACHE_DAYS.
 """
 import json
 import logging
@@ -100,6 +98,16 @@ GENERIC = {"goan", "goa", "delhi", "indian", "india", "north", "south", "chicken
            "mutton", "beef", "lamb", "prawn", "curry", "rice", "style", "dish", "sweet", "the"}
 
 
+# Wikipedia's short description of a food page: "Indian sweet", "Goan dessert", "Rajasthani dish".
+FOOD = re.compile(r"dish|food|cuisine|sweet|dessert|snack|bread|curry|drink|beverage|pastry|cake|pudding|"
+                  r"soup|stew|condiment|sauce|chutney|pickle|spice|confection|noodle|dumpling|rice|meat|fish|"
+                  r"liquor|wine|tea|coffee|street food|delicacy|flatbread|porridge|salad|fritter|biscuit", re.I)
+
+
+def _is_food(body: dict) -> bool:
+    return bool(FOOD.search(body.get("description") or ""))
+
+
 def _specific_words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z]+", text.lower()) if len(w) > 2 and w not in GENERIC}
 
@@ -110,19 +118,24 @@ def wikipedia(name: str) -> dict:
     The exact title is tried first ("Butter chicken"); otherwise Wikipedia's own search, accepted
     only when the page title shares a specific word with the dish ("Pork Vindaloo" -> "Vindaloo")."""
     body = _summary(name)
+    if body is not None and not _is_food(body):
+        body = None  # "Sannas" is also a cotton cloth: only a page about food will do
     if body is None:
         found = _get(WIKIPEDIA_SEARCH, q=name, limit=3) or {}
         for page in found.get("pages") or []:
             title = page.get("title") or ""
             if _specific_words(title) & _specific_words(name):
-                body = _summary(title)
-                break
+                candidate = _summary(title)
+                if candidate is not None and _is_food(candidate):
+                    body = candidate
+                    break
     if body is None:
         return {}
     text = (body.get("extract") or "").strip()
     if len(text) > WIKI_TEXT_CHARS:
         text = text[:WIKI_TEXT_CHARS].rsplit(" ", 1)[0] + "..."
     return {
+        "title": body.get("title"),
         "image": (body.get("thumbnail") or {}).get("source"),
         "wikipedia_text": text or None,
         "wikipedia": ((body.get("content_urls") or {}).get("desktop") or {}).get("page"),
@@ -130,16 +143,20 @@ def wikipedia(name: str) -> dict:
 
 
 def local_dishes(city: str, region: str) -> list[dict]:
-    """Up to MAX_DISHES dishes, each labelled: AI text always, Wikipedia photo and text when found."""
-    dishes = []
+    """The proposed dishes Wikipedia has an article on, with Wikipedia's title, text and photo."""
+    dishes, seen = [], set()
     for dish in ask_llm(city, region):
         wiki = wikipedia(dish["name"])
+        if not wiki or not wiki.get("wikipedia") or wiki.get("title") in seen:
+            continue  # no article on this food: nothing real to show
+        seen.add(wiki.get("title"))
         dishes.append({
-            **dish,
+            "name": wiki.get("title") or dish["name"],
+            "ai_description": None,
             "image": wiki.get("image"),
             "wikipedia_text": wiki.get("wikipedia_text"),
             "wikipedia": wiki.get("wikipedia"),
-            "data_label": "AI suggestion",
+            "data_label": "Wikipedia",
             "image_label": "Photo: Wikipedia" if wiki.get("image") else None,
         })
     return dishes
