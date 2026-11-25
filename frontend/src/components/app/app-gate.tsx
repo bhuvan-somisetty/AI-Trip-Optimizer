@@ -11,7 +11,7 @@ export function AppGate({ children }: { children: React.ReactNode }) {
   const s = useStore();
   const router = useRouter();
   const pathname = usePathname();
-  useApplyTheme(s.settings.theme);
+  useApplyTheme();
 
   useEffect(() => {
     if (s.hydrated && !s.session) router.replace(`/login?next=${encodeURIComponent(pathname ?? "/dashboard")}`);
