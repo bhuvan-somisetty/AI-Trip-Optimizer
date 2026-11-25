@@ -13,6 +13,7 @@ import type { GroundOptionResponse, TransportResponse } from "@/lib/api";
 import { formatDate, formatDuration, formatInr } from "@/lib/format";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { ClassFares } from "@/components/journeys/class-fares";
 
 type TripRoute = { from: string; to: string; date: string; back?: string | null };
 
@@ -182,6 +183,7 @@ function OptionList({ icon: Icon, title, options }: { icon: typeof Bus; title: s
                     {o.legs.map((l) => `${l.service ?? "Leg"} ${l.from.name ?? ""} to ${l.to.name ?? ""}`.trim()).join("; ")}
                   </p>
                 )}
+                {o.kind === "train" && <ClassFares fares={o.class_fares} label={o.class_fares_label} note={o.class_fares_note} />}
               </div>
               <div className="shrink-0 space-y-1 sm:text-right">
                 <Fare fare={o.fare} currency={o.currency} label={o.fare_label} />
