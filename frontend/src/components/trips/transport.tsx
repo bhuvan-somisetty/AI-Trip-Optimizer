@@ -9,9 +9,9 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/app/common";
 import * as api from "@/lib/api";
-import type { GroundOptionResponse, TransportResponse } from "@/lib/api";
+import type { GroundOptionResponse, TransportAccess, TransportResponse } from "@/lib/api";
 import { formatDate, formatDuration, formatInr } from "@/lib/format";
-import { useStore } from "@/lib/store";
+import { cityName, useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { ClassFares } from "@/components/journeys/class-fares";
 
@@ -86,13 +86,24 @@ export function TransportTab({ tripId, search }: { tripId: string; search?: Trip
       <Card>
         <CardHeader>
           <CardTitle>
-            {x.origin} to {x.destination} on {formatDate(x.date, { weekday: "short", day: "numeric", month: "short" })}
+            {cityName(x.origin)} to {cityName(x.destination)} on {formatDate(x.date, { weekday: "short", day: "numeric", month: "short" })}
           </CardTitle>
           <CardDescription>
-            The fastest of each way to travel. A fare is shown only when it is known.
+            The fastest of each way to travel, and the one to take. A fare is shown only when it is known.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {x.recommended && (
+            <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/[0.07] p-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                <Sparkles className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Recommended: {x.recommended.mode.toLowerCase()}</p>
+                <p className="text-xs text-muted-foreground">{x.recommended.reason}.</p>
+              </div>
+            </div>
+          )}
           {x.comparison.length ? (
             <Table>
               <TableHeader>
@@ -106,11 +117,12 @@ export function TransportTab({ tripId, search }: { tripId: string; search?: Trip
               </TableHeader>
               <TableBody>
                 {x.comparison.map((row) => (
-                  <TableRow key={row.mode}>
+                  <TableRow key={row.mode} className={cn(x.recommended?.mode === row.mode && "bg-primary/[0.05]")}>
                     <TableCell>
                       <span className="flex items-center gap-2 font-medium">
                         <ModeIcon mode={row.mode} />
                         {row.mode === "Flight" ? "Flight" : `Fastest ${row.mode.toLowerCase()}`}
+                        {x.recommended?.mode === row.mode && <Badge className="ml-1">Recommended</Badge>}
                       </span>
                     </TableCell>
                     <TableCell>{row.service ?? "-"}</TableCell>
@@ -128,6 +140,11 @@ export function TransportTab({ tripId, search }: { tripId: string; search?: Trip
           )}
           {x.flight && <p className="text-xs text-muted-foreground">Flight: {x.flight.data_label === "Live" ? "live fare" : "cached fare"}{x.flight.source ? ` from ${x.flight.source}` : ""}.</p>}
           {x.notice && <p className="rounded-xl border border-dashed p-3 text-sm text-muted-foreground">{x.notice}</p>}
+          {x.access && (x.access.origin?.station !== undefined || x.access.destination?.station !== undefined) && (
+            <div className="grid gap-3 pt-1 sm:grid-cols-2">
+              {[x.access.origin, x.access.destination].map((a, i) => a && <Reach key={i} end={i ? "Arrive at" : "Leave from"} access={a} />)}
+            </div>
+          )}
           {search && (
             <div className="flex flex-wrap gap-2 pt-1">
               <Link href={searchHref(search, "all")} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
@@ -198,6 +215,32 @@ function OptionList({ icon: Icon, title, options }: { icon: typeof Bus; title: s
         </ul>
       </CardContent>
     </Card>
+  );
+}
+
+const km = (n: number) => (n < 1 ? "under 1 km" : `${n} km`);
+
+/** How one end of the trip is reached: its airport (or the nearest one), railway station and bus station. */
+function Reach({ end, access }: { end: string; access: TransportAccess }) {
+  const own = (m: "flight" | "train" | "bus") => access.serves.includes(m);
+  const rows = [
+    { m: "flight" as const, icon: Plane, text: `${own("flight") ? "" : "Nearest airport: "}${access.airport.code}${access.airport.name ? ` (${access.airport.name})` : ""}, ${km(access.airport.km)}` },
+    access.station && { m: "train" as const, icon: TrainFront, text: `${access.station.name}${access.station.code ? ` (${access.station.code})` : ""}, ${km(access.station.km)}` },
+    access.bus_station && { m: "bus" as const, icon: Bus, text: `${access.bus_station.name}, ${km(access.bus_station.km)}` },
+  ].filter(Boolean) as { m: "flight" | "train" | "bus"; icon: typeof Plane; text: string }[];
+  return (
+    <div className="rounded-xl border p-3">
+      <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{end}</p>
+      <p className="mt-0.5 font-medium">{access.name}{access.state ? `, ${access.state}` : ""}</p>
+      <ul className="mt-2 space-y-1">
+        {rows.map(({ m, icon: Icon, text }) => (
+          <li key={m} className={cn("flex items-start gap-2 text-xs", own(m) ? "text-foreground/85" : "text-muted-foreground")}>
+            <Icon className={cn("mt-0.5 size-3.5 shrink-0", own(m) && "text-primary")} />
+            {text}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
