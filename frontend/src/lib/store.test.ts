@@ -119,12 +119,12 @@ describe("cities beyond the built-in list", () => {
   const airport = (code: string, city: string) => ({
     code, city, country: "IN", country_name: "India", airport: `${city} Airport`, latitude: 25, longitude: 82, size: 2, timezone: "Asia/Kolkata",
   });
-  const lookups = () => calls.filter((c) => c.path.startsWith("/airports/")).map((c) => c.path);
+  const lookups = () => calls.filter((c) => c.path.startsWith("/locations/")).map((c) => c.path);
 
   it("looks each unknown code up once and keeps the bare code when it can't be found", async () => {
-    routes["GET /airports/VNS"] = airport("VNS", "Varanasi");
+    routes["GET /locations/VNS"] = airport("VNS", "Varanasi");
     await actions.loadCities(["DEL", "VNS", "QQQ", "VNS"]); // DEL is built in; QQQ has no answer
-    expect(lookups()).toEqual(["/airports/VNS", "/airports/QQQ"]);
+    expect(lookups()).toEqual(["/locations/VNS", "/locations/QQQ"]);
     expect(cityName("VNS")).toBe("Varanasi");
     expect(cityOf("VNS")?.international).toBe(false);
     expect(cityName("QQQ")).toBe("QQQ");
@@ -137,7 +137,7 @@ describe("cities beyond the built-in list", () => {
       id: "1b1c2d3e-0000-4000-8000-000000000000", traveler_id: "trv", origin: "DEL", destination: "ATQ", dates: ["2026-12-22", "2026-12-25"],
       budget: 30000, preferences: {}, status: "DRAFT", failure_reason: null, created_by: "u",
     }];
-    routes["GET /airports/ATQ"] = airport("ATQ", "Amritsar");
+    routes["GET /locations/ATQ"] = airport("ATQ", "Amritsar");
     await actions.syncFromApi();
     const trip = getState().trips[0];
     await vi.waitFor(() => expect(routeLabel(trip)).toBe("New Delhi → Amritsar"));
