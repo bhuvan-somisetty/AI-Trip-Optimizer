@@ -32,7 +32,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from app.fares import estimate as estimate_fare, journey_range
 from app.ground import DEPART_HOURS, search_ground
 from app.routing import haversine_m
 from app.travel_data import AIRPORTS, TravelDataError, search_flights
@@ -261,12 +260,14 @@ def ground_edge(g: dict, frm: str, to: str) -> Edge | None:
         "fare": g.get("fare"),
         "currency": g.get("currency"),
         "fare_label": g.get("fare_label"),
+        # Indian trains: the official fare per class (app/rail_fares.py), or why there is none.
+        "class_fares": g.get("class_fares"),
+        "class_fares_label": g.get("class_fares_label"),
+        "class_fares_note": g.get("class_fares_note"),
         "link": g.get("link"),
         "link_label": g.get("link_label"),
         "source": g.get("source"),
         "data_label": g.get("data_label"),
-        # A typical range when the provider publishes no fare (Indian trains and buses only).
-        "fare_estimate": estimate_fare(g["kind"], frm, to) if g.get("fare") is None else None,
     }
     return Edge(frm, to, g["kind"], departure, arrival, g.get("fare"), g.get("currency"), leg["stops"], leg)
 
@@ -332,8 +333,6 @@ def journey(label: Label, number: int, travellers: int = 1) -> dict:
         "currency": label.currency if label.fare is not None else None,
         "fare_label": ("Sum of real fares" if travellers == 1 else f"Sum of real fares for {travellers} travellers")
         if label.fare is not None else "Not available: a leg has no published fare",
-        # Only when the fare is unknown: a range from distance-based estimates, never a price.
-        "fare_estimate": journey_range(legs, travellers) if label.fare is None else None,
         "legs": legs,
     }
 
@@ -479,6 +478,14 @@ def one_way(origin: str, destination: str, day: date, modes: set[str] | None, vi
     # via-city (so the comparison with going direct is visible), and the fastest of each mode.
     keep([a for a in arrived if len(a.edges) == 1 and a.transfers == 0 and a.fare is not None], by_fare)
     through = {v: keep([a for a in arrived if a.fare is not None and v in {e.to for e in a.edges[:-1]}], by_fare) for v in via}
+    # The whole chain the traveller named (Bengaluru -> Goa -> Bhubaneswar -> Jaipur), searched on its
+    # own legs only: on the full graph a label through just one of the cities can prune it on the way.
+    chain = None
+    if chosen and len(chosen) > 1:
+        hops = set(zip([origin, *chosen], [*chosen, destination]))
+        full = [a for a in pareto_search([e for e in edges if (e.frm, e.to) in hops], origin, destination)
+                if a.departure.date() == day and len(a.edges) == len(hops) and a.fare is not None]
+        chain = keep(full, by_fare)
     for mode in sorted(modes):
         keep([a for a in arrived if {e.mode for e in a.edges} == {mode}], by_time)
     kept.sort(key=lambda a: (a.fare if a.fare is not None else math.inf, a.arrival - a.departure))
@@ -489,6 +496,20 @@ def one_way(origin: str, destination: str, day: date, modes: set[str] | None, vi
     cheapest_direct = min((j for j in journeys if j["kind"] == "direct" and j["fare"] is not None),
                           key=lambda j: j["fare"], default=None)
     via_summary = []
+    if chosen and len(chosen) > 1:
+        names = " then ".join(AIRPORTS[c]["city"] for c in chosen)
+        row = {"city": {"code": "-".join(chosen), "name": names}, "journey": ids.get(id(chain)) if chain else None,
+               "fare": chain.fare * travellers if chain else None, "difference_from_direct": None}
+        if chain is None:
+            row["note"] = f"No priced connection through {names} fits the timetable on this day"
+        elif cheapest_direct and cheapest_direct["currency"] == chain.currency:
+            diff = chain.fare * travellers - cheapest_direct["fare"]
+            row["difference_from_direct"] = diff
+            row["note"] = (f"{_money(-diff, chain.currency)} cheaper than the cheapest direct option" if diff < 0
+                           else f"{_money(diff, chain.currency)} more than the cheapest direct option")
+        else:
+            row["note"] = f"Through {names}: {_money(chain.fare * travellers, chain.currency)}"
+        via_summary.append(row)
     for v in via:
         best = through[v]
         row = {"city": _place(v), "journey": ids.get(id(best)) if best else None,
