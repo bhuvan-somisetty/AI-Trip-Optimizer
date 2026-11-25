@@ -19,6 +19,13 @@ export type City = {
   lon: number;
   international: boolean;
   hotelIndex: number;
+  /** Indian towns from GET /locations: the state, which ways of travel serve the place itself,
+   *  and the nearest airport, railway station and bus station */
+  state?: string;
+  serves?: ("flight" | "train" | "bus")[];
+  airport?: { code: string; name: string | null; km: number };
+  station?: { name: string; code: string | null; km: number } | null;
+  busStation?: { name: string; km: number } | null;
 };
 
 export const cities: City[] = [
