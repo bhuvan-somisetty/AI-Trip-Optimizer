@@ -35,7 +35,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState, PageHeader, TripStatusBadge } from "@/components/app/common";
-import { actions, cityName, routeLabel, travelerNames, useStore } from "@/lib/store";
+import { actions, cityName, placeTag, routeLabel, travelerNames, useStore } from "@/lib/store";
 import { cities } from "@/lib/catalog";
 import { formatDateRange, formatInr, timeAgo } from "@/lib/format";
 import { toast } from "@/lib/toast";
@@ -400,14 +400,14 @@ export default function TripsPage() {
                   </div>
                   <div className="flex items-center gap-3 rounded-xl bg-muted/60 p-3">
                     <div className="text-center">
-                      <p className="text-lg font-bold">{t.origin}</p>
+                      <p className="max-w-[8rem] truncate text-lg font-bold">{placeTag(t.origin)}</p>
                       <p className="text-[11px] text-muted-foreground">{cityName(t.origin)}</p>
                     </div>
                     <div className="relative flex-1 border-t border-dashed border-muted-foreground/40">
                       <Plane className="absolute -top-2 left-1/2 size-4 -translate-x-1/2 rotate-45 bg-transparent text-primary" />
                     </div>
                     <div className="text-center">
-                      <p className="text-lg font-bold">{t.destination}</p>
+                      <p className="max-w-[8rem] truncate text-lg font-bold">{placeTag(t.destination)}</p>
                       <p className="text-[11px] text-muted-foreground">{cityName(t.destination)}</p>
                     </div>
                   </div>
