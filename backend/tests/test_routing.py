@@ -212,37 +212,10 @@ def test_route_of_another_users_trip_is_404(client, auth_headers, other_headers,
     assert client.get(f"/trips/{trip_id}/route", headers=auth_headers, params={"stops": 11}).status_code == 422
 
 
-# ---- estimated driving time ----------------------------------------------------------
-
-def test_speeds_come_from_the_speed_limit_or_the_road_class():
-    assert roads.speed_kmh({"highway": "residential", "maxspeed": "50"}) == 50
-    assert roads.speed_kmh({"maxspeed": "30 mph"}) == pytest.approx(48.27)
-    assert roads.speed_kmh({"highway": "primary_link"}) == roads.SPEEDS_KMH["primary"]
-    assert roads.speed_kmh({"highway": "residential", "maxspeed": "signals"}) == roads.SPEEDS_KMH["residential"]
-
-
-def test_time_weights_prefer_the_faster_road_over_the_shorter_one():
-    elements = [
-        {"type": "way", "id": 1, "nodes": [1, 2], "tags": {"highway": "residential"}},  # 1.1 km at 20 km/h
-        {"type": "way", "id": 2, "nodes": [1, 3, 2], "tags": {"highway": "primary", "maxspeed": "60"}},  # 1.7 km at 60
-        {"type": "node", "id": 1, "lat": 15.500, "lon": 73.820},
-        {"type": "node", "id": 2, "lat": 15.510, "lon": 73.820},
-        {"type": "node", "id": 3, "lat": 15.505, "lon": 73.826},
-    ]
-    built = roads.build_graph(elements)
-    _, by_distance = dijkstra(built.graph, 1)
-    _, by_time = dijkstra(built.time_graph, 1)
-    assert path_to(by_distance, 1, 2) == [1, 2]
-    assert path_to(by_time, 1, 2) == [1, 3, 2]
-
-
-def test_route_legs_carry_estimated_minutes_and_either_weight(client, db, auth_headers, trip_payload, mapped):
+def test_route_gives_real_road_metres_and_no_guessed_driving_time(client, db, auth_headers, trip_payload, mapped):
     trip_id = optimized_trip(client, auth_headers, trip_payload)
     place_hotel(db, trip_id)
     body = client.get(f"/trips/{trip_id}/route", headers=auth_headers).json()
-    assert body["weight"] == "distance" and all(leg["estimated_minutes"] > 0 for leg in body["legs"])
-    assert body["total_estimated_minutes"] == pytest.approx(sum(leg["estimated_minutes"] for leg in body["legs"]), abs=0.2)
-    assert "not live traffic" in body["time_label"]
-    timed = client.get(f"/trips/{trip_id}/route", params={"weight": "time"}, headers=auth_headers).json()
-    assert timed["weight"] == "time" and timed["notice"] is None and len(timed["legs"]) == 2
-    assert client.get(f"/trips/{trip_id}/route", params={"weight": "speed"}, headers=auth_headers).status_code == 422
+    assert body["notice"] is None and all(leg["road_m"] > 0 for leg in body["legs"])
+    assert all("estimated_minutes" not in leg for leg in body["legs"])
+    assert "total_estimated_minutes" not in body and "weight" not in body
