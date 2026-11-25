@@ -27,7 +27,7 @@ from sqlmodel import Session
 from app import config
 from app.models import CityPlaces
 from app.routing import haversine_m
-from app.travel_data import AIRPORTS, CITIES, TravelDataError, _request
+from app.travel_data import CITIES, PLACES, TravelDataError, _request
 
 OTM_URL = "https://api.opentripmap.com/0.1/en/places"
 SOURCE = "OpenTripMap (OpenStreetMap, Wikidata, Wikipedia)"
@@ -100,7 +100,7 @@ USER_AGENT = "AI-Trip-Optimizer/1.0 (https://github.com/bhuvan-somisetty/AI-Trip
 
 def city_centre(city: str) -> tuple[float, float]:
     name, country = CITIES[city]
-    airport = AIRPORTS.get(city)
+    airport = PLACES.get(city)  # the town itself for an Indian place, else its airport
     body = _otm("geoname", name=name, country=country)
     found = isinstance(body, dict) and body.get("lat") is not None and body.get("lon") is not None
     if found:
