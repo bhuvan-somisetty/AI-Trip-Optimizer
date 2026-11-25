@@ -92,42 +92,52 @@
   --sidebar-ring: #ff693d;
 }
 
+/* Obsidian: near-black ink, porcelain text (never pure white) and one tangerine accent, the default. */
 .dark {
-  --background: #0a1220;
+  --background: #06080d;
   --foreground: #ece6da;
-  --card: #101a2c;
+  --card: #0c1018;
   --card-foreground: #ece6da;
-  --popover: #101a2c;
+  --popover: #10151f;
   --popover-foreground: #ece6da;
-  --primary: #ff693d;
-  --primary-foreground: #0a1220;
-  --secondary: #172338;
+  --primary: #ff6a3d;
+  --primary-foreground: #170803;
+  --secondary: #121823;
   --secondary-foreground: #ece6da;
-  --muted: #162136;
-  --muted-foreground: #98a3b3;
-  --accent: #1b2940;
+  --muted: #111621;
+  --muted-foreground: #8d96a6;
+  --accent: #161c28;
   --accent-foreground: #ece6da;
   --destructive: #f0706a;
-  --border: rgba(236, 230, 218, 0.1);
-  --input: rgba(236, 230, 218, 0.16);
-  --ring: #ff693d;
-  --success: #6cc496;
+  --border: rgba(236, 230, 218, 0.075);
+  --input: rgba(236, 230, 218, 0.12);
+  --ring: #ff6a3d;
+  --success: #7fcf9f;
   --success-foreground: #06140d;
   --warning: #e6b04a;
   --warning-foreground: #1c1405;
-  --chart-1: #ff693d;
-  --chart-2: #e9f0f5;
-  --chart-3: #7ea4c4;
+  --chart-1: #ff6a3d;
+  --chart-2: #e6dfd1;
+  --chart-3: #6f8fb3;
   --chart-4: #9caf88;
   --chart-5: #c4a982;
-  --sidebar: #070d18;
-  --sidebar-foreground: #ece6da;
-  --sidebar-primary: #ff693d;
-  --sidebar-primary-foreground: #0a1220;
-  --sidebar-accent: rgba(255, 105, 61, 0.16);
-  --sidebar-accent-foreground: #ffb59b;
-  --sidebar-border: rgba(255, 255, 255, 0.07);
-  --sidebar-ring: #ff693d;
+  --sidebar: #05070b;
+  --sidebar-foreground: #ddd7cb;
+  --sidebar-primary: #ff6a3d;
+  --sidebar-primary-foreground: #170803;
+  --sidebar-accent: rgba(255, 106, 61, 0.11);
+  --sidebar-accent-foreground: #ffb79c;
+  --sidebar-border: rgba(236, 230, 218, 0.06);
+  --sidebar-ring: #ff6a3d;
+}
+
+/* Cards in the dark theme: a faint top light and a deep, soft shadow instead of a flat box. */
+.dark [data-slot="card"] {
+  background-image: linear-gradient(180deg, rgba(236, 230, 218, 0.028), rgba(236, 230, 218, 0) 38%);
+  box-shadow:
+    inset 0 1px 0 rgba(236, 230, 218, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 28px 56px -32px rgba(0, 0, 0, 0.9);
 }
 
 @layer base {
@@ -151,9 +161,9 @@
   }
   html {
     @apply font-sans;
-    /* Matches the intro/login dark panels so an unpainted frame during
-       client-side route swaps never flashes the default white canvas. */
-    background-color: #0a1220;
+    /* Matches the dark workspace so an unpainted frame during client-side
+       route swaps never flashes the default white canvas. */
+    background-color: #06080d;
   }
 }
 @layer utilities {
@@ -180,6 +190,28 @@
   .hairline {
     box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 9%, transparent);
   }
+  /* Hairline editorial serif (Instrument Serif) for greetings and headline numbers. */
+  .font-editorial {
+    font-family: var(--font-editorial), var(--font-heading), Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+  }
+  /* Frosted glass panel for use over a gradient. */
+  .glass {
+    background: linear-gradient(180deg, rgba(236, 230, 218, 0.075), rgba(236, 230, 218, 0.03));
+    box-shadow: inset 0 0 0 1px rgba(236, 230, 218, 0.1), inset 0 1px 0 rgba(236, 230, 218, 0.12);
+    backdrop-filter: blur(18px) saturate(140%);
+  }
+  /* The dashboard's cinematic hero: obsidian, a cobalt haze and a tangerine horizon glow. */
+  .hero-obsidian {
+    background:
+      radial-gradient(70% 90% at 88% 120%, rgba(255, 106, 61, 0.42), transparent 60%),
+      radial-gradient(55% 70% at 100% 0%, rgba(255, 150, 90, 0.10), transparent 60%),
+      radial-gradient(60% 80% at 0% 0%, rgba(21, 88, 201, 0.28), transparent 62%),
+      linear-gradient(165deg, #0b111c 0%, #070a11 55%, #0a0d14 100%);
+    background-size: 130% 130%;
+    animation: aurora-drift 32s ease-in-out infinite alternate;
+  }
   .font-display {
     font-family: var(--font-heading);
     font-optical-sizing: auto;
@@ -192,6 +224,24 @@
     background-image: linear-gradient(to right, color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px),
       linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 5%, transparent) 1px, transparent 1px);
     background-size: 28px 28px;
+  }
+}
+
+/* A plane gliding along the hero's flight arc, slowly. */
+@keyframes flight-glide {
+  from { offset-distance: 0%; opacity: 0; }
+  8% { opacity: 1; }
+  92% { opacity: 1; }
+  to { offset-distance: 100%; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-obsidian,
+  .aurora {
+    animation: none;
+  }
+  .flight-glide {
+    animation: none !important;
+    offset-distance: 62% !important;
   }
 }
 
