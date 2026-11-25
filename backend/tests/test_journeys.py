@@ -136,12 +136,8 @@ def test_trains_are_shown_but_never_called_cheapest(canned):
     trains = [j for j in result["journeys"] if j["modes"] == ["train"]]
     assert [t["legs"][0]["service"] for t in trains] == ["12245 Duronto Express"]  # the next-day one is left out
     assert trains[0]["fare"] is None and trains[0]["fare_label"].startswith("Not available")
-    # A typical range from the distance, for comparing with a budget: never a price.
-    estimate = trains[0]["fare_estimate"]
-    assert estimate["currency"] == "INR" and 0 < estimate["low"] < estimate["high"]
-    assert trains[0]["legs"][0]["fare_estimate"]["label"].startswith("Estimate from about")
-    flights = [j for j in result["journeys"] if j["modes"] == ["flight"]]
-    assert flights and all(j["fare_estimate"] is None for j in flights)
+    # Nothing is estimated: a train without a published fare has none.
+    assert "fare_estimate" not in trains[0] and "fare_estimate" not in trains[0]["legs"][0]
     assert all(p is None or "Duronto" not in p["reason"] for k, p in result["recommendations"].items() if k != "fastest")
 
 
@@ -194,6 +190,25 @@ def test_through_the_cities_the_traveller_names(canned, monkeypatch):
     best = next(j for j in result["journeys"] if j["id"] == pick["journey"])
     assert [v["code"] for v in best["via"]] == ["GOI", "BBI"] and best["fare"] == 18000
     assert "₹12,000 cheaper than the cheapest direct option, 8h 00m longer." in pick["reason"]
+
+
+def test_the_named_chain_is_always_listed(canned, monkeypatch):
+    # A cheap Bengaluru -> Bhubaneswar flight beats reaching Bhubaneswar through Goa, which used to
+    # drop the whole Goa -> Bhubaneswar chain before Jaipur. It is searched on its own legs now.
+    fares = {
+        ("BLR", "JAI"): [flight("BLR", "JAI", "06:00", "08:40", 30000, "6E101")],
+        ("BLR", "GOI"): [flight("BLR", "GOI", "05:30", "06:45", 3000, "6E201")],
+        ("GOI", "BBI"): [flight("GOI", "BBI", "09:00", "11:20", 5000, "6E501")],
+        ("BLR", "BBI"): [flight("BLR", "BBI", "06:00", "08:00", 2000, "6E701")],
+        ("BBI", "JAI"): [flight("BBI", "JAI", "14:00", "16:10", 10000, "6E601")],
+    }
+    monkeypatch.setattr(journeys, "search_flights", lambda frm, to, day, cabin_class=None: fares.get((frm, to), []))
+    result = find_journeys("BLR", "JAI", DAY, modes={"flight"}, via=["GOI", "BBI"])
+    chain = next(j for j in result["journeys"] if [v["code"] for v in j["via"]] == ["GOI", "BBI"])
+    assert chain["fare"] == 18000 and len(chain["legs"]) == 3
+    row = result["via_summary"][0]
+    assert row["city"] == {"code": "GOI-BBI", "name": "Goa then Bhubaneswar"} and row["journey"] == chain["id"]
+    assert row["note"] == "₹12,000 cheaper than the cheapest direct option"
 
 
 def test_named_cities_must_be_real_and_different(canned):
