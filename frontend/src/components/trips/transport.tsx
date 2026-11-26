@@ -14,6 +14,7 @@ import { formatDate, formatDuration, formatInr } from "@/lib/format";
 import { cityName, useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { ClassFares } from "@/components/journeys/class-fares";
+import { ReachRoutes } from "@/components/trips/reach-plan";
 
 type TripRoute = { from: string; to: string; date: string; back?: string | null };
 
@@ -145,6 +146,8 @@ export function TransportTab({ tripId, search }: { tripId: string; search?: Trip
               {[x.access.origin, x.access.destination].map((a, i) => a && <Reach key={i} end={i ? "Arrive at" : "Leave from"} access={a} />)}
             </div>
           )}
+          {!!x.routes?.length && <ReachRoutes routes={x.routes} to={cityName(x.destination)} />}
+          {x.last_leg && <LastLeg leg={x.last_leg} />}
           {search && (
             <div className="flex flex-wrap gap-2 pt-1">
               <Link href={searchHref(search, "all")} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
@@ -240,6 +243,34 @@ function Reach({ end, access }: { end: string; access: TransportAccess }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** The last stretch for a town without an airport: real buses and trains from the airport's city. */
+function LastLeg({ leg }: { leg: NonNullable<TransportResponse["last_leg"]> }) {
+  return (
+    <div className="rounded-xl border p-3">
+      <p className="text-sm font-semibold">
+        Last stretch: {leg.from_name} to {leg.to_name} ({leg.km} km)
+      </p>
+      <p className="text-xs text-muted-foreground">After the flight lands at {leg.from}, on the trip&apos;s first day (Google Maps).</p>
+      {leg.options.length ? (
+        <ul className="mt-2 space-y-1.5">
+          {leg.options.map((o) => (
+            <li key={o.id} className="flex items-center gap-2 text-xs">
+              {o.kind === "train" ? <TrainFront className="size-3.5 text-primary" /> : <Bus className="size-3.5 text-primary" />}
+              <span className="font-medium">{o.service ?? (o.kind === "train" ? "Train" : "Bus")}</span>
+              <span className="text-muted-foreground">
+                {o.departs ?? "-"} to {o.arrives ?? "-"}
+                {o.duration_minutes !== null && `, ${formatDuration(o.duration_minutes)}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">{leg.notice}</p>
+      )}
     </div>
   );
 }
