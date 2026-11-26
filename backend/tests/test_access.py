@@ -74,3 +74,64 @@ def test_last_leg_lists_real_buses_from_the_airport_city(monkeypatch):
 
     monkeypatch.setattr(explore, "search_ground", lambda *a: (_ for _ in ()).throw(ground.GroundUnavailable("no key")))
     assert explore.last_leg("mydukuru", date(2026, 12, 17))["notice"] == "no key"
+
+
+# ---- which way of travel suits the budget -------------------------------------------------
+
+class _Trip:
+    def __init__(self, budget, start=date(2026, 12, 17), end=date(2026, 12, 20)):
+        self.budget, self.start_date, self.end_date = budget, start, end
+
+
+class _Itinerary:
+    flight = {"price": 6000}
+    return_flight = {"price": 5500}
+    hotel = {"price_per_night": 3000}
+
+
+ROWS = [
+    {"mode": "Flight", "fare": 6000, "duration_minutes": 70},
+    {"mode": "Train", "fare": 900, "duration_minutes": 600},
+    {"mode": "Bus", "fare": None, "duration_minutes": 480},
+]
+
+
+def test_budget_pick_names_the_way_that_fits_after_the_hotel():
+    pick = explore.budget_pick(_Trip(25000), _Itinerary(), ROWS)
+    # 25,000 - 3 nights x 3,000 = 16,000 left; flight 11,500 there and back fits, train 1,800 fits.
+    assert pick["left_for_travel"] == 16000 and pick["hotel"] == 9000
+    assert {o["mode"]: o["cost"] for o in pick["options"]} == {"Flight": 11500, "Train": 1800}
+    assert pick["fits"] and pick["mode"] in ("Flight", "Train")
+    assert pick["message"].startswith("Your budget is ₹25,000. The hotel takes ₹9,000, leaving ₹16,000 for travel.")
+    assert "fits your budget" in pick["message"]
+
+
+def test_budget_pick_says_what_goes_over():
+    pick = explore.budget_pick(_Trip(15000), _Itinerary(), ROWS)  # 6,000 left for travel
+    assert pick["mode"] == "Train" and pick["fits"]
+    assert "the flight at ₹11,500 would go over" in pick["message"]
+
+
+def test_budget_pick_when_nothing_fits_names_the_cheapest():
+    pick = explore.budget_pick(_Trip(10000), _Itinerary(), ROWS)  # 1,000 left
+    assert pick["mode"] == "Train" and not pick["fits"]
+    assert "No way of travel fits" in pick["message"] and "₹800 over" in pick["message"]
+
+
+def test_budget_pick_without_any_fare_says_so():
+    pick = explore.budget_pick(_Trip(10000), None, [{"mode": "Bus", "fare": None, "duration_minutes": 400}])
+    assert pick["mode"] is None and not pick["fits"] and pick["options"] == []
+    assert pick["message"] == "Your budget is ₹10,000. None of these routes publishes a fare yet, so none can be checked against it."
+
+
+def test_flight_messages_name_the_airport_a_town_flies_from():
+    from app.pipeline import graph
+    assert graph.flown("BLR") == "BLR"
+    assert graph.flown("mydukuru") == "CDP (Kadapa airport, for Mydukuru)"
+    assert graph.flown("ayodhya") == "AYJ"
+
+
+def test_budget_pick_without_travel_times_takes_the_cheapest_that_fits():
+    rows = [{"mode": "Flight", "fare": 6000, "duration_minutes": None}, {"mode": "Train", "fare": 900, "duration_minutes": None}]
+    pick = explore.budget_pick(_Trip(25000), None, rows)
+    assert pick["mode"] == "Train" and pick["fits"] and pick["hotel"] == 0
