@@ -54,6 +54,14 @@ const CHEAPER_SEARCH: Record<Stops, { vias: number; viaDepth: 1 | 2; searches: n
  * marks every option within or over it, cheapest first. Every search is live and spends SerpApi
  * quota, so the cheaper-routes search only runs when the user presses its button.
  */
+// An airport ("BLR") or an Indian town ("mydukuru", "rampur-up"), as the trip form saves them.
+const TRIP_CODE = /^([A-Z]{3}|[a-z0-9][a-z0-9-]{1,39})$/;
+/** Airport codes in capitals; a town's code as it is (towns are lowercase, so "kadapa" stays "kadapa"). */
+function tripCode(value: string | null): string {
+  const v = (value ?? "").trim();
+  return /^[A-Za-z]{3}$/.test(v) && v !== v.toLowerCase() ? v.toUpperCase() : v;
+}
+
 export default function SearchPage() {
   const params = useSearchParams();
   const router = useRouter();
@@ -61,8 +69,8 @@ export default function SearchPage() {
   const today = toIsoDate(new Date());
 
   const q = {
-    from: (params.get("from") ?? "").toUpperCase(),
-    to: (params.get("to") ?? "").toUpperCase(),
+    from: tripCode(params.get("from")),
+    to: tripCode(params.get("to")),
     date: params.get("date") ?? toIsoDate(addDays(new Date(), 14)),
     back: params.get("return") ?? "",
     travellers: Math.min(9, Math.max(1, Number(params.get("travellers")) || 1)),
@@ -83,7 +91,7 @@ export default function SearchPage() {
   const via = ownVias.filter((c) => /^[A-Z]{3}$/.test(c) && c !== q.from && c !== q.to);
   const [results, setResults] = useState<Record<string, { data?: JourneysResponse; error?: string }>>({});
 
-  const ready = /^[A-Z]{3}$/.test(q.from) && /^[A-Z]{3}$/.test(q.to) && q.from !== q.to && q.date >= today;
+  const ready = TRIP_CODE.test(q.from) && TRIP_CODE.test(q.to) && q.from !== q.to && q.date >= today;
   const tabDef = TABS.find((t) => t.id === tab)!;
   const cheaper = tab === "cheaper";
   const modes = cheaper && cheaperBy === "flight" ? (["flight"] as JourneyMode[]) : tabDef.modes;
