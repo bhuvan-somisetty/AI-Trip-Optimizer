@@ -15,7 +15,7 @@ const LABEL = { flight: "By flight", train: "By train", bus: "By bus" } as const
  * (CDP) and a bus or cab for the last 24 km, by train to Kamalapuram or Kadapa Junction, or by a
  * direct bus. Compare all shows every way; Flights, Trains or Buses shows that one.
  */
-export function ReachRoutes({ routes, mode = "all", to, note }: { routes: AccessRoute[]; mode?: TravelChoice; to: string; note?: string }) {
+export function ReachRoutes({ routes, mode = "all", to, note, best }: { routes: AccessRoute[]; mode?: TravelChoice; to: string; note?: string; best?: AccessRoute["mode"] }) {
   const shown = routes.filter((r) => mode === "all" || r.mode === mode);
   if (!shown.length) return null;
   return (
@@ -28,7 +28,7 @@ export function ReachRoutes({ routes, mode = "all", to, note }: { routes: Access
       </div>
       <div className={cn("grid gap-3", shown.length > 1 && "lg:grid-cols-3")}>
         {shown.map((r) => (
-          <RouteCard key={r.mode} route={r} />
+          <RouteCard key={r.mode} route={r} best={r.mode === best} />
         ))}
       </div>
       {note && <p className="text-[11px] text-muted-foreground">{note}</p>}
@@ -36,15 +36,16 @@ export function ReachRoutes({ routes, mode = "all", to, note }: { routes: Access
   );
 }
 
-function RouteCard({ route: r }: { route: AccessRoute }) {
+function RouteCard({ route: r, best }: { route: AccessRoute; best?: boolean }) {
   const Icon = ICON[r.mode];
   return (
-    <div className="rounded-xl border bg-card p-3.5">
+    <div className={cn("rounded-xl border bg-card p-3.5", best && "border-primary/60 bg-primary/[0.06] ring-2 ring-primary/40")}>
       <div className="flex items-center gap-2">
         <span className="flex size-8 items-center justify-center rounded-lg bg-primary/12 text-primary">
           <Icon className="size-4" />
         </span>
         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{LABEL[r.mode]}</p>
+        {best && <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">Best for your budget</span>}
       </div>
       <p className="mt-2 text-sm font-medium">{r.title}</p>
       <ol className="mt-2.5 space-y-1.5">
