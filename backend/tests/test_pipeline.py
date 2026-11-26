@@ -236,11 +236,13 @@ def test_compose_uses_template_rationale_when_llm_reply_is_empty(monkeypatch):
     assert result["itinerary"]["rationale"].startswith("Chose flight ")
 
 
-def test_compose_fails_when_llm_invents_a_number(monkeypatch):
+def test_an_llm_that_invents_a_number_is_replaced_by_the_template(monkeypatch):
+    # The invented figure is never shown, and the trip isn't failed for it either.
     monkeypatch.setattr(graph, "get_llm", lambda: FakeLLM("The total comes to 123,456."))
     result = run_pipeline()
-    assert "itinerary" not in result
-    assert result["failure_reason"] == "Rationale used numbers not in the itinerary: 123456"
+    assert "failure_reason" not in result
+    rationale = result["itinerary"]["rationale"]
+    assert "123,456" not in rationale and rationale.startswith("Chose flight ")
 
 
 # ---- filter rules: time window, red-eye, airlines, nightly cap, amenities ----------
