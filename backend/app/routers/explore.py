@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session
 
-from app import google_places, roads, wikidata
+from app import google_places, photos, roads, wikidata
 from app.database import get_session
 from app.dishes import DishesUnavailable, local_dishes
 from app.ground import search_ground
@@ -20,7 +20,7 @@ from app.places import PlacesUnavailable, explore_city
 from app.routers.trips import get_owned_trip, saved_itinerary
 from app.journeys import DEFAULT_VALUE_OF_TIME
 from app.routing import haversine_m, path_to, road_matrix, visiting_order
-from app.travel_data import CITIES, PLACES, TravelDataError, country_name
+from app.travel_data import CITIES, PLACES, TravelDataError, country_name, place_label
 
 router = APIRouter(tags=["explore"])
 logger = logging.getLogger(__name__)
@@ -111,7 +111,9 @@ def destination_view(session: Session, city: str) -> dict:
     result["restaurants"], result["google_notice"] = google_places.enrich(result["restaurants"], result["city_name"])
     dishes, dishes_notice = dishes_for(session, city)
     around = around_city(city, result.get("centre"), result["attractions"])
-    return {**result, "dishes": dishes, "dishes_notice": dishes_notice, **around}
+    # Google Maps restaurants, and a real photo on every place card (saved with the city).
+    view = photos.apply(session, city, place_label(city) if city in PLACES else result["city_name"], {**result, **around})
+    return {**view, "dishes": dishes, "dishes_notice": dishes_notice}
 
 
 @router.get("/trips/{trip_id}/explore")
