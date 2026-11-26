@@ -18,6 +18,8 @@ from app.ground import search_ground
 from app.models import CityPlaces, Trip
 from app.places import PlacesUnavailable, explore_city
 from app.routers.trips import get_owned_trip, saved_itinerary
+from app.access import LAST_LEG_KM
+from app.access import plan as access_plan
 from app.journeys import DEFAULT_VALUE_OF_TIME
 from app.routing import haversine_m, path_to, road_matrix, visiting_order
 from app.travel_data import CITIES, PLACES, TravelDataError, country_name, place_label
@@ -287,4 +289,27 @@ def transport_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depe
     result["recommended"] = recommended(result["comparison"])
     if not options and result["notice"] is None:
         result["notice"] = "Google Maps lists no trains, buses or ferries for this route and day"
+    result["routes"] = access_plan(trip.origin, trip.destination)["routes"]
+    result["last_leg"] = last_leg(trip.destination, trip.start_date)
     return {**result, "trains": trains, "buses": buses, "ferries": ferries}
+
+
+def last_leg(destination: str, day) -> dict | None:
+    """For a town without an airport of its own: the real buses and trains from its nearest airport's
+    city to the town on the trip's first day (Google Maps transit), so the flight route is door to door."""
+    end = PLACES.get(destination)
+    if not end or end["kind"] != "place" or end["airport_km"] <= LAST_LEG_KM:
+        return None
+    airport = end["airport_code"]
+    out = {"from": airport, "from_name": CITIES.get(airport, (airport, ""))[0], "to": destination,
+           "to_name": end["city"], "km": end["airport_km"], "options": [], "notice": None}
+    try:
+        found = search_ground(airport, destination, day)
+    except TravelDataError as e:
+        return {**out, "notice": str(e)}
+    timed = sorted((o for o in found if o["kind"] in ("bus", "train") and o["duration_minutes"] is not None),
+                   key=lambda o: o["duration_minutes"])
+    out["options"] = timed[:3]
+    if not timed:
+        out["notice"] = f"Google Maps lists no bus or train from {out['from_name']} to {end['city']} that day: a cab covers the {end['airport_km']} km"
+    return out
