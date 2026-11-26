@@ -794,11 +794,20 @@ def compare_ways(state: PipelineState, flown: dict, by_road: dict, alt: dict) ->
                          f"Compared every way: no flight was found, so the {road_word} is booked")
     if not g_ok:
         return with_flag(flown, f"Compared every way: no {modes_text(alt['ground_mode'])} was found, so the flight is booked")
-    priced = all((leg or {}).get("price") is not None for leg in (g["flight"], g.get("return_flight")) if leg)
-    if not priced:
-        return with_flag(flown, f"Compared every way: the {road_word} doesn't publish its fare, so the priced flight is booked")
     priority = trip_priority(state["request"]["preferences"])
     rupee = lambda c: f"{float(c['total_cost']):,.0f}"  # noqa: E731
+    priced = all((leg or {}).get("price") is not None for leg in (g["flight"], g.get("return_flight")) if leg)
+    if not priced:
+        # The train or bus fare isn't published, so prices can't be compared. A priced flight that
+        # fits the budget is kept, unless the trip asks for the lowest cost; a flight over the budget
+        # never wins over a real train or bus: that one is booked, with its fare to check.
+        if f["within_budget"] and priority != "cheapest":
+            return with_flag(flown, f"Compared every way: the {road_word} doesn't publish its fare, so the priced flight "
+                                    f"that fits the budget is booked")
+        why = "is over the budget" if not f["within_budget"] else "is the known price, and the trip asks for the lowest cost"
+        return with_flag({**by_road, **road_state},
+                         f"Compared every way: the flight at {rupee(f)} in total {why}, so the {road_word} is booked; "
+                         f"its fare isn't published, so check it on the operator's site before booking")
     if f["within_budget"] != g["within_budget"]:
         road = g["within_budget"]
         reason = "fits the budget"
