@@ -12,7 +12,7 @@ from app.journeys import DEFAULT_VALUE_OF_TIME, DEFAULT_VIAS, MAX_TRAVELLERS, MA
 from app.models import Trip, User
 from app.routers.trips import get_owned_trip
 from app.security import get_current_user
-from app.travel_data import TravelDataError, flight_airport
+from app.travel_data import PLACES, TravelDataError
 
 router = APIRouter(tags=["journeys"])
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -31,7 +31,7 @@ def search(origin: str, destination: str, day: date, modes: str, vias: int, valu
     if day < datetime.now(IST).date():
         raise HTTPException(status_code=422, detail="The date is in the past")
     try:
-        return find_journeys(origin.upper(), destination.upper(), day, parse_modes(modes), vias, value_of_time,
+        return find_journeys(code(origin), code(destination), day, parse_modes(modes), vias, value_of_time,
                              travellers, via_depth, return_date, via.split(",") if via else None)
     except TravelDataError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -39,8 +39,8 @@ def search(origin: str, destination: str, day: date, modes: str, vias: int, valu
 
 @router.get("/journeys")
 def journeys(
-    origin: str = Query(min_length=3, max_length=3, description="Airport code, e.g. BBI"),
-    destination: str = Query(min_length=3, max_length=3, description="Airport code, e.g. BLR"),
+    origin: str = Query(min_length=2, max_length=40, description="Airport code (BBI) or Indian town (mydukuru)"),
+    destination: str = Query(min_length=2, max_length=40, description="Airport code (BLR) or Indian town (mydukuru)"),
     date: date = Query(description="Departure day, YYYY-MM-DD"),
     modes: str = Query(",".join(MODES), description="Any of flight, train, bus, ferry, comma-separated"),
     vias: int = Query(DEFAULT_VIAS, ge=0, le=MAX_VIAS, description="Via-cities to try (each costs about two searches)"),
@@ -54,7 +54,12 @@ def journeys(
     """Direct and connecting journeys on real departures, with the cheapest direct, cheapest
     connecting, fastest and best-value picks and why each was picked; the way back under
     "return" when return_date is given."""
-    return search(origin, destination, date, modes, vias, value_of_time, travellers, via_depth, return_date, via)
+    return search(code(origin), code(destination), date, modes, vias, value_of_time, travellers, via_depth, return_date, via)
+
+
+def code(value: str) -> str:
+    """An Indian town's code as given ("mydukuru"), an airport's in capitals ("blr" -> "BLR")."""
+    return value if value in PLACES else value.upper()
 
 
 @router.get("/trips/{trip_id}/journeys")
@@ -69,7 +74,7 @@ def trip_journeys(
     trip: Trip = Depends(get_owned_trip),
 ):
     """The same search for a saved trip's route and first day (and last day with include_return)."""
-    # A town without an airport (an Indian place code) is searched from its nearest airport.
-    return search(flight_airport(trip.origin), flight_airport(trip.destination), trip.start_date, modes, vias,
+    # A town is searched as itself: by road or rail directly, and by air through its nearest airport.
+    return search(trip.origin, trip.destination, trip.start_date, modes, vias,
                   value_of_time, travellers,
                   via_depth, trip.end_date if include_return else None, via)
