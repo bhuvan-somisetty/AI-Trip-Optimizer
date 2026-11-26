@@ -253,3 +253,41 @@ def test_trip_journeys_use_the_trips_route_and_day(client, auth_headers, other_h
     body = client.get(f"/trips/{trip['id']}/journeys", params={"vias": 0}, headers=auth_headers).json()
     assert body["date"] == "2026-12-12" and body["destination"]["code"] == "BLR"
     assert client.get(f"/trips/{trip['id']}/journeys", headers=other_headers).status_code == 404
+
+
+# ---- a town without an airport: fly to its nearest one, then the bus -----------------------
+
+def test_a_town_without_an_airport_is_reached_by_flight_to_its_nearest_one_then_bus(monkeypatch):
+    asked = []
+    bus = {**TRAIN, "kind": "bus", "service": "APSRTC Kadapa - Mydukuru", "operator": "APSRTC",
+           "from": {"name": "Kadapa", "code": None}, "to": {"name": "Mydukuru", "code": None},
+           "duration_minutes": 50, "fare": None, "departure_time": "2026-12-12T13:00:00",
+           "arrival_time": "2026-12-12T13:50:00"}
+    direct_bus = {**bus, "service": "Private sleeper Bengaluru - Mydukuru", "duration_minutes": 420,
+                  "departure_time": "2026-12-12T21:00:00", "arrival_time": "2026-12-13T04:00:00"}
+
+    def fake_flights(frm, to, day, cabin_class=None):
+        asked.append(("flight", frm, to))
+        return [flight("BLR", "CDP", "08:00", "09:10", 4335, "9I535")] if (frm, to) == ("BLR", "CDP") else []
+
+    def fake_ground(frm, to, day, hours):
+        asked.append(("ground", frm, to))
+        return {("CDP", "mydukuru"): [bus], ("BLR", "mydukuru"): [direct_bus]}.get((frm, to), [])
+
+    monkeypatch.setattr(journeys, "search_flights", fake_flights)
+    monkeypatch.setattr(journeys, "search_ground", fake_ground)
+    result = find_journeys("BLR", "mydukuru", DAY, vias=0)
+    # No flight is searched to the town itself, only to Kadapa (CDP); the bus is searched from there.
+    assert ("flight", "BLR", "mydukuru") not in asked and ("flight", "BLR", "CDP") in asked
+    assert ("ground", "CDP", "mydukuru") in asked and ("ground", "BLR", "mydukuru") in asked
+    chains = [[leg["mode"] for leg in j["legs"]] for j in result["journeys"]]
+    assert ["flight", "bus"] in chains and ["bus"] in chains
+    via = next(j for j in result["journeys"] if [leg["mode"] for leg in j["legs"]] == ["flight", "bus"])
+    assert via["via"][0]["code"] == "CDP"
+
+
+def test_journeys_endpoint_takes_a_town(client, auth_headers, monkeypatch):
+    monkeypatch.setattr(journeys, "search_flights", lambda *a, **k: [])
+    monkeypatch.setattr(journeys, "search_ground", lambda *a, **k: [])
+    r = client.get("/journeys", params={"origin": "blr", "destination": "mydukuru", "date": "2027-01-15"}, headers=auth_headers)
+    assert r.status_code == 200 and r.json()["journeys"] == []
