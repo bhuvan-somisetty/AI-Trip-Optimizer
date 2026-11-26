@@ -702,6 +702,17 @@ def with_policy_preferences(request: dict) -> dict:
     return {**preferences, "preferred_airlines": list(trip_preferred) + list(policy["preferred_airlines"])}
 
 
+def flown(code: str) -> str:
+    """The airport a flight leg uses, named for a town without one: "CDP (Kadapa airport, for Mydukuru)"."""
+    p = travel_data.PLACES.get(code)
+    if not p or p["kind"] != "place":
+        return code
+    airport = p["airport_code"]
+    if "flight" in p["serves"] and travel_data.CITIES.get(airport, ("",))[0] == p["city"]:
+        return airport
+    return f"{airport} ({travel_data.CITIES.get(airport, (airport,))[0]} airport, for {p['city']})"
+
+
 def airport_flags(request: dict) -> list[str]:
     """A town with no airport of its own is flown to and from its nearest one: say which, and how far."""
     flags = []
@@ -722,7 +733,7 @@ def check_node(state: PipelineState) -> dict:
     preferences = with_policy_preferences(request)
     policy = request.get("policy")
     nights = (request["end_date"] - request["start_date"]).days
-    route = f"{request['origin']} to {request['destination']} on {request['start_date'].isoformat()}"
+    route = f"{flown(request['origin'])} to {flown(request['destination'])} on {request['start_date'].isoformat()}"
     flags: list[str] = []
     rejected: list = []
     # Median price of the options that passed every rule, per line item, for savings.
@@ -793,7 +804,7 @@ def check_node(state: PipelineState) -> dict:
     # The return leg exists only when search_node looked for one, which every real run does.
     return_flight = None
     if "return_options" in state:
-        back = f"{request['destination']} to {request['origin']} on {request['end_date'].isoformat()}"
+        back = f"{flown(request['destination'])} to {flown(request['origin'])} on {request['end_date'].isoformat()}"
         no_return = "so the total has no return flight in it"
         returns = []
         for option in return_candidates:
