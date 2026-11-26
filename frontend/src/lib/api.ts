@@ -606,6 +606,18 @@ export type TransportResponse = {
   recommended?: { mode: "Flight" | "Train" | "Bus" | "Ferry"; reason: string } | null;
   /** how each end is reached: nearest airport, railway station and bus station */
   access?: { origin: TransportAccess | null; destination: TransportAccess | null };
+  /** the way of travel that suits the trip's budget after the hotel, in plain words */
+  budget_pick?: {
+    /** null when no route has a published fare to check against the budget */
+    mode: "Flight" | "Train" | "Bus" | "Ferry" | null;
+    fits: boolean;
+    budget: number;
+    hotel: number;
+    left_for_travel: number;
+    cost: number | null;
+    message: string;
+    options: { mode: "Flight" | "Train" | "Bus" | "Ferry"; cost: number; fits: boolean }[];
+  } | null;
   /** door-to-door routes for each way of travel; missing from an older API */
   routes?: AccessRoute[];
   /** a town without an airport: the real buses and trains from the airport's city to it */
