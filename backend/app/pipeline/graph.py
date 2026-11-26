@@ -1316,8 +1316,11 @@ def compose(state: PipelineState, use_llm: bool = True) -> dict:
     facts = rationale_facts(state)
     rationale, invented = write_rationale(facts) if use_llm else (template_rationale(facts), None)
     if invented:
-        # The guardrail fails the run instead of showing a figure the code didn't compute.
-        return {"failure_reason": invented}
+        # The guardrail never shows a figure the code didn't compute, and never fails the trip for
+        # it either: the LLM's sentence is dropped and the template rationale (computed numbers only)
+        # is used, as for an edited itinerary.
+        logger.warning("Rationale failed the guardrail, using the template: %s", invented)
+        rationale = template_rationale(facts)
 
     return {
         "itinerary": {
