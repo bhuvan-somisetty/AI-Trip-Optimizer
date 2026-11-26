@@ -42,6 +42,7 @@ import { toast } from "@/lib/toast";
 import type { CabinClass, Priority, TimeWindow, TransportMode, Trip, TripFilters } from "@/lib/types";
 import { metresBetween } from "@/lib/geo";
 import { ReachPlan } from "@/components/trips/reach-plan";
+import { BudgetAdvice } from "@/components/trips/budget-advice";
 import { festivalDuring } from "@/lib/festivals";
 import { cn } from "@/lib/utils";
 
@@ -700,6 +701,18 @@ export default function PlanningPage() {
                         </p>
                       )}
                     </Field>
+                    {apiMode && s.session?.token && d.budget >= 1000 && (
+                      <BudgetAdvice
+                        token={s.session.token}
+                        origin={d.origin}
+                        destination={d.destination}
+                        date={d.departDate}
+                        returnDate={effective.returnDate}
+                        modes={d.filters.modes ?? ["flight", "train", "bus"]}
+                        budget={d.budget}
+                        travellers={Math.max(1, d.travelerIds.length)}
+                      />
+                    )}
                     <Field label="What should the optimizer prioritize?">
                       <div className="grid gap-2 sm:grid-cols-2">
                         {(Object.keys(priorityLabel) as Priority[]).map((p) => (
