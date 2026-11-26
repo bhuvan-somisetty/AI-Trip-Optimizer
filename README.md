@@ -23,8 +23,8 @@ automatically, and every step lands in an **append-only audit trail**.
 ![Gemini](https://img.shields.io/badge/Gemini-8e75b2?style=flat-square&logo=googlegemini&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169e1?style=flat-square&logo=postgresql&logoColor=white)
 ![Neon](https://img.shields.io/badge/Neon-00e599?style=flat-square&logo=neon&logoColor=black)
-![pytest](https://img.shields.io/badge/pytest-388_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
-![Vitest](https://img.shields.io/badge/Vitest-103_passing-729b1b?style=flat-square&logo=vitest&logoColor=white)
+![pytest](https://img.shields.io/badge/pytest-402_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-109_passing-729b1b?style=flat-square&logo=vitest&logoColor=white)
 
 **[Open the app](https://ai-trip-optimizer.vercel.app)** · [Why](#-why-ai-trip-optimizer) · [How it works](#-how-it-works) · [Architecture](#-architecture) · [Tech stack](#-tech-stack) · [Run locally](#-run-it-locally) · [Status](#-project-status) · [Docs](docs/)
 
@@ -50,7 +50,7 @@ has to approve the spend, and someone will later ask *why this flight and not th
 
 <div align="center">
 
-| **9 / 9** | **37** | **388 + 103** | **11,818** | **4,007** | **15** |
+| **9 / 9** | **37** | **402 + 109** | **11,818** | **4,007** | **15** |
 | :---: | :---: | :---: | :---: | :---: | :---: |
 | PRD user stories built, stretch included | API endpoints | backend + frontend tests | Indian cities and towns | airports | migrations |
 
@@ -175,7 +175,7 @@ flowchart LR
 | **API** | FastAPI, SQLModel, Alembic, Pydantic, `python-jose` JWT + `passlib` bcrypt, `google-auth` |
 | **AI** | LangGraph (`search → check → compose`), `langchain-openai` against Gemini's OpenAI-compatible endpoint (`gemini-3.5-flash-lite`) |
 | **Data** | PostgreSQL 16 (Neon in production), Google Flights, Google Hotels and Google Maps transit via SerpApi, Travelpayouts fares as the flight fallback, OurAirports and OpenStreetMap (bundled), Indian Railways fare tables, Wikidata and OpenTripMap |
-| **Quality** | pytest (388 tests, no network or keys needed), Vitest + Testing Library (103 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
+| **Quality** | pytest (402 tests, no network or keys needed), Vitest + Testing Library (109 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
 | **Delivery** | Frontend and API as two Vercel projects (API in `sin1`), Neon Postgres, Docker Compose for local dev |
 
 ## ✦ Architecture
@@ -247,7 +247,7 @@ Every key except `JWT_SECRET` and `DATABASE_URL` switches on one feature and can
 
 | Command | What it does |
 | :--- | :--- |
-| `cd backend && python -m pytest -q` | 388 backend tests on in-memory SQLite, with fixture fares and no LLM |
+| `cd backend && python -m pytest -q` | 402 backend tests on in-memory SQLite, with fixture fares and no LLM |
 | `cd frontend && npm run lint && npm test && npm run build` | the frontend checks CI runs (Vitest in jsdom, no backend needed) |
 | `cd backend && alembic upgrade head` | apply migrations when running the API outside Docker |
 
@@ -269,7 +269,7 @@ AI-Trip-Optimizer/
 │   │   └── models.py         # 8 SQLModel tables
 │   ├── alembic/versions/     # 15 migrations
 │   ├── scripts/              # builds the airport and Indian place data
-│   └── tests/                # 388 tests, fixture fares in tests/fixtures
+│   └── tests/                # 402 tests, fixture fares in tests/fixtures
 ├── frontend/                 # Next.js 16 app
 │   └── src/
 │       ├── app/              # dashboard, planning, trips, analytics, audit, travelers, settings
