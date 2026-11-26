@@ -60,6 +60,18 @@ def offline_search(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def offline_photos(monkeypatch):
+    # Photo lookups (Wikimedia Commons, Google Maps) never reach the network in tests: they fail,
+    # so places keep what they had. tests/test_photos.py answers them from its own tables.
+    from app import photos
+
+    def offline(*args, **kwargs):
+        raise travel_data.TravelDataError("offline in tests")
+
+    monkeypatch.setattr(photos, "_request", offline)
+
+
+@pytest.fixture(autouse=True)
 def offline_wikidata(monkeypatch):
     # Day trips and famous hotels come from Wikidata's public query service; tests never call it.
     # Tests of app/wikidata.py patch _query with canned rows.
