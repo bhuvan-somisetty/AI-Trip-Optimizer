@@ -41,6 +41,7 @@ import { addDays, formatDateRange, formatInr, initials, toIsoDate } from "@/lib/
 import { toast } from "@/lib/toast";
 import type { CabinClass, Priority, TimeWindow, TransportMode, Trip, TripFilters } from "@/lib/types";
 import { metresBetween } from "@/lib/geo";
+import { ReachPlan } from "@/components/trips/reach-plan";
 import { festivalDuring } from "@/lib/festivals";
 import { cn } from "@/lib/utils";
 
@@ -531,6 +532,7 @@ export default function PlanningPage() {
                         ]}
                       />
                     </Field>
+                    {apiMode && <ReachPlan origin={d.origin} destination={d.destination} mode={choiceOf(d.filters.modes)} />}
                     {shortTrip && (
                       <div className="flex gap-3 rounded-xl border border-primary/30 bg-primary/5 p-3 text-sm">
                         <Info className="mt-0.5 size-4 shrink-0 text-primary" />
