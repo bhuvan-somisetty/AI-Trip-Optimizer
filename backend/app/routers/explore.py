@@ -287,11 +287,70 @@ def transport_trip(trip: Trip = Depends(get_owned_trip), session: Session = Depe
         for mode, o in rows if o
     ]
     result["recommended"] = recommended(result["comparison"])
+    result["budget_pick"] = budget_pick(trip, itinerary, result["comparison"])
     if not options and result["notice"] is None:
         result["notice"] = "Google Maps lists no trains, buses or ferries for this route and day"
     result["routes"] = access_plan(trip.origin, trip.destination)["routes"]
     result["last_leg"] = last_leg(trip.destination, trip.start_date)
     return {**result, "trains": trains, "buses": buses, "ferries": ferries}
+
+
+MODE_WORDS = {"Flight": "flight", "Train": "train", "Bus": "bus", "Ferry": "ferry"}
+
+
+def budget_pick(trip: Trip, itinerary, rows: list[dict]) -> dict | None:
+    """Which way of travel suits the trip's budget, in plain words.
+
+    What is left for travel is the budget minus the chosen hotel's stay (nights x its nightly
+    price). Each way's cost is its known fare there and back (the optimizer's own outbound and
+    return flight for the flight row), per traveller. Among the ways that fit, the best balance
+    of fare and time is picked (as in `recommended`); when none fits, the cheapest is named with
+    how far over it goes. Ways without a published fare are not compared."""
+    budget = float(trip.budget)
+    nights = (trip.end_date - trip.start_date).days
+    stay = (itinerary.hotel or {}) if itinerary else {}
+    hotel = float(stay["price_per_night"]) * nights if stay.get("price_per_night") is not None and nights > 0 else 0.0
+    left = budget - hotel
+    ways = 2 if trip.end_date > trip.start_date else 1
+    priced = []
+    for row in rows:
+        if row["fare"] is None:
+            continue
+        cost = float(row["fare"]) * ways
+        if row["mode"] == "Flight" and itinerary:
+            back = (itinerary.return_flight or {}).get("price")
+            cost = float(itinerary.flight.get("price") or row["fare"]) + (float(back) if back is not None and ways == 2 else 0.0)
+        priced.append({**row, "cost": round(cost)})
+    money = lambda n: f"₹{n:,.0f}"  # noqa: E731
+    trip_words = "there and back" if ways == 2 else "one way"
+    head = f"Your budget is {money(budget)}"
+    head += f". The hotel takes {money(hotel)}, leaving {money(left)} for travel" if hotel else ""
+    if not priced:
+        return {"mode": None, "fits": False, "budget": round(budget), "hotel": round(hotel), "left_for_travel": round(left),
+                "cost": None, "options": [],
+                "message": f"{head}. None of these routes publishes a fare yet, so none can be checked against it."}
+    fits = [p for p in priced if p["cost"] <= left]
+    if fits:
+        best = recommended(fits)  # None when no fitting row has a travel time: then the cheapest
+        pick = next(p for p in fits if p["mode"] == best["mode"]) if best else min(fits, key=lambda p: p["cost"])
+        over = [p for p in priced if p["cost"] > left]
+        tail = "".join(f"; the {MODE_WORDS[p['mode']]} at {money(p['cost'])} would go over" for p in over)
+        message = (f"{head}. The {MODE_WORDS[pick['mode']]} costs {money(pick['cost'])} {trip_words} per traveller "
+                   f"and fits your budget{tail}.")
+    else:
+        pick = min(priced, key=lambda p: p["cost"])
+        message = (f"{head}. No way of travel fits: the cheapest is the {MODE_WORDS[pick['mode']]} at "
+                   f"{money(pick['cost'])} {trip_words} per traveller, {money(pick['cost'] - left)} over.")
+    return {
+        "mode": pick["mode"],
+        "fits": bool(fits),
+        "budget": round(budget),
+        "hotel": round(hotel),
+        "left_for_travel": round(left),
+        "cost": pick["cost"],
+        "message": message,
+        "options": [{"mode": p["mode"], "cost": p["cost"], "fits": p["cost"] <= left} for p in priced],
+    }
 
 
 def last_leg(destination: str, day) -> dict | None:
