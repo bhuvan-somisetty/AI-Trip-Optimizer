@@ -606,6 +606,10 @@ export type TransportResponse = {
   recommended?: { mode: "Flight" | "Train" | "Bus" | "Ferry"; reason: string } | null;
   /** how each end is reached: nearest airport, railway station and bus station */
   access?: { origin: TransportAccess | null; destination: TransportAccess | null };
+  /** door-to-door routes for each way of travel; missing from an older API */
+  routes?: AccessRoute[];
+  /** a town without an airport: the real buses and trains from the airport's city to it */
+  last_leg?: { from: string; from_name: string; to: string; to_name: string; km: number; options: GroundOptionResponse[]; notice: string | null } | null;
   notice: string | null;
 };
 
@@ -678,6 +682,32 @@ export type LocationSearchResponse = { locations: LocationResponse[]; source: st
 /** Trip ends for a way of travel: flight, train, bus, or all (every Indian town plus airports abroad). */
 export const searchLocations = (q: string, mode: "flight" | "train" | "bus" | "all", limit = 10) =>
   call<LocationSearchResponse>("GET", `/locations?q=${encodeURIComponent(q)}&mode=${mode}&limit=${limit}`, { timeoutMs: 8000 });
+
+/** One stretch of a door-to-door route; "road" is the last stretch by bus or cab, in straight-line km. */
+export type RouteLeg = { mode: "flight" | "train" | "bus" | "road"; from: string; to: string; km?: number; note?: string; airport?: string };
+
+/** A way to get from one trip end to the other: fly to the nearest airport then bus or cab, etc. */
+export type AccessRoute = {
+  mode: "flight" | "train" | "bus";
+  title: string;
+  legs: RouteLeg[];
+  /** true when this way of travel reaches the town itself (its own airport, station or bus stand) */
+  own: boolean;
+  /** train routes: stations a traveller could use near the destination, nearest first */
+  stations?: { name: string; code: string | null; town: string; km: number }[];
+};
+
+export type AccessResponse = {
+  origin: { code: string; name: string; state: string | null };
+  destination: { code: string; name: string; state: string | null };
+  routes: AccessRoute[];
+  note: string;
+  source: string;
+};
+
+/** Door-to-door routes for each way of travel, from the bundled place data (instant, no search). */
+export const getAccess = (origin: string, destination: string) =>
+  call<AccessResponse>("GET", `/access?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`, { timeoutMs: 8000 });
 
 /** One trip end by its code ("BLR" or "ayodhya"); ApiError 404 when the code is unknown. */
 export const getLocation = (code: string) => call<LocationResponse>("GET", `/locations/${encodeURIComponent(code)}`, { timeoutMs: 8000 });
