@@ -73,10 +73,18 @@ def test_preview_of_a_lower_budget_flags_the_overrun(client, auth_headers, trip_
 
 def test_preview_that_cannot_build_an_itinerary_says_why(client, auth_headers, trip_payload):
     trip_id = optimized_trip(client, auth_headers, trip_payload)
-    body = preview(client, auth_headers, trip_id, min_hotel_rating=5).json()
+    # No flight in premium economy: nothing to travel by, so no itinerary (a stay alone never fails).
+    body = preview(client, auth_headers, trip_id, cabin_class="premium_economy").json()
     assert body["preview"]["status"] == "OPTIMIZATION_FAILED"
     assert body["preview"]["itinerary"] is None
-    assert "No hotel in DEL meets the trip's preferences" in body["preview"]["reason"]
+    assert "meets the trip's preferences" in body["preview"]["reason"]
+
+
+def test_preview_with_no_hotel_meeting_the_rating_still_builds_the_trip(client, auth_headers, trip_payload):
+    trip_id = optimized_trip(client, auth_headers, trip_payload)
+    body = preview(client, auth_headers, trip_id, min_hotel_rating=5).json()
+    assert body["preview"]["itinerary"] is not None
+    assert any("meets every preference, so the cheapest one found is booked" in f for f in body["preview"]["itinerary"]["flags"])
 
 
 def test_preview_needs_a_change(client, auth_headers, trip_payload):
@@ -135,10 +143,10 @@ def test_apply_drops_hand_picked_edits(client, auth_headers, trip_payload):
 
 def test_apply_refuses_a_change_with_no_itinerary(client, auth_headers, trip_payload):
     trip_id = optimized_trip(client, auth_headers, trip_payload)
-    response = apply(client, auth_headers, trip_id, min_hotel_rating=5)
+    response = apply(client, auth_headers, trip_id, cabin_class="premium_economy")
     assert response.status_code == 400
     assert response.json()["detail"].startswith("This change can't build an itinerary, so nothing was saved")
-    assert client.get(f"/trips/{trip_id}", headers=auth_headers).json()["preferences"].get("min_hotel_rating") is None
+    assert client.get(f"/trips/{trip_id}", headers=auth_headers).json()["preferences"].get("cabin_class") != "premium_economy"
 
 
 def test_decided_trip_cannot_be_previewed(client, auth_headers, trip_payload):
