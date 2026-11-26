@@ -77,7 +77,9 @@ export function fromTrip(t: TripInput, createdAt: string): TripBody {
       purpose: t.purpose,
       rooms: t.rooms,
       notes: t.notes,
-      filters: t.filters,
+      // No mode picked means Compare all on the form, so it is sent as all three: the optimizer
+      // then weighs trains and buses against the flights instead of searching flights only.
+      filters: { ...t.filters, modes: t.filters.modes?.length ? t.filters.modes : ["flight", "train", "bus"] },
       createdAt,
       // Top-level keys the backend optimizer reads (backend/app/pipeline/graph.py).
       cabin_class: t.filters.cabin,

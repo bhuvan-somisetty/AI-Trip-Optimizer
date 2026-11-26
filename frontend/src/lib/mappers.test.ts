@@ -199,6 +199,13 @@ describe("trip form mapping", () => {
     expect((body.preferences.filters as { flexibleDays: number }).flexibleDays).toBe(2);
   });
 
+  it("sends Compare all as all three modes when none was picked, so the optimizer compares them", () => {
+    const body = fromTrip(input, "");
+    expect((body.preferences.filters as { modes: string[] }).modes).toEqual(["flight", "train", "bus"]);
+    const byTrain = fromTrip({ ...input, filters: { ...input.filters, modes: ["train"] } }, "");
+    expect((byTrain.preferences.filters as { modes: string[] }).modes).toEqual(["train"]);
+  });
+
   it("refuses a trip with no traveler or no return date", () => {
     expect(() => fromTrip({ ...input, travelerIds: [] }, "")).toThrow("Select a traveler");
     expect(() => fromTrip({ ...input, returnDate: null }, "")).toThrow("A return date is required");
