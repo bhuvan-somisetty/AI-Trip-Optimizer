@@ -34,7 +34,7 @@ from datetime import date, datetime
 
 from app.ground import DEPART_HOURS, search_ground
 from app.routing import haversine_m
-from app.travel_data import AIRPORTS, TravelDataError, search_flights
+from app.travel_data import AIRPORTS, PLACES, TravelDataError, search_flights
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +183,7 @@ def via_cities(origin: str, destination: str, limit: int) -> list[str]:
     Jaipur tries Hyderabad, Mumbai and Delhi."""
     if limit <= 0:
         return []
-    a, b = AIRPORTS[origin], AIRPORTS[destination]
+    a, b = PLACES[origin], PLACES[destination]
     straight = haversine_m(a["latitude"], a["longitude"], b["latitude"], b["longitude"])
     found = []
     for code, v in AIRPORTS.items():
@@ -209,7 +209,25 @@ def via_cities(origin: str, destination: str, limit: int) -> list[str]:
 
 
 def _place(code: str) -> dict:
-    return {"code": code, "name": AIRPORTS[code]["city"]}
+    return {"code": code, "name": PLACES[code]["city"]}
+
+
+def has_airport(code: str) -> bool:
+    """An airport, or an Indian town with an airport of its own (a few km away at most)."""
+    place = PLACES.get(code)
+    return code in AIRPORTS or bool(place and "flight" in place["serves"])
+
+
+def access_vias(origin: str, destination: str) -> list[str]:
+    """The nearest airport of an end that has none of its own (Mydukuru: Kadapa, CDP), so a flight
+    there and a bus or train for the last stretch is searched like any other connection."""
+    out = []
+    for code in (origin, destination):
+        place = PLACES.get(code)
+        airport = place and place.get("airport_code")
+        if place and not has_airport(code) and airport and airport not in (origin, destination) and airport not in out:
+            out.append(airport)
+    return out
 
 
 def flight_edge(f: dict, frm: str, to: str) -> Edge | None:
@@ -273,14 +291,14 @@ def ground_edge(g: dict, frm: str, to: str) -> Edge | None:
 
 
 def _distance_km(a: str, b: str) -> float:
-    x, y = AIRPORTS[a], AIRPORTS[b]
+    x, y = PLACES[a], PLACES[b]
     return haversine_m(x["latitude"], x["longitude"], y["latitude"], y["longitude"]) / 1000
 
 
 def search_leg(frm: str, to: str, day: date, modes: set[str], hours: tuple[int, ...]) -> tuple[list[Edge], list[dict]]:
     """All departures for one leg, and what was searched (one SerpApi search per source and hour)."""
     edges, searched = [], []
-    if "flight" in modes:
+    if "flight" in modes and has_airport(frm) and has_airport(to):  # a town with no airport is reached by road
         try:
             flights = search_flights(frm, to, day)
             edges += [e for e in (flight_edge(f, frm, to) for f in flights) if e]
@@ -440,11 +458,13 @@ def one_way(origin: str, destination: str, day: date, modes: set[str] | None, vi
             value_of_time: float, travellers: int, via_depth: int, chosen: list[str] | None = None) -> dict:
     modes = set(modes or MODES)
     travellers = max(1, min(travellers, MAX_TRAVELLERS))
-    if origin not in AIRPORTS or destination not in AIRPORTS:
-        raise TravelDataError("Journeys can only be searched between known airport cities")
-    if AIRPORTS[origin]["city"] == AIRPORTS[destination]["city"]:
+    if origin not in PLACES or destination not in PLACES:
+        raise TravelDataError("Journeys can only be searched between known cities and towns")
+    if PLACES[origin]["city"] == PLACES[destination]["city"]:
         raise TravelDataError("The origin and destination are the same city")
     via = chosen or via_cities(origin, destination, max(0, min(vias, MAX_VIAS)))
+    # A town without an airport: its nearest airport is always tried, for fly-then-bus journeys.
+    via = [*access_vias(origin, destination), *[v for v in via if v not in access_vias(origin, destination)]]
     plan = [(origin, destination, DEPART_HOURS)]
     for v in via:
         plan += [(origin, v, FIRST_LEG_HOURS), (v, destination, SECOND_LEG_HOURS)]
@@ -497,7 +517,7 @@ def one_way(origin: str, destination: str, day: date, modes: set[str] | None, vi
                           key=lambda j: j["fare"], default=None)
     via_summary = []
     if chosen and len(chosen) > 1:
-        names = " then ".join(AIRPORTS[c]["city"] for c in chosen)
+        names = " then ".join(PLACES[c]["city"] for c in chosen)
         row = {"city": {"code": "-".join(chosen), "name": names}, "journey": ids.get(id(chain)) if chain else None,
                "fare": chain.fare * travellers if chain else None, "difference_from_direct": None}
         if chain is None:
@@ -515,14 +535,14 @@ def one_way(origin: str, destination: str, day: date, modes: set[str] | None, vi
         row = {"city": _place(v), "journey": ids.get(id(best)) if best else None,
                "fare": best.fare * travellers if best else None, "difference_from_direct": None}
         if best is None:
-            row["note"] = f"No priced connection through {AIRPORTS[v]['city']} fits the timetable on this day"
+            row["note"] = f"No priced connection through {PLACES[v]['city']} fits the timetable on this day"
         elif cheapest_direct and cheapest_direct["currency"] == best.currency:
             diff = best.fare * travellers - cheapest_direct["fare"]
             row["difference_from_direct"] = diff
             row["note"] = (f"{_money(-diff, best.currency)} cheaper than the cheapest direct option" if diff < 0
                            else f"{_money(diff, best.currency)} more than the cheapest direct option")
         else:
-            row["note"] = f"Cheapest through {AIRPORTS[v]['city']}: {_money(best.fare * travellers, best.currency)}"
+            row["note"] = f"Cheapest through {PLACES[v]['city']}: {_money(best.fare * travellers, best.currency)}"
         via_summary.append(row)
 
     notice = None
