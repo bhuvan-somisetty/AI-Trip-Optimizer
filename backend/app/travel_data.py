@@ -53,6 +53,7 @@ CITY_NAMES = {
     "BKK": "Bangkok", "ICN": "Seoul", "KIX": "Osaka", "PVG": "Shanghai", "PEK": "Beijing",
     "PKX": "Beijing", "DWC": "Dubai", "IAD": "Washington", "DCA": "Washington",
     "AYJ": "Ayodhya",  # OurAirports still files it under Faizabad, renamed Ayodhya in 2018
+    "SAG": "Shirdi",  # in Kakadi village, built for Shirdi
 }
 
 
