@@ -70,12 +70,35 @@ def test_comfort_keeps_the_flight(client, auth_headers, trip_payload, monkeypatc
     assert any("the flight is booked (comfort priority)" in f for f in it["flags"])
 
 
-def test_a_bus_without_a_published_fare_never_beats_a_priced_flight(client, auth_headers, trip_payload, monkeypatch):
+def unpriced_bus(monkeypatch):
     road(monkeypatch, [option("KSRTC Airavat", "2026-11-01", "18:00", "2026-11-03T06:00:00", 2160, kind="bus")],
          [option("KSRTC Airavat", "2026-11-05", "18:00", "2026-11-07T06:00:00", 2160, kind="bus")])
-    it = compare_all(client, auth_headers, trip_payload, priority="cheapest")["itinerary"]
+
+
+def test_a_priced_flight_within_budget_beats_a_bus_without_a_fare(client, auth_headers, trip_payload, monkeypatch):
+    unpriced_bus(monkeypatch)
+    it = compare_all(client, auth_headers, trip_payload, priority="balanced")["itinerary"]
     assert it["flight"].get("mode") not in ("train", "bus")
-    assert any("doesn't publish its fare, so the priced flight is booked" in f for f in it["flags"])
+    assert any("doesn't publish its fare, so the priced flight that fits the budget is booked" in f for f in it["flags"])
+
+
+def test_lowest_cost_books_the_bus_even_without_a_published_fare(client, auth_headers, trip_payload, monkeypatch):
+    unpriced_bus(monkeypatch)
+    body = compare_all(client, auth_headers, trip_payload, priority="cheapest")
+    assert body["status"] == "OPTIMIZED", body.get("reason")
+    it = body["itinerary"]
+    assert it["flight"]["mode"] == "bus"
+    assert any("the trip asks for the lowest cost, so the bus is booked; its fare isn't published" in f for f in it["flags"])
+
+
+def test_a_flight_over_budget_never_beats_a_real_bus(client, auth_headers, trip_payload, monkeypatch):
+    # Varkala: the flight was 14,958 against a 7,000 budget, and the trip failed instead of booking the train.
+    unpriced_bus(monkeypatch)
+    body = compare_all(client, auth_headers, trip_payload, priority="balanced", budget=7000)
+    assert body["status"] == "OPTIMIZED", body.get("reason")
+    it = body["itinerary"]
+    assert it["flight"]["mode"] == "bus" and it["hotel"] is not None  # the whole budget is left for the stay
+    assert any("is over the budget, so the bus is booked" in f for f in it["flags"])
 
 
 def test_nothing_found_anywhere_still_fails_and_says_why(client, auth_headers, trip_payload, monkeypatch):
