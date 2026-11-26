@@ -55,6 +55,27 @@ def search_node(state: PipelineState) -> dict:
     by_ground = ground_modes(request["preferences"])
     if by_ground:
         return search_ground_trip(request, by_ground)
+    found = search_flights_trip(request)
+    also = compared_ground_modes(request["preferences"])
+    if also:
+        # Compare all: trains and buses are searched too, and check_node books the better way.
+        found["alt_ground"] = search_ground_trip(request, also, hotels=False)
+        if "hotel_options" not in found or (found.get("search_error") and not found["hotel_options"]):
+            search_hotels_into(found, request)
+    return found
+
+
+def compared_ground_modes(preferences: dict) -> list[str] | None:
+    """Compare all: the train and bus modes a trip that also allows flights wants weighed against them."""
+    filters = preferences.get("filters")
+    modes = filters.get("modes") if isinstance(filters, dict) else None
+    if not isinstance(modes, list) or "flight" not in modes:
+        return None
+    return [m for m in GROUND_MODES if m in modes] or None
+
+
+def search_flights_trip(request: dict) -> dict:
+    """search_node for flights: both ways (with flexible days), and hotels."""
     cabin = request["preferences"].get("cabin_class")
     flex = flexible_days(request["preferences"])
     found: dict = {"flight_options": [], "hotel_options": []}
@@ -128,8 +149,9 @@ def search_hotels_into(found: dict, request: dict) -> None:
             found["search_error"] = str(e)
 
 
-def search_ground_trip(request: dict, modes: list[str]) -> dict:
-    """search_node for a train or bus trip: the day's departures both ways, and hotels."""
+def search_ground_trip(request: dict, modes: list[str], hotels: bool = True) -> dict:
+    """search_node for a train or bus trip: the day's departures both ways, and hotels (unless
+    `hotels` is False: Compare all searches them once, with the flights)."""
     found: dict = {"flight_options": [], "hotel_options": [], "ground_mode": modes,
                    "ground_options": [], "ground_return_options": []}
     try:
@@ -147,7 +169,8 @@ def search_ground_trip(request: dict, modes: list[str]) -> dict:
         ]
     except travel_data.TravelDataError as e:
         found["return_unavailable"] = f"The search for the way back failed: {e}"
-    search_hotels_into(found, request)
+    if hotels:
+        search_hotels_into(found, request)
     return found
 
 
@@ -725,6 +748,79 @@ def airport_flags(request: dict) -> list[str]:
 
 
 def check_node(state: PipelineState) -> dict:
+    """Checks the searched options; for Compare all, both the flights and the trains and buses,
+    then keeps whichever way suits the budget and the trip's priority (compare_ways)."""
+    if state.get("ground_mode"):
+        return ground_check(state)
+    flown = flight_check(state)
+    alt = state.get("alt_ground")
+    if not alt:
+        return flown
+    # The hotels were searched once, with the flights: keep them, not the train search's empty list.
+    by_road_state = {**{k: v for k, v in state.items() if k not in ("search_error", "alt_ground", "return_unavailable")},
+                     **{k: v for k, v in alt.items() if k not in ("hotel_options", "flight_options")}}
+    return compare_ways(state, flown, ground_check(by_road_state), alt)
+
+
+VALUE_OF_TIME = 300  # rupees an hour of travel is worth, as in the journeys search's "best value"
+
+
+def _travel_minutes(check: dict) -> float | None:
+    out = check.get("flight") or {}
+    minutes = out.get("duration_minutes")
+    return float(minutes) if isinstance(minutes, (int, float)) else None
+
+
+def compare_ways(state: PipelineState, flown: dict, by_road: dict, alt: dict) -> dict:
+    """Compare all: the flight itinerary or the train/bus one, whichever suits the trip.
+
+    A way with nothing found loses; one that fits the budget beats one that doesn't; a train or
+    bus whose fare isn't published can't be compared on price, so the priced flight is kept. Then
+    the trip's priority decides: lowest total for cost, shortest journey for fastest, the flight for
+    comfort, and total plus VALUE_OF_TIME rupees an hour for balanced. A flag says what was compared."""
+    f, g = flown["check"], by_road["check"]
+    f_ok, g_ok = f["flight"] is not None, g["flight"] is not None
+    road_word = ground_word(g["flight"]) if g_ok else modes_text(alt["ground_mode"])
+    road_state = {k: alt[k] for k in ("ground_mode", "ground_options", "ground_return_options") if k in alt}
+
+    def with_flag(result: dict, text: str) -> dict:
+        return {**result, "check": {**result["check"], "flags": [*result["check"]["flags"], text]}}
+
+    if not f_ok and not g_ok:
+        merged = list(dict.fromkeys([*f["flags"], *g["flags"]]))
+        return {**flown, "check": {**f, "flags": merged}}
+    if not f_ok:
+        return with_flag({**by_road, **road_state},
+                         f"Compared every way: no flight was found, so the {road_word} is booked")
+    if not g_ok:
+        return with_flag(flown, f"Compared every way: no {modes_text(alt['ground_mode'])} was found, so the flight is booked")
+    priced = all((leg or {}).get("price") is not None for leg in (g["flight"], g.get("return_flight")) if leg)
+    if not priced:
+        return with_flag(flown, f"Compared every way: the {road_word} doesn't publish its fare, so the priced flight is booked")
+    priority = trip_priority(state["request"]["preferences"])
+    rupee = lambda c: f"{float(c['total_cost']):,.0f}"  # noqa: E731
+    if f["within_budget"] != g["within_budget"]:
+        road = g["within_budget"]
+        reason = "fits the budget"
+    elif priority == "comfort":
+        road, reason = False, "comfort priority"
+    elif priority == "fastest":
+        fm, gm = _travel_minutes(f), _travel_minutes(g)
+        road = fm is None or (gm is not None and gm < fm)
+        reason = "faster"
+    elif priority == "balanced":
+        cost = lambda c: float(c["total_cost"]) + VALUE_OF_TIME * (_travel_minutes(c) or 0) / 60  # noqa: E731
+        road = cost(g) < cost(f)
+        reason = f"best balance of price and time, each hour counted as {VALUE_OF_TIME}"
+    else:
+        road = float(g["total_cost"]) < float(f["total_cost"])
+        reason = "cheaper"
+    text = (f"Compared every way: by flight {rupee(f)} in total, by {road_word} {rupee(g)}; "
+            f"the {road_word if road else 'flight'} is booked ({reason})")
+    return with_flag({**by_road, **road_state}, text) if road else with_flag(flown, text)
+
+
+def flight_check(state: PipelineState) -> dict:
     # Pure Python, no LLM: picks, per the trip's priority, among the options that pass every
     # rule (the cheapest, by default) and does the money maths here, so the verdict is reproducible.
     if state.get("ground_mode"):
