@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bus, ExternalLink, Loader2, Plane, RefreshCw, Ship, Sparkles, TrainFront } from "lucide-react";
+import { Bus, ExternalLink, Loader2, Plane, RefreshCw, Ship, Sparkles, TrainFront, Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -94,7 +94,8 @@ export function TransportTab({ tripId, search }: { tripId: string; search?: Trip
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {x.recommended && (
+          {x.budget_pick && <BudgetPick pick={x.budget_pick} />}
+          {x.recommended && !x.budget_pick?.mode && (
             <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/[0.07] p-3">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
                 <Sparkles className="size-4" />
@@ -118,12 +119,14 @@ export function TransportTab({ tripId, search }: { tripId: string; search?: Trip
               </TableHeader>
               <TableBody>
                 {x.comparison.map((row) => (
-                  <TableRow key={row.mode} className={cn(x.recommended?.mode === row.mode && "bg-primary/[0.05]")}>
+                  <TableRow key={row.mode} className={cn((x.budget_pick?.mode ?? x.recommended?.mode) === row.mode && "bg-primary/[0.05]")}>
                     <TableCell>
                       <span className="flex items-center gap-2 font-medium">
                         <ModeIcon mode={row.mode} />
                         {row.mode === "Flight" ? "Flight" : `Fastest ${row.mode.toLowerCase()}`}
-                        {x.recommended?.mode === row.mode && <Badge className="ml-1">Recommended</Badge>}
+                        {(x.budget_pick?.mode ?? x.recommended?.mode) === row.mode && (
+                          <Badge className="ml-1">{x.budget_pick?.mode ? "Best for your budget" : "Recommended"}</Badge>
+                        )}
                       </span>
                     </TableCell>
                     <TableCell>{row.service ?? "-"}</TableCell>
@@ -146,7 +149,13 @@ export function TransportTab({ tripId, search }: { tripId: string; search?: Trip
               {[x.access.origin, x.access.destination].map((a, i) => a && <Reach key={i} end={i ? "Arrive at" : "Leave from"} access={a} />)}
             </div>
           )}
-          {!!x.routes?.length && <ReachRoutes routes={x.routes} to={cityName(x.destination)} />}
+          {!!x.routes?.length && (
+            <ReachRoutes
+              routes={x.routes}
+              to={cityName(x.destination)}
+              best={x.budget_pick?.mode ? (x.budget_pick.mode.toLowerCase() as "flight" | "train" | "bus") : undefined}
+            />
+          )}
           {x.last_leg && <LastLeg leg={x.last_leg} />}
           {search && (
             <div className="flex flex-wrap gap-2 pt-1">
@@ -243,6 +252,54 @@ function Reach({ end, access }: { end: string; access: TransportAccess }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** The way of travel that suits the budget, highlighted: what is left after the hotel and what fits. */
+function BudgetPick({ pick }: { pick: NonNullable<TransportResponse["budget_pick"]> }) {
+  if (!pick.mode || pick.cost === null) {
+    return (
+      <div role="note" aria-label="Your budget" className="flex items-start gap-3 rounded-2xl border border-dashed p-4">
+        <Wallet className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">{pick.message}</p>
+      </div>
+    );
+  }
+  return (
+    <div
+      role="note"
+      aria-label="Best for your budget"
+      className={cn(
+        "relative overflow-hidden rounded-2xl border-2 p-4",
+        pick.fits ? "border-primary/60 bg-gradient-to-br from-primary/[0.14] to-primary/[0.03]" : "border-warning/50 bg-warning/10"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", pick.fits ? "bg-primary text-primary-foreground" : "bg-warning/25 text-amber-700 dark:text-warning")}>
+          <Wallet className="size-5" />
+        </span>
+        <div className="min-w-0 space-y-1">
+          <p className="text-[11px] font-semibold tracking-[0.18em] text-primary uppercase">{pick.fits ? "Best for your budget" : "Over budget"}</p>
+          <p className="text-base font-semibold">
+            {pick.fits ? `Take the ${pick.mode.toLowerCase()}` : `Cheapest: the ${pick.mode.toLowerCase()}`} · {formatInr(pick.cost)}
+          </p>
+          <p className="text-sm text-muted-foreground">{pick.message}</p>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {pick.options.map((o) => (
+              <span
+                key={o.mode}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs",
+                  o.fits ? "bg-success/12 text-success" : "bg-destructive/10 text-destructive"
+                )}
+              >
+                {o.mode} {formatInr(o.cost)} · {o.fits ? "fits" : "over"}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
