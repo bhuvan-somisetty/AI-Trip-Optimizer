@@ -24,13 +24,13 @@ automatically, and every step lands in an **append-only audit trail**.
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169e1?style=flat-square&logo=postgresql&logoColor=white)
 ![Neon](https://img.shields.io/badge/Neon-00e599?style=flat-square&logo=neon&logoColor=black)
 ![pytest](https://img.shields.io/badge/pytest-402_passing-0a9edc?style=flat-square&logo=pytest&logoColor=white)
-![Vitest](https://img.shields.io/badge/Vitest-109_passing-729b1b?style=flat-square&logo=vitest&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-110_passing-729b1b?style=flat-square&logo=vitest&logoColor=white)
 
 **[Open the app](https://ai-trip-optimizer.vercel.app)** · [Why](#-why-ai-trip-optimizer) · [How it works](#-how-it-works) · [Architecture](#-architecture) · [Tech stack](#-tech-stack) · [Run locally](#-run-it-locally) · [Status](#-project-status) · [Docs](docs/)
 
 <br />
 
-<img src="docs/assets/screenshot.png" alt="Trip page for DEL to BOM: total cost 17,373 against a 25,000 budget, 22 options evaluated, the chosen IndiGo non-stop flight, and the budget and constraint check passing" width="100%" />
+<img src="docs/assets/screenshot.png" alt="Dark dashboard: the greeting in a serif display font, the next approved departure from Bengaluru to Hyderabad shown as a boarding pass, and the key numbers for trips, reviews, approved spend and savings" width="100%" />
 
 </div>
 
@@ -50,7 +50,7 @@ has to approve the spend, and someone will later ask *why this flight and not th
 
 <div align="center">
 
-| **9 / 9** | **37** | **402 + 109** | **11,818** | **4,007** | **15** |
+| **9 / 9** | **37** | **402 + 110** | **11,818** | **4,007** | **15** |
 | :---: | :---: | :---: | :---: | :---: | :---: |
 | PRD user stories built, stretch included | API endpoints | backend + frontend tests | Indian cities and towns | airports | migrations |
 
@@ -91,14 +91,14 @@ flowchart LR
 
 **Trade-off Ledger**: every option, its price and why it lost
 
-<img src="docs/assets/tradeoff-ledger.png" alt="Trade-off Ledger listing flights that were screened out because they depart on a different day, each with its price" width="100%" />
+<img src="docs/assets/tradeoff-ledger.png" alt="Trade-off Ledger for Bengaluru to Hyderabad: the chosen IndiGo flight at 5,853 marked best balance of price and time, and each other flight with its price and why it lost" width="100%" />
 
 </td>
 <td width="50%" valign="top">
 
-**Audit trail**: who did what, newest first
+**Explore**: famous places, day trips and restaurants, each with a real photo
 
-<img src="docs/assets/audit-trail.png" alt="Audit trail page listing pipeline run, trip created and traveler added events with the actor and a one-line summary" width="100%" />
+<img src="docs/assets/explore.png" alt="Explore tab for Hyderabad: Toli Masjid, Char Minar and Gunfoundry cards, each with a Wikimedia Commons photo and its distance from the city centre" width="100%" />
 
 </td>
 </tr>
@@ -175,7 +175,7 @@ flowchart LR
 | **API** | FastAPI, SQLModel, Alembic, Pydantic, `python-jose` JWT + `passlib` bcrypt, `google-auth` |
 | **AI** | LangGraph (`search → check → compose`), `langchain-openai` against Gemini's OpenAI-compatible endpoint (`gemini-3.5-flash-lite`) |
 | **Data** | PostgreSQL 16 (Neon in production), Google Flights, Google Hotels and Google Maps transit via SerpApi, Travelpayouts fares as the flight fallback, OurAirports and OpenStreetMap (bundled), Indian Railways fare tables, Wikidata and OpenTripMap |
-| **Quality** | pytest (402 tests, no network or keys needed), Vitest + Testing Library (109 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
+| **Quality** | pytest (402 tests, no network or keys needed), Vitest + Testing Library (110 component and unit tests), ESLint, TypeScript, GitHub Actions on every pull request |
 | **Delivery** | Frontend and API as two Vercel projects (API in `sin1`), Neon Postgres, Docker Compose for local dev |
 
 ## ✦ Architecture
