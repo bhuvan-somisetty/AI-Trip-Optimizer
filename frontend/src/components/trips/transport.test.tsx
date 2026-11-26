@@ -153,4 +153,36 @@ describe("TransportTab", () => {
     expect(screen.getByText("Nearest airport: DED (Jolly Grant Airport), 105 km")).toBeInTheDocument();
     expect(screen.getByText("Sonprayag Parking, 14 km")).toBeInTheDocument();
   });
+  it("highlights the way of travel that suits the budget, on the card, the table and the route", async () => {
+    getTransport.mockResolvedValue(
+      transport({
+        budget_pick: {
+          mode: "Train",
+          fits: true,
+          budget: 15000,
+          hotel: 9000,
+          left_for_travel: 6000,
+          cost: 1800,
+          message: "Your budget is ₹15,000. The hotel takes ₹9,000, leaving ₹6,000 for travel. The train costs ₹1,800 there and back per traveller and fits your budget; the flight at ₹11,500 would go over.",
+          options: [
+            { mode: "Flight", cost: 11500, fits: false },
+            { mode: "Train", cost: 1800, fits: true },
+          ],
+        },
+        routes: [
+          { mode: "flight", title: "Fly to Kadapa (CDP)", own: false, legs: [{ mode: "flight", from: "BLR", to: "CDP" }] },
+          { mode: "train", title: "Train to Kamalapuram", own: false, legs: [{ mode: "train", from: "BNC", to: "KKM" }] },
+        ],
+      })
+    );
+    render(<TransportTab tripId="t1" />);
+    const card = await screen.findByRole("note", { name: "Best for your budget" });
+    expect(card).toHaveTextContent("Take the train");
+    expect(card).toHaveTextContent("leaving ₹6,000 for travel");
+    expect(card).toHaveTextContent("Flight ₹11,500 · over");
+    expect(card).toHaveTextContent("Train ₹1,800 · fits");
+    // The table row and the train route card are marked too.
+    expect(screen.getAllByText("Best for your budget").length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByText(/^Recommended:/)).not.toBeInTheDocument();
+  });
 });
