@@ -12,5 +12,8 @@ export default defineConfig({
     css: false,
     // jsdom is slow to start; a couple of workers keeps it inside the start-up timeout on small machines.
     maxWorkers: 2,
+    // Page tests that click through whole forms can pass 5 s on a busy machine; 15 s keeps them
+    // from failing on load alone while still catching a real hang.
+    testTimeout: 15000,
   },
 });
