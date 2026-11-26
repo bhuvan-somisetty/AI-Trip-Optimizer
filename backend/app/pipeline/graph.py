@@ -275,9 +275,9 @@ def ground_check(state: PipelineState) -> dict:
         if hotels:
             typical["stay"] = statistics.median(h["price_per_night"] for h in hotels) * nights
         if not state["hotel_options"] and not state.get("search_error"):
-            flags.append(f"No hotels found in {request['destination']}")
+            flags.append(f"No hotels found in {place_name(request['destination'])}")
         elif state["hotel_options"] and hotel is None:
-            flags.append(f"No hotel in {request['destination']} meets the trip's preferences")
+            hotel = closest_stay(state, request, flags, rejected_stay)
 
     total_cost = float(known_fares + (stay_price(hotel) if hotel else 0))
     within_budget = total_cost <= request["budget"]
@@ -747,6 +747,30 @@ def airport_flags(request: dict) -> list[str]:
     return flags
 
 
+def place_name(code: str) -> str:
+    return travel_data.CITIES.get(code, (code,))[0]
+
+
+def closest_stay(state: PipelineState, request: dict, flags: list[str], rejected_stay: list) -> dict | None:
+    """No hotel met every preference (or fitted what the budget left): the trip still gets a stay.
+
+    The cheapest real hotel found is booked, and a flag names the preference it misses, so the
+    reviewer sees exactly what was relaxed instead of a failed trip. Its own rejection is taken
+    off the ledger, where it shows as the chosen stay."""
+    found = [h for h in state.get("hotel_options") or [] if h.get("price_per_night") is not None]
+    if not found:
+        flags.append(f"No hotel in {place_name(request['destination'])} has a price for these dates")
+        return None
+    best = min(found, key=lambda h: h["price_per_night"])
+    missed = [r for r in rejected_stay if r.get("option_id") == best.get("id")]
+    rejected_stay[:] = [r for r in rejected_stay if r.get("option_id") != best.get("id")]
+    why = f": {missed[0]['detail']}" if missed else ", or it costs more than the budget has room for"
+    flags.append(f"No hotel in {place_name(request['destination'])} meets every preference, so the cheapest one found is "
+                 f"booked ({best.get('name') or best.get('id')}, {best['price_per_night']:,.0f} a night){why}; "
+                 f"adjust the stay filters to change it")
+    return best
+
+
 def check_node(state: PipelineState) -> dict:
     """Checks the searched options; for Compare all, both the flights and the trains and buses,
     then keeps whichever way suits the budget and the trip's priority (compare_ways)."""
@@ -942,9 +966,9 @@ def flight_check(state: PipelineState) -> dict:
         if hotels:
             typical["stay"] = statistics.median(h["price_per_night"] for h in hotels) * nights
         if not state["hotel_options"] and not state.get("search_error"):
-            flags.append(f"No hotels found in {request['destination']}")
+            flags.append(f"No hotels found in {place_name(request['destination'])}")
         elif state["hotel_options"] and hotel is None:
-            flags.append(f"No hotel in {request['destination']} meets the trip's preferences")
+            hotel = closest_stay(state, request, flags, rejected_stay)
     rejected = rejected_flight + rejected_return + rejected_stay
 
     total_cost, within_budget, budget_flag = price_check(request, flight, hotel, nights, return_flight)
@@ -1284,8 +1308,9 @@ def compose(state: PipelineState, use_llm: bool = True) -> dict:
     preview is instant and spends no LLM quota. Applying the preview writes the real rationale.
     """
     check = state["check"]
-    hotel_missing = check["nights"] > 0 and check["hotel"] is None and not state.get("hotels_unavailable")
-    if check["flight"] is None or hotel_missing:
+    # A missing hotel never fails the trip: travel is still planned and the flags say why there is
+    # no stay. Only a trip with no flight, train or bus at all can't be built.
+    if check["flight"] is None:
         return {"failure_reason": "; ".join(check["flags"]) or "No itinerary could be built"}
 
     facts = rationale_facts(state)

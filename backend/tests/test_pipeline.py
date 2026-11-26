@@ -75,10 +75,14 @@ def test_check_flags_over_budget_with_line_items():
     ]
 
 
-def test_check_flags_when_no_option_meets_preferences():
+def test_no_hotel_meeting_every_preference_books_the_cheapest_and_says_so():
+    # The trip is never failed for its stay: the cheapest real hotel is booked and flagged.
     check = run_check({"min_hotel_rating": 5.0})
-    assert check["hotel"] is None
-    assert "No hotel in DEL meets the trip's preferences" in check["flags"]
+    assert check["hotel"] is not None
+    assert check["hotel"]["price_per_night"] == min(h["price_per_night"] for h in HOTELS)
+    note = next(f for f in check["flags"] if f.startswith("No hotel in New Delhi meets every preference"))
+    assert "the cheapest one found is booked" in note and "adjust the stay filters" in note
+    assert not any(r["option_id"] == check["hotel"]["id"] for r in check["rejected"])
 
 
 def test_check_flags_when_no_flights_exist():
