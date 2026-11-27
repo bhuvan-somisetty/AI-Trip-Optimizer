@@ -97,8 +97,10 @@ function roleFromToken(token: string): Session["role"] {
  */
 export const DEMO_ENABLED = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
-// Auth calls give up quickly so an offline backend drops straight into demo mode (when enabled).
-const AUTH_TIMEOUT_MS = 2500;
+// Sign-in and sign-up wait up to 20 s: the first request after a quiet spell wakes the API and the
+// database and hashes the password, which takes longer than a few seconds. A backend that is really
+// down still fails at once (the request is refused), so demo mode, when enabled, isn't held up.
+const AUTH_TIMEOUT_MS = 20000;
 
 /** The signed-in user's account (GET /me). `name` is null until they set one; the email can't change. */
 export type MeResponse = { id: string; email: string; name: string | null; role: Session["role"] };
